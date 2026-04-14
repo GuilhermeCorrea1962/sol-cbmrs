@@ -1,0 +1,114 @@
+// =============================================================================
+// SOL CBM-RS — Estilos globais
+// Inclui tema Angular Material personalizado com paleta CBM-RS
+// =============================================================================
+
+// Angular Material M3 theme
+@use '@angular/material' as mat;
+
+// Tema claro customizado: primaria = vermelho CBM-RS (#cc0000 = red-800)
+$sol-theme: mat.define-theme((
+  color: (
+    theme-type: light,
+    primary: mat.$red-palette,
+    tertiary: mat.$blue-palette,
+  ),
+  typography: (
+    brand-family: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
+    bold-weight: 700,
+  ),
+  density: (
+    scale: 0,
+  ),
+));
+
+// Aplicar tema a todos os componentes Material
+html {
+  @include mat.all-component-themes($sol-theme);
+}
+
+// =============================================================================
+// Reset e base
+// =============================================================================
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  font-size: 14px;
+  background-color: #f5f5f5;
+  color: #333;
+}
+
+// =============================================================================
+// Variaveis de design token CBM-RS
+// =============================================================================
+
+:root {
+  --cbm-vermelho:        #cc0000;
+  --cbm-vermelho-escuro: #990000;
+  --cbm-azul-escuro:     #1a1a2e;
+  --cbm-cinza:           #666666;
+  --cbm-cinza-claro:     #f0f0f0;
+  --cbm-branco:          #ffffff;
+
+  // Status de licenciamento
+  --status-rascunho:            #95a5a6;
+  --status-pendente:            #f39c12;
+  --status-analise:             #3498db;
+  --status-deferido:            #27ae60;
+  --status-indeferido:          #e74c3c;
+  --status-suspenso:            #e67e22;
+  --status-extinto:             #7f8c8d;
+  --status-renovado:            #16a085;
+}
+
+// =============================================================================
+// Utilitarios
+// =============================================================================
+
+a {
+  color: var(--cbm-vermelho);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+.sol-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 16px;
+}
+
+// Badges de status de licenciamento
+.status-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+
+  &.rascunho            { background: var(--status-rascunho); }
+  &.analise_pendente,
+  &.em_analise          { background: var(--status-analise); }
+  &.deferido            { background: var(--status-deferido); }
+  &.indeferido          { background: var(--status-indeferido); }
+  &.suspenso            { background: var(--status-suspenso); }
+  &.extinto             { background: var(--status-extinto); }
+  &.renovado            { background: var(--status-renovado); }
+}
+
+// Scrollbar customizada (Chromium)
+::-webkit-scrollbar        { width: 6px; height: 6px; }
+::-webkit-scrollbar-track  { background: #f1f1f1; }
+::-webkit-scrollbar-thumb  { background: #ccc; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #aaa; }

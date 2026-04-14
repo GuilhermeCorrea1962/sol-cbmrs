@@ -1,0 +1,118 @@
+spring:
+  application:
+    name: sol-backend
+
+  # Oracle XE DataSource
+  datasource:
+    url: jdbc:oracle:thin:@localhost:1521/XEPDB1
+    username: sol
+    password: Sol@CBM2026
+    driver-class-name: oracle.jdbc.OracleDriver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+
+  # JPA / Hibernate
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+        default_schema: SOL
+        jdbc:
+          batch_size: 25
+        order_inserts: true
+        order_updates: true
+
+  # Spring Security - OAuth2 Resource Server (JWT do Keycloak)
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost:8180/realms/sol
+          jwk-set-uri: http://localhost:8180/realms/sol/protocol/openid-connect/certs
+
+  # E-mail (SMTP local - MailHog para dev)
+  mail:
+    host: localhost
+    port: 1025
+    username: ""
+    password: ""
+    properties:
+      mail.smtp.auth: false
+      mail.smtp.starttls.enable: false
+
+  # Thymeleaf (templates de e-mail - pasta criada nas sprints seguintes)
+  thymeleaf:
+    check-template-location: false
+
+  # Upload de arquivos
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 50MB
+
+# Servidor
+server:
+  port: 8080
+  servlet:
+    context-path: /api
+  compression:
+    enabled: true
+    mime-types: application/json,application/xml,text/html,text/plain
+
+# MinIO
+minio:
+  url: http://localhost:9000
+  access-key: sol-app
+  secret-key: SolApp@Minio2026
+  buckets:
+    arquivos: sol-arquivos
+    appci: sol-appci
+    guias: sol-guias
+    laudos: sol-laudos
+    decisoes: sol-decisoes
+    temp: sol-temp
+
+# Keycloak Admin (para criar usuarios via Admin API) e client (para login ROPC)
+keycloak:
+  server-url: http://localhost:8180
+  realm: sol
+  admin:
+    client-id: admin-cli
+    username: admin
+    password: Keycloak@Admin2026
+  client:
+    client-id: sol-frontend
+
+# Actuator
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+  health:
+    mail:
+      enabled: false
+
+# Logging
+logging:
+  level:
+    br.gov.rs.cbm.sol: DEBUG
+    org.springframework.security: INFO
+    org.hibernate.SQL: DEBUG
+  file:
+    name: C:/SOL/logs/sol-backend.log
+  logback:
+    rollingpolicy:
+      max-file-size: 10MB
+      max-history: 30
