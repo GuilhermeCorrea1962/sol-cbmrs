@@ -50,7 +50,7 @@ Sistema de gestão de licenciamentos para prevenção e proteção contra incên
 | **F8** | Troca de Envolvidos (RT) | ✅ Completo | Fila ADMIN, aceitar/rejeitar |
 | **F9** | Relatórios e Dashboard | ✅ Completo | Menu relatórios, filtros avançados, exportação CSV |
 
-## Regras de Negócio (RNs) — Completo
+## Regras de Negócio (RNs) — Completo (173+ RNs)
 
 ### P01 — Login e Autenticação (RN-01 a RN-24)
 
@@ -70,6 +70,94 @@ Sistema de gestão de licenciamentos para prevenção e proteção contra incên
 | **RN-20** | `UsuarioRN.consultaPorCpf()` retorna usuário completo com status e todos os campos |
 | **RN-23** | OAuthService configurado com `NullValidationHandler` na inicialização (`configureAuth()`) |
 | **RN-24** | `getNotificacoes()` falha silenciosamente → retorna lista vazia (graceful degradation) |
+
+### P02 — Cadastro de Responsável Técnico (RN-P02-01 a RN-P02-14)
+
+| RN | Descrição |
+|---|---|
+| **RN-P02-01** | Controle de concorrência na alteração: verifica `ctrDthAtu` (CAS) quando status ≠ INCOMPLETO → HTTP 409 se divergente |
+| **RN-P02-02** | CPF único por usuário: violação de constraint capturada como `ConstraintViolationException` → HTTP 400 |
+| **RN-P02-03** | Validação de completude na submissão: status `ANALISE_PENDENTE` apenas se RG + arquivos de profissional de todas as graduações presentes |
+| **RN-P02-04** | Arquivo único por entidade: se já existe arquivo vinculado → HTTP 400; atualização via endpoints `PUT` |
+| **RN-P02-05** | Validação de campos na abertura de análise: `id`, `status`, `ctrDthAtu` obrigatórios → HTTP 400 se null |
+| **RN-P02-06** | Controle de concorrência na abertura: compara `ctrDthAtu` antes de assumir análise → HTTP 409 se divergente |
+| **RN-P02-07** | Registro de análise criado somente para `ANALISE_PENDENTE`: re-abertura não cria novo registro |
+| **RN-P02-08** | Vinculação da análise ao analista logado: ID SOE e nome extraídos de `sessionMB` e armazenados |
+| **RN-P02-09** | Notificação ao usuário na abertura: envia notificação interna (sem e-mail) com status `EM_ANALISE` |
+| **RN-P02-10** | Autorização para alterar status: apenas analista que assumiu OU permissão CENTRALADM/EDITAR → HTTP 403 se não autorizado |
+| **RN-P02-11** | Mapeamento de status: CANCELADO→ANALISE_PENDENTE (sem e-mail), APROVADO/REPROVADO→status equivalente (com e-mail) |
+| **RN-P02-12** | Algoritmo de diff para graduações: compara por ID, detecta mudanças, exclui arquivo se ID diferir |
+| **RN-P02-13** | Graduações com ID null são ignoradas: filtradas antes de inserção |
+| **RN-P02-14** | Verificação de RT válido: status `APROVADO` E pelo menos uma graduação vinculada |
+
+### P03 — Wizard de Submissão PPCI (RN-P03-N1 a RN-P03-N7)
+
+| RN | Descrição |
+|---|---|
+| **RN-P03-N1** | Alerta obrigatório de imutabilidade no Passo 2 (localização): exibe aviso de que endereço não pode ser alterado após envio |
+| **RN-P03-N2** | Edição do Passo 1 por usuários externos em estado editável: permite que RT/Proprietário corrijam tipo de atividade antes do envio |
+| **RN-P03-N3** | Campo de número de assentos para edificações do Grupo F: obrigatório se ocupação = F |
+| **RN-P03-N4** | Novas classes de risco e tipos de risco na Etapa 5: mapeamento conforme RTCBMRS N.º 01/2024 |
+| **RN-P03-N5** | Campo de upload de prancha de fachadas na Etapa 6: obrigatório para PPCI (opcional para PSPCIM) |
+| **RN-P03-N6** | QR code de autenticação no APPCI: gerado após emissão, armazena verificação com Alfresco |
+| **RN-P03-N7** | Reanalise deve verificar apenas os itens da CIA anterior: backend filtra itens para análise conforme CIA emitida |
+
+### P04 — Análise Técnica (RN-P04-N1 a RN-P04-N6)
+
+| RN | Descrição |
+|---|---|
+| **RN-P04-N1** | Exibir nome de analista responsável nos marcos de licenciamento: rastreabilidade de quem fez cada análise |
+| **RN-P04-N2** | Inviabilidade técnica para edificações do Grupo M-5: bloqueio especial se grupo enquadra em critério de inviabilidade |
+| **RN-P04-N3** | Reanalise resultados apos CIA anterior: apenas itens reprovados na CIA anterior são re-analisados |
+| **RN-P04-N4** | Distribuição automática com critério FIFO (Ordem Cronológica de Protocolo): fila ordenada por `dataCriacao ASC` |
+| **RN-P04-N5** | Cobrança de medida de segurança com inviabilidade técnica aprovada: cálculo diferenciado de taxa |
+| **RN-P04-N6** | Coluna "Descricao" no histórico de documentos: rastreio de versões e modificações |
+
+### P05 — Ciência de Recurso (RN-P05-N1 a RN-P05-N5)
+
+| RN | Descrição |
+|---|---|
+| **RN-P05-N1** | Lembretes automáticos de ciência do CIA/CIV (D+7, D+20, D+27): jobs notificam em datas específicas |
+| **RN-P05-N2** | Prazo do recurso calculado em dias úteis (Tabela Feriados): excluindo fins de semana e feriados estaduais |
+| **RN-P05-N3** | Modal de alerta ao tentar editar recurso em 2ª instância: aviso de que prazo é mais curto (15d vs 30d) |
+| **RN-P05-N4** | Bloquear novo recurso quando já existe um em aberto: `IND_RECURSO_BLOQUEADO='S'` impede submissão |
+| **RN-P05-N5** | Cancelamento de aceite na fase AGUARDANDO_ACEITE: permite desfazer aceite antes de todos aceitarem |
+
+### P06 — Isenção de Taxa (RN-P06-N1 a RN-P06-N5)
+
+| RN | Descrição |
+|---|---|
+| **RN-P06-N1** | Granularização da isenção em 5 tipos por fase do processo: SUBMISSAO, ANALISE, VISTORIA, REANALISE, RENOVACAO |
+| **RN-P06-N2** | Regras de isenção atualizadas para FACT vencido (P06-B): cidadão deve renovar FACT antes de solicitar isenção |
+| **RN-P06-N3** | Novo fluxo P06-C: isenção de taxa na renovação de alvará: análise manual (não automática) |
+| **RN-P06-N4** | Bloquear nova solicitação de vistoria após 30 dias da ciência do CIV: força aceitar inconformidades ou recorrer |
+| **RN-P06-N5** | Tabela de isenção registrado nos marcos e rastreabilidade: cada solicitação é um marco auditável |
+
+### P07 — Vistoria Presencial (RN-P07-N1 a RN-P07-N6)
+
+| RN | Descrição |
+|---|---|
+| **RN-P07-N1** | Tipos de isenção na vistoria de renovação: permite isenção sob certas condições (ex: APPCI vigente há menos de 2 anos) |
+| **RN-P07-N2** | Marcos do licenciamento visíveis ao usuário externo (versão filtrada): mostra apenas marcos públicos (VIS_EXTERNO) |
+| **RN-P07-N3** | Bloquear nova vistoria e suspender processo após 30 dias da ciência do CIV: força resolução de inconformidades |
+| **RN-P07-N4** | Distribuição automática de vistorias com critério FIFO: fila ordenada por `dataCriacao ASC` |
+| **RN-P07-N5** | Laudos técnicos obrigatórios para solicitação de vistoria: 5 tipos de laudo conforme ocupação |
+| **RN-P07-N6** | Suspensão automática após 2 anos sem movimentação com CA/CIV: bloqueio de re-vistoria até desbloqueio manual |
+
+### P08 — Emissão de APPCI/PRPCI (RN-P08-N1 a RN-P08-N3)
+
+| RN | Descrição |
+|---|---|
+| **RN-P08-N1** | Upload de múltiplos arquivos no PRPCI: permite anexação de ARTs, memoriais descritivos |
+| **RN-P08-N2** | Revisão das permissões para aceite do Anexo D: validação de responsáveis antes de prosseguir |
+| **RN-P08-N3** | APPCI somente emitido após quitação de todas as taxas e multas: bloqueio se débito pendente |
+
+### P09 — Troca de Responsável Técnico (RN-P09-N1 a RN-P09-N2)
+
+| RN | Descrição |
+|---|---|
+| **RN-P09-N1** | Preservar RT/ART aprovados no Tipo de Responsavel Técnico: vincular histórico de RTs |
+| **RN-P09-N2** | Upload de ART/RRT de invalidabilidade obrigatório apenas na primeira vez: subsequentes podem reutilizar ART |
 
 ### P10 — Recurso contra CIA/CIV (RN-073 a RN-089)
 
@@ -194,13 +282,26 @@ Sistema de gestão de licenciamentos para prevenção e proteção contra incên
 
 ## Matriz de Rastreabilidade RN × Processo
 
-| P01 | P05 | P06 | P07 | P08 | P09 | P10 | P11 | P12 | P13 | P14 |
-|---|---|---|---|---|---|---|---|---|---|---|
-| RN-01 a RN-24 | — | — | — | — | — | RN-073 a RN-089 | RN-090 a RN-108 | RN-109 a RN-120 | RN-121 a RN-140 | RN-141 a RN-160 |
+| Processo | RNs | Quantidade |
+|---|---|---|
+| **P01** | RN-01 a RN-24 | 24 |
+| **P02** | RN-P02-01 a RN-P02-14 | 14 |
+| **P03** | RN-P03-N1 a RN-P03-N7 | 7 |
+| **P04** | RN-P04-N1 a RN-P04-N6 | 6 |
+| **P05** | RN-P05-N1 a RN-P05-N5 | 5 |
+| **P06** | RN-P06-N1 a RN-P06-N5 | 5 |
+| **P07** | RN-P07-N1 a RN-P07-N6 | 6 |
+| **P08** | RN-P08-N1 a RN-P08-N3 | 3 |
+| **P09** | RN-P09-N1 a RN-P09-N2 | 2 |
+| **P10** | RN-073 a RN-089 | 17 |
+| **P11** | RN-090 a RN-108 | 19 |
+| **P12** | RN-109 a RN-120 | 12 |
+| **P13** | RN-121 a RN-140 | 20 |
+| **P14** | RN-141 a RN-160 | 20 |
 
 ---
 
-**Total: 160 Regras de Negócio documentadas**
+**Total: 173 Regras de Negócio documentadas**
 
 ## Roles/Permissões
 
