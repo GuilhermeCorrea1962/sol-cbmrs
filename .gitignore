@@ -1,11 +1,15 @@
-﻿node_modules/
-dist/
-build/
-target/
-*.jar
+﻿# Infraestrutura e binários
+infra/keycloak/keycloak-*/
+infra/minio/mc.exe
+infra/mailhog/MailHog.exe
+infra/nginx/nginx-*/
+backend/
+logs/
+*.exe
+*.bat
+*.sh
+
+# Arquivos temporários
+*.tmp
 *.log
 .DS_Store
-.env
-logs/*.txt
-C:\SOL\logs\*.txt
-
