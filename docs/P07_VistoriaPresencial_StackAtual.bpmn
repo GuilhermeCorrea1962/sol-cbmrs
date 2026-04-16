@@ -1,0 +1,1381 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+             id="P07_VistoriaPresencial"
+             targetNamespace="http://sol.cbmrs.gov.br/bpmn/p07"
+             exporter="Camunda Modeler"
+             exporterVersion="5.0.0">
+
+  <collaboration id="Collab_P07">
+    <participant id="P07_Pool"
+                 name="P07 — Vistoria Presencial (Stack Atual Java EE)"
+                 processRef="Process_P07"/>
+  </collaboration>
+
+  <process id="Process_P07" name="P07 — Vistoria Presencial" isExecutable="false">
+    <documentation>
+Processo P07 — Vistoria Presencial
+Sistema: SOL (Sistema Online de Licenciamento) — CBM-RS
+Stack: Java EE (JAX-RS + CDI + JPA/Hibernate + EJB @Stateless)
+IdP: SOE PROCERGS (@SOEAuthRest + @Permissao)
+ECM: Alfresco (nodeRef workspace://SpacesStore/{UUID})
+Auditoria: Hibernate Envers (@Audited) — tabelas *_AUD
+
+Tipos de Vistoria (TipoVistoria): VISTORIA_DEFINITIVA(1) | VISTORIA_PARCIAL(2) | VISTORIA_RENOVACAO(3)
+Turnos (TipoTurnoVistoria): MANHA(0) | TARDE(1) | NOITE(2) | INTEGRAL(3)
+StatusVistoria: SOLICITADA | EM_VISTORIA | EM_RASCUNHO | EM_APROVACAO | APROVADO | REPROVADO | EM_REDISTRIBUICAO | CANCELADA
+
+Raias:
+- Cidadão / RT: visualiza CIV e confirma ciência
+- Fiscal CBM-RS: executa vistoria, sobe laudo, conclui resultado
+- ADM CBM-RS: distribui vistorias em lote, homologa resultado
+- Sistema SOL Backend: operações automáticas (TrocaEstado, Alfresco, marcos, notificações, LAI)
+
+Permissões-chave:
+- DISTRIBUICAOVISTORIA/DISTRIBUIR → LicenciamentoDistribuicaoVistoriaRN
+- VISTORIA/VISTORIAR → VistoriaConclusaoRN
+- VISTORIA/HOMOLOGAR → VistoriaHomologacaoAdmRN
+    </documentation>
+
+    <laneSet id="LaneSet_P07">
+      <lane id="Lane_RT" name="Cidadão / RT (Responsável Técnico)">
+        <flowNodeRef>Task_RT_VisualizarCIV</flowNodeRef>
+        <flowNodeRef>Task_RT_ConfirmarCienciaCIV</flowNodeRef>
+      </lane>
+      <lane id="Lane_Fiscal" name="Fiscal CBM-RS">
+        <flowNodeRef>Task_FISCAL_VisualizarVistoria</flowNodeRef>
+        <flowNodeRef>Task_FISCAL_UploadLaudo</flowNodeRef>
+        <flowNodeRef>Task_FISCAL_ConcluirVistoria</flowNodeRef>
+        <flowNodeRef>GW_ResultadoVistoria</flowNodeRef>
+        <flowNodeRef>Task_FISCAL_SalvarRascunho</flowNodeRef>
+      </lane>
+      <lane id="Lane_ADM" name="ADM CBM-RS (Homologador)">
+        <flowNodeRef>Start_P07</flowNodeRef>
+        <flowNodeRef>Task_ADM_ListarDistribuicao</flowNodeRef>
+        <flowNodeRef>Task_ADM_ConfigurarDistribuicao</flowNodeRef>
+        <flowNodeRef>Task_ADM_ListarAprovadas</flowNodeRef>
+        <flowNodeRef>Task_ADM_AnalisarHomologacao</flowNodeRef>
+        <flowNodeRef>GW_DecisaoHomologacao</flowNodeRef>
+      </lane>
+      <lane id="Lane_BE" name="Sistema SOL — Backend (Java EE / WildFly)">
+        <flowNodeRef>Task_BE_ExecutarDistribuicao</flowNodeRef>
+        <flowNodeRef>Task_BE_NotificarDistribuicao</flowNodeRef>
+        <flowNodeRef>Task_BE_RegistrarAprovacao</flowNodeRef>
+        <flowNodeRef>Task_BE_RegistrarReprovacao</flowNodeRef>
+        <flowNodeRef>Task_BE_MarcarInviavel</flowNodeRef>
+        <flowNodeRef>Task_BE_GerarCIV</flowNodeRef>
+        <flowNodeRef>Task_BE_TransicionarCienciaCIV</flowNodeRef>
+        <flowNodeRef>Task_BE_RegistrarIndeferimento</flowNodeRef>
+        <flowNodeRef>Task_BE_RegistrarCienciaCIV</flowNodeRef>
+        <flowNodeRef>Task_BE_HomologarDeferimento</flowNodeRef>
+        <flowNodeRef>Task_BE_GerarAPPCI</flowNodeRef>
+        <flowNodeRef>GW_TipoVistoria</flowNodeRef>
+        <flowNodeRef>Task_BE_TransicionarPrpci</flowNodeRef>
+        <flowNodeRef>Task_BE_IntegrarLAI</flowNodeRef>
+        <flowNodeRef>Task_BE_TransicionarAceitePrpci</flowNodeRef>
+        <flowNodeRef>Task_BE_IntegrarLAI_Renov</flowNodeRef>
+        <flowNodeRef>End_Aprovado</flowNodeRef>
+        <flowNodeRef>End_AprovadoRenov</flowNodeRef>
+        <flowNodeRef>End_Reprovado</flowNodeRef>
+        <flowNodeRef>End_Inviavel</flowNodeRef>
+      </lane>
+    </laneSet>
+
+    <!-- ==================== INÍCIO ==================== -->
+    <startEvent id="Start_P07" name="Vistoria Agendada&#10;(AGUARDANDO_DISTRIBUICAO)">
+      <documentation>
+Gatilho: Licenciamento em SituacaoLicenciamento.AGUARDANDO_DISTRIBUICAO
+         ou SituacaoLicenciamento.AGUARDANDO_DISTRIBUICAO_RENOV (renovação).
+Pré-condição: PPCI aprovado na análise técnica (P04) ou vistoria de renovação solicitada.
+Entidade principal: LicenciamentoED (CBM_LICENCIAMENTO)
+Tabela: CBM_LICENCIAMENTO (WHERE situacao IN ('AGUARDANDO_DISTRIBUICAO','AGUARDANDO_DISTRIBUICAO_RENOV'))
+      </documentation>
+      <outgoing>Flow_Start_Listar</outgoing>
+    </startEvent>
+
+    <!-- ==================== ADM: DISTRIBUIÇÃO ==================== -->
+    <userTask id="Task_ADM_ListarDistribuicao"
+              name="Listar Licenciamentos&#10;p/ Distribuição"
+              camunda:assignee="adm_cbmrs">
+      <documentation>
+UserTask — ADM CBM-RS
+REST: GET /adm/licenciamentos/vistorias/solicitadas
+Classe: ListaVistoriaRestImpl.listaSolicitadas()
+Autenticação: @SOEAuthRest
+Permissão: @Permissao(objeto="DISTRIBUICAOVISTORIA", acao="DISTRIBUIR")
+Situações filtradas: AGUARDANDO_DISTRIBUICAO | AGUARDANDO_DISTRIBUICAO_RENOV
+DTO retornado: ItemListagemLicenciamentoVistoriaDTO {
+  idLicenciamento, nroPpci, enderecoCompleto, nomeRT, nomeProprietario, situacao
+}
+Tabela: CBM_LICENCIAMENTO (LEFT JOIN CBM_VISTORIA WHERE vistoria IS NULL ou status = EM_REDISTRIBUICAO)
+O ADM visualiza a lista e seleciona os licenciamentos para distribuição em lote.
+      </documentation>
+      <incoming>Flow_Start_Listar</incoming>
+      <outgoing>Flow_Listar_Config</outgoing>
+    </userTask>
+
+    <userTask id="Task_ADM_ConfigurarDistribuicao"
+              name="Configurar e Submeter&#10;Distribuição em Lote"
+              camunda:assignee="adm_cbmrs"
+              camunda:formKey="form:distribuicao-vistoria">
+      <documentation>
+UserTask — ADM CBM-RS
+REST: PUT /adm/distribuicao/vistoria/distribuir
+Classe: LicenciamentoDistribuicaoVistoriaRest.distribuirVistoriaOrdinaria()
+Permissão: @Permissao(objeto="DISTRIBUICAOVISTORIA", acao="DISTRIBUIR")
+DTO Request: VistoriaOrdinariaDistribuicaoRequest {
+  idLicenciamentos: List&lt;Long&gt;  -- distribuição em lote (múltiplos licenciamentos)
+  dataPrevista: Calendar             -- data prevista da vistoria
+  turnoPrevisto: TipoTurnoVistoria   -- MANHA(0)|TARDE(1)|NOITE(2)|INTEGRAL(3)
+  idFiscal: Long                     -- idUsuarioSoe do fiscal designado
+}
+Validações: lista não vazia; idFiscal válido no SOE; dataPrevista no futuro.
+      </documentation>
+      <incoming>Flow_Listar_Config</incoming>
+      <outgoing>Flow_Config_ExecutarDist</outgoing>
+    </userTask>
+
+    <!-- ==================== BE: EXECUTAR DISTRIBUIÇÃO ==================== -->
+    <serviceTask id="Task_BE_ExecutarDistribuicao"
+                 name="Executar Distribuição&#10;de Vistoria (Lote)"
+                 camunda:class="br.gov.rs.cbm.sol.rn.LicenciamentoDistribuicaoVistoriaRN">
+      <documentation>
+ServiceTask — Sistema SOL Backend
+Classe: LicenciamentoDistribuicaoVistoriaRN.distribuir(VistoriaOrdinariaDistribuicaoRequest, Long idUsuarioSoe)
+@Permissao(objeto="DISTRIBUICAOVISTORIA", acao="DISTRIBUIR")
+@TransactionAttribute(REQUIRED)
+Loop por cada idLicenciamento da lista:
+  1. Cria VistoriaED:
+     - status = StatusVistoria.SOLICITADA
+     - dataPrevista (Calendar), turnoPrevisto (TipoTurnoVistoria)
+     - idUsuarioSoe = idFiscal designado
+     - tipoVistoria: VISTORIA_DEFINITIVA(1)|VISTORIA_PARCIAL(2)|VISTORIA_RENOVACAO(3)
+     - INSERT CBM_VISTORIA (SEQ_CBM_VISTORIA.nextval)
+  2. TrocaEstado licenciamento:
+     @TrocaEstadoLicenciamentoQualifier: AGUARDANDO_DISTRIBUICAO_PARA_AGUARDANDO_VISTORIA
+     SituacaoLicenciamento: AGUARDANDO_DISTRIBUICAO → AGUARDANDO_VISTORIA
+  3. INSERT CBM_MARCO: TipoMarco.DISTRIBUICAO_VISTORIA
+  4. Envers: CBM_VISTORIA_AUD, CBM_LICENCIAMENTO_AUD
+Tabelas: CBM_VISTORIA (INSERT), CBM_LICENCIAMENTO (UPDATE situacao), CBM_MARCO (INSERT)
+      </documentation>
+      <incoming>Flow_Config_ExecutarDist</incoming>
+      <outgoing>Flow_ExecutarDist_NotifDist</outgoing>
+    </serviceTask>
+
+    <serviceTask id="Task_BE_NotificarDistribuicao"
+                 name="Notificar Partes&#10;(E-mail Agendamento)"
+                 camunda:class="br.gov.rs.cbm.sol.rn.VistoriaRN">
+      <documentation>
+ServiceTask — Sistema SOL Backend
+Classe: VistoriaRN.notificarDistribuicao(VistoriaED vistoria)
+Notificações enviadas por e-mail:
+  - Fiscal responsável: data, turno e endereço da vistoria atribuída
+  - RT: confirmação de agendamento com data, turno e endereço
+  - Proprietário/RU: comunicado sobre data e turno da vistoria
+Template: NOTIFICACAO_DISTRIBUICAO_VISTORIA
+Dados utilizados: VistoriaED.dataPrevista, turnoPrevisto, LicenciamentoED.enderecoCompleto, nomeRT, nomeProprietario
+      </documentation>
+      <incoming>Flow_ExecutarDist_NotifDist</incoming>
+      <outgoing>Flow_NotifDist_VisualizarVistoria</outgoing>
+    </serviceTask>
+
+    <!-- ==================== FISCAL: EXECUÇÃO DA VISTORIA ==================== -->
+    <userTask id="Task_FISCAL_VisualizarVistoria"
+              name="Visualizar Vistoria&#10;Distribuída"
+              camunda:assignee="fiscal_cbmrs">
+      <documentation>
+UserTask — Fiscal CBM-RS
+REST: GET /adm/licenciamentos/vistorias/distribuidas
+Classe: ListaVistoriaRestImpl.listaDistribuidas()
+Autenticação: @SOEAuthRest
+Filtro: VistoriaED.idUsuarioSoe = idUsuarioSoe do fiscal logado
+StatusVistoria: SOLICITADA (ao receber distribuição) → EM_VISTORIA (ao abrir detalhe)
+DTO: LicenciamentoVistoriaDTO {
+  idLicenciamento, nroPpci, enderecoCompleto, dataPrevista, turnoPrevisto,
+  tipoVistoria, statusVistoria, nomeRT, nomeProprietario, idLaudoVistoria
+}
+O fiscal consulta os documentos do PPCI (plantas, memoriais) para preparação.
+Tabela: CBM_VISTORIA (WHERE id_usuario_soe = ? AND status = 'SOLICITADA')
+      </documentation>
+      <incoming>Flow_NotifDist_VisualizarVistoria</incoming>
+      <outgoing>Flow_VisualizarVistoria_UploadLaudo</outgoing>
+    </userTask>
+
+    <userTask id="Task_FISCAL_UploadLaudo"
+              name="Preencher / Revisar&#10;Laudo de Vistoria"
+              camunda:assignee="fiscal_cbmrs"
+              camunda:formKey="form:laudo-vistoria">
+      <documentation>
+UserTask — Fiscal CBM-RS
+*** ALVO DE LOOP — recebe tanto o caminho de rascunho quanto o de indeferimento ***
+REST: POST /adm/vistoria/{id}/laudo
+Classe: AtualizaVistoriaAdmRestImpl → LaudoVistoriaRN.incluirOuAlterarLaudo(LaudoVistoriaDTO, Long idVistoria)
+DTO Request: LaudoVistoriaDTO {
+  tipoLaudo: TipoLaudo (CONFORMIDADE | NAO_CONFORMIDADE | PARCIAL),
+  resultado: ResultadoVistoria (APROVADO | REPROVADO | INVIAVEL | RASCUNHO),
+  observacao: String (texto livre, max 4000),
+  dataVistoria: Calendar,
+  idArquivoLaudo: String (identificadorAlfresco — nodeRef Alfresco)
+}
+Alfresco: ArquivoED.identificadorAlfresco = "workspace://SpacesStore/{UUID}"
+Tabelas: CBM_LAUDO_VISTORIA (INSERT ou UPDATE), CBM_ARQUIVO (INSERT nodeRef)
+StatusVistoria: EM_VISTORIA (normal) ou EM_RASCUNHO (revisão após rascunho)
+Preenche: itens de conformidade, não conformidades, observações técnicas, fotos (nodeRef).
+      </documentation>
+      <incoming>Flow_VisualizarVistoria_UploadLaudo</incoming>
+      <incoming>Flow_Rascunho_UploadLaudo</incoming>
+      <incoming>Flow_Indefer_UploadLaudo</incoming>
+      <outgoing>Flow_UploadLaudo_Concluir</outgoing>
+    </userTask>
+
+    <userTask id="Task_FISCAL_ConcluirVistoria"
+              name="Concluir Vistoria&#10;(Submeter Resultado)"
+              camunda:assignee="fiscal_cbmrs">
+      <documentation>
+UserTask — Fiscal CBM-RS
+REST: PUT /adm/vistoria/{id}/concluir
+Classe: AtualizaVistoriaAdmRestImpl → VistoriaConclusaoRN.concluir()
+@Permissao(objeto="VISTORIA", acao="VISTORIAR")
+DTO Request: VistoriaConclusaoRequest {
+  resultado: ResultadoVistoria (APROVADO | REPROVADO | INVIAVEL | RASCUNHO),
+  idLaudoVistoria: Long (obrigatório),
+  observacao: String
+}
+Validações:
+  - Laudo obrigatório: idLaudoVistoria NOT NULL
+  - Arquivo laudo vinculado ao Alfresco: ArquivoED.identificadorAlfresco NOT NULL
+  - StatusVistoria deve ser EM_VISTORIA ou EM_RASCUNHO
+  - Fiscal logado deve ser o designado (idUsuarioSoe)
+StatusVistoria após submissão:
+  APROVADO/REPROVADO → EM_APROVACAO (aguarda homologação ADM)
+  RASCUNHO → EM_RASCUNHO (loop de revisão)
+  INVIAVEL → encaminha para P11 (análise de inviabilidade)
+      </documentation>
+      <incoming>Flow_UploadLaudo_Concluir</incoming>
+      <outgoing>Flow_Concluir_GW</outgoing>
+    </userTask>
+
+    <exclusiveGateway id="GW_ResultadoVistoria" name="Resultado da&#10;Vistoria?">
+      <documentation>
+Gateway Exclusivo — Avalia VistoriaConclusaoRequest.resultado (enum ResultadoVistoria)
+APROVADO  → VistoriaConclusaoRN.aprova()   | StatusVistoria: EM_VISTORIA → EM_APROVACAO
+REPROVADO → VistoriaConclusaoRN.reprova()  | StatusVistoria: EM_VISTORIA → EM_APROVACAO
+INVIAVEL  → marca inviabilidade            | SituacaoLicenciamento → ANALISE_INVIABILIDADE_PENDENTE
+RASCUNHO  → salva laudo parcial            | StatusVistoria: EM_VISTORIA → EM_RASCUNHO (LOOP)
+      </documentation>
+      <incoming>Flow_Concluir_GW</incoming>
+      <outgoing>Flow_GW_Aprovado</outgoing>
+      <outgoing>Flow_GW_Reprovado</outgoing>
+      <outgoing>Flow_GW_Inviavel</outgoing>
+      <outgoing>Flow_GW_Rascunho</outgoing>
+    </exclusiveGateway>
+
+    <userTask id="Task_FISCAL_SalvarRascunho"
+              name="Laudo Salvo como&#10;Rascunho — Revisar"
+              camunda:assignee="fiscal_cbmrs">
+      <documentation>
+UserTask — Fiscal CBM-RS (estado transitório de rascunho)
+REST: PUT /adm/vistoria/{id}/rascunho
+Classe: AtualizaVistoriaAdmRestImpl → VistoriaRN.salvarRascunho(Long idVistoria, Long idUsuarioSoe)
+StatusVistoria: EM_VISTORIA → EM_RASCUNHO
+Tabela: CBM_VISTORIA (UPDATE status = 'EM_RASCUNHO')
+O fiscal revisará e complementará o laudo. Não há marco registrado neste estado.
+→ LOOP BACK para Task_FISCAL_UploadLaudo (revisão/complementação do laudo)
+      </documentation>
+      <incoming>Flow_GW_Rascunho</incoming>
+      <outgoing>Flow_Rascunho_UploadLaudo</outgoing>
+    </userTask>
+
+    <!-- ==================== BE: REGISTRAR APROVAÇÃO ==================== -->
+    <serviceTask id="Task_BE_RegistrarAprovacao"
+                 name="Registrar Aprovação&#10;(Status → EM_APROVACAO)"
+                 camunda:class="br.gov.rs.cbm.sol.rn.VistoriaConclusaoRN">
+      <documentation>
+ServiceTask — Sistema SOL Backend
+Classe: VistoriaConclusaoRN.aprova(VistoriaConclusaoRequest, Long idVistoria, Long idUsuarioSoe)
+@Permissao(objeto="VISTORIA", acao="VISTORIAR")
+@TransactionAttribute(REQUIRED)
+Operações:
+  1. Valida StatusVistoria IN (EM_VISTORIA, EM_RASCUNHO)
+  2. StatusVistoria: EM_VISTORIA → EM_APROVACAO
+  3. VistoriaED.idUsuarioSoe = idUsuarioSoe (fiscal)
+  4. Associa LaudoVistoriaED: VistoriaED.laudoVistoria = LaudoVistoriaED por idLaudoVistoria
+  5. TrocaEstado licenciamento:
+     @TrocaEstadoLicenciamentoQualifier: AGUARDANDO_VISTORIA_PARA_EM_HOMOLOGACAO_VISTORIA
+     SituacaoLicenciamento: AGUARDANDO_VISTORIA → EM_HOMOLOGACAO_VISTORIA
+  6. INSERT CBM_MARCO: TipoMarco.VISTORIA_APPCI (normal) | TipoMarco.VISTORIA_RENOVACAO (renovação)
+  7. UPDATE CBM_VISTORIA (status, id_usuario_soe, id_laudo_vistoria)
+  8. Envers: CBM_VISTORIA_AUD, CBM_LICENCIAMENTO_AUD
+Tabelas: CBM_VISTORIA (UPDATE), CBM_MARCO (INSERT), CBM_LICENCIAMENTO (UPDATE)
+      </documentation>
+      <incoming>Flow_GW_Aprovado</incoming>
+      <outgoing>Flow_RegistrarAprovacao_ListarAprovadas</outgoing>
+    </serviceTask>
+
+    <!-- ==================== ADM: HOMOLOGAÇÃO ==================== -->
+    <userTask id="Task_ADM_ListarAprovadas"
+              name="Listar Vistorias&#10;Aguardando Homologação"
+              camunda:assignee="adm_cbmrs">
+      <documentation>
+UserTask — ADM CBM-RS
+REST: GET /adm/licenciamentos/vistorias/aprovadas
+Classe: ListaVistoriaRestImpl.listaAprovadas()
+Autenticação: @SOEAuthRest
+Permissão: @Permissao(objeto="VISTORIA", acao="HOMOLOGAR")
+StatusVistoria filtrado: EM_APROVACAO
+DTO: LicenciamentoVistoriaDTO com nomeRt, nomeProprietario, nomeFiscal, dataVistoria, tipoVistoria, resultado laudo
+Tabela: CBM_VISTORIA (JOIN CBM_LICENCIAMENTO WHERE status = 'EM_APROVACAO')
+O ADM visualiza o laudo (PDF via Alfresco) antes de decidir.
+      </documentation>
+      <incoming>Flow_RegistrarAprovacao_ListarAprovadas</incoming>
+      <outgoing>Flow_ListarAprovadas_AnalisarHomolog</outgoing>
+    </userTask>
+
+    <userTask id="Task_ADM_AnalisarHomologacao"
+              name="Analisar e Decidir&#10;Homologação"
+              camunda:assignee="adm_cbmrs">
+      <documentation>
+UserTask — ADM CBM-RS
+O ADM revisa o laudo de vistoria e decide entre DEFERIR ou INDEFERIR.
+
+Para DEFERIR:
+  REST: PUT /adm/vistoria/{id}/deferir
+  Classe: AtualizaVistoriaAdmRestImpl → VistoriaHomologacaoAdmRN.defere()
+  DTO: (sem corpo — apenas idVistoria na URL)
+
+Para INDEFERIR:
+  REST: PUT /adm/vistoria/{id}/indeferir
+  Classe: AtualizaVistoriaAdmRestImpl → VistoriaHomologacaoAdmRN.indefere()
+  DTO Request: VistoriaIndeferimentoRequest {
+    motivoIndeferimento: String (TEXT — max 4000, obrigatório),
+    dataNovaVistoria: Calendar (opcional — sugestão de reagendamento)
+  }
+
+Permissão: @Permissao(objeto="VISTORIA", acao="HOMOLOGAR")
+Tabela: CBM_VISTORIA (leitura para análise)
+      </documentation>
+      <incoming>Flow_ListarAprovadas_AnalisarHomolog</incoming>
+      <outgoing>Flow_AnalisarHomolog_GWDecisao</outgoing>
+    </userTask>
+
+    <exclusiveGateway id="GW_DecisaoHomologacao" name="Decisão de&#10;Homologação?">
+      <documentation>
+Gateway Exclusivo — Decisão do ADM CBM-RS sobre homologação da vistoria
+
+DEFERIR → VistoriaHomologacaoAdmRN.defere()
+  StatusVistoria: EM_APROVACAO → APROVADO
+  TipoMarco: HOMOLOG_VISTORIA_DEFERIDO (normal) | HOMOLOG_VISTORIA_RENOV_DEFERIDO (renovação)
+
+INDEFERIR → VistoriaHomologacaoAdmRN.indefere()
+  StatusVistoria: EM_APROVACAO → EM_REDISTRIBUICAO
+  VistoriaED.indeferimentoHomolog = motivoIndeferimento (VARCHAR 4000)
+  VistoriaED.idUsuarioSoeHomolog = idUsuarioSoe do ADM
+  TipoMarco: HOMOLOG_VISTORIA_INDEFERIDO (normal) | HOMOLOG_VISTORIA_RENOV_INDEFERIDO (renovação)
+  → Nova distribuição necessária (LOOP BACK para fiscal)
+      </documentation>
+      <incoming>Flow_AnalisarHomolog_GWDecisao</incoming>
+      <outgoing>Flow_GWDecisao_Deferir</outgoing>
+      <outgoing>Flow_GWDecisao_Indeferir</outgoing>
+    </exclusiveGateway>
+
+    <!-- ==================== BE: INDEFERIMENTO (LOOP BACK) ==================== -->
+    <serviceTask id="Task_BE_RegistrarIndeferimento"
+                 name="Registrar Indeferimento&#10;(→ Redistribuição)"
+                 camunda:class="br.gov.rs.cbm.sol.rn.VistoriaHomologacaoAdmRN">
+      <documentation>
+ServiceTask — Sistema SOL Backend
+Classe: VistoriaHomologacaoAdmRN.indefere(VistoriaIndeferimentoRequest, Long idVistoria, Long idUsuarioSoeHomolog)
+@Permissao(objeto="VISTORIA", acao="HOMOLOGAR")
+@TransactionAttribute(REQUIRED)
+Operações:
+  1. Valida StatusVistoria == EM_APROVACAO
+  2. StatusVistoria: EM_APROVACAO → EM_REDISTRIBUICAO
+  3. VistoriaED.idUsuarioSoeHomolog = idUsuarioSoeHomolog (ADM)
+  4. VistoriaED.indeferimentoHomolog = motivoIndeferimento (TEXT, max 4000)
+  5. TrocaEstado licenciamento:
+     @TrocaEstadoLicenciamentoQualifier: EM_HOMOLOGACAO_VISTORIA_PARA_AGUARDANDO_DISTRIBUICAO
+     SituacaoLicenciamento: EM_HOMOLOGACAO_VISTORIA → AGUARDANDO_DISTRIBUICAO
+  6. INSERT CBM_MARCO: TipoMarco.HOMOLOG_VISTORIA_INDEFERIDO
+  7. Notificação ao Fiscal: e-mail com motivo do indeferimento
+  8. Envers: CBM_VISTORIA_AUD, CBM_LICENCIAMENTO_AUD
+→ LOOP BACK para Task_FISCAL_UploadLaudo (nova vistoria após redistribuição)
+Tabelas: CBM_VISTORIA (UPDATE), CBM_MARCO (INSERT), CBM_LICENCIAMENTO (UPDATE)
+      </documentation>
+      <incoming>Flow_GWDecisao_Indeferir</incoming>
+      <outgoing>Flow_Indefer_UploadLaudo</outgoing>
+    </serviceTask>
+
+    <!-- ==================== BE: REPROVAÇÃO / CIV ==================== -->
+    <serviceTask id="Task_BE_RegistrarReprovacao"
+                 name="Registrar Reprovação&#10;(Status → EM_APROVACAO)"
+                 camunda:class="br.gov.rs.cbm.sol.rn.VistoriaConclusaoRN">
+      <documentation>
+ServiceTask — Sistema SOL Backend
+Classe: VistoriaConclusaoRN.reprova(VistoriaConclusaoRequest, Long idVistoria, Long idUsuarioSoe)
+@Permissao(objeto="VISTORIA", acao="VISTORIAR")
+@TransactionAttribute(REQUIRED)
+Operações:
+  1. Valida StatusVistoria IN (EM_VISTORIA, EM_RASCUNHO)
+  2. StatusVistoria: EM_VISTORIA → EM_APROVACAO (intermediário antes de reprovação)
+  3. VistoriaED.idUsuarioSoe = idUsuarioSoe (fiscal)
+  4. Associa LaudoVistoriaED (FK id_laudo_vistoria)
+  5. TrocaEstado licenciamento:
+     @TrocaEstadoLicenciamentoQualifier: AGUARDANDO_VISTORIA_PARA_EM_HOMOLOGACAO_VISTORIA
+  6. INSERT CBM_MARCO: TipoMarco.VISTORIA_CIV (normal) | TipoMarco.VISTORIA_RENOVACAO_CIV (renovação)
+  7. UPDATE CBM_VISTORIA
+  8. Envers: CBM_VISTORIA_AUD, CBM_LICENCIAMENTO_AUD
+Tabelas: CBM_VISTORIA (UPDATE), CBM_MARCO (INSERT), CBM_LICENCIAMENTO (UPDATE)
+      </documentation>
+      <incoming>Flow_GW_Reprovado</incoming>
+      <outgoing>Flow_RegistrarReprovacao_GerarCIV</outgoing>
+    </serviceTask>
+
+    <serviceTask id="Task_BE_GerarCIV"
+                 name="Gerar Documento CIV&#10;(PDF → Alfresco)"
+                 camunda:class="br.gov.rs.cbm.sol.rn.VistoriaDocumentoCivRN">
+      <documentation>
+ServiceTask — Sistema SOL Backend
+Classe: VistoriaDocumentoCivRN.incluirArquivo(Long idLicenciamento)
+Operações:
+  1. Gera PDF do CIV (Comunicado de Inconformidade na Vistoria):
+     - Conteúdo: dados da vistoria, itens reprovados, não conformidades, prazo para adequação
+     - Formatação via TextoFormatadoED (@Lob CLOB em CBM_TEXTO_FORMATADO)
+     - Template autenticado: carimbo CBM-RS, número do CIV, data
+  2. Upload do PDF gerado para Alfresco:
+     ArquivoED.identificadorAlfresco = "workspace://SpacesStore/{UUID}"
+     Pasta Alfresco: /sol/licenciamento/{nroPpci}/vistoria/civ/
+  3. INSERT CBM_ARQUIVO (id_licenciamento, identificador_alfresco, tipo='CIV')
+  4. Associa ArquivoED ao LicenciamentoED
+Tabelas: CBM_ARQUIVO (INSERT), CBM_TEXTO_FORMATADO (INSERT/SELECT)
+Alfresco: REST API upload (Content Management Engine)
+      </documentation>
+      <incoming>Flow_RegistrarReprovacao_GerarCIV</incoming>
+      <outgoing>Flow_GerarCIV_TransicionarCIV</outgoing>
+    </serviceTask>
+
+    <serviceTask id="Task_BE_TransicionarCienciaCIV"
+                 name="Transicionar para&#10;AGUARDANDO_CIENCIA_CIV"
+                 camunda:class="br.gov.rs.cbm.sol.rn.CivCienciaCidadaoRN">
+      <documentation>
+ServiceTask — Sistema SOL Backend
+Classe: CivCienciaCidadaoRN (implementa @LicenciamentoCienciaQualifier(CIV))
+Método: transicionarParaCienciaCIV(Long idLicenciamento)
+Operações:
+  1. TrocaEstado licenciamento:
+     @TrocaEstadoLicenciamentoQualifier: EM_HOMOLOGACAO_VISTORIA_PARA_AGUARDANDO_CIENCIA_CIV
+     SituacaoLicenciamento: EM_HOMOLOGACAO_VISTORIA → AGUARDANDO_CIENCIA_CIV
+  2. getTipoMarco() →
+     TipoMarco.CIENCIA_CIV (normal) | TipoMarco.CIENCIA_CIV_RENOVACAO (renovação)
+  3. INSERT CBM_MARCO: TipoMarco.CIENCIA_CIV
+  4. StatusVistoria: EM_APROVACAO → REPROVADO (confirmação de reprovação)
+  5. Notificação ao RT e proprietário: CIV disponível para ciência no portal SOL
+  6. UPDATE CBM_VISTORIA (status = 'REPROVADO')
+Tabelas: CBM_LICENCIAMENTO (UPDATE situacao), CBM_VISTORIA (UPDATE status), CBM_MARCO (INSERT)
+      </documentation>
+      <incoming>Flow_GerarCIV_TransicionarCIV</incoming>
+      <outgoing>Flow_TransicionarCIV_VisualizarCIV</outgoing>
+    </serviceTask>
+
+    <!-- ==================== RT: CIÊNCIA DO CIV ==================== -->
+    <userTask id="Task_RT_VisualizarCIV"
+              name="Visualizar CIV&#10;(Comunicado Inconformidade)"
+              camunda:assignee="rt_cidadao">
+      <documentation>
+UserTask — Cidadão / RT (Responsável Técnico)
+REST: GET /licenciamento/{id}/documentos/civ
+O RT ou proprietário visualiza o documento CIV gerado.
+Documento acessado via Alfresco: ArquivoED.identificadorAlfresco (nodeRef) tipo CIV.
+SituacaoLicenciamento: AGUARDANDO_CIENCIA_CIV
+Notificação prévia enviada por e-mail com link para acesso ao portal SOL.
+Autenticação: @SOEAuthRest + @AutorizaEnvolvido (RT ou RU do licenciamento)
+O CIV detalha: itens reprovados, não conformidades encontradas, orientações para adequação.
+      </documentation>
+      <incoming>Flow_TransicionarCIV_VisualizarCIV</incoming>
+      <outgoing>Flow_VisualizarCIV_ConfirmarCiencia</outgoing>
+    </userTask>
+
+    <userTask id="Task_RT_ConfirmarCienciaCIV"
+              name="Confirmar Ciência&#10;do CIV"
+              camunda:assignee="rt_cidadao">
+      <documentation>
+UserTask — Cidadão / RT
+REST: PUT /licenciamento/{id}/ciencia-civ
+Classe: CivCienciaCidadaoRN
+O RT/cidadão confirma formalmente que tomou ciência do CIV no sistema SOL.
+Autenticação: @SOEAuthRest
+Autorização: @AutorizaEnvolvido + SegurancaEnvolvidoInterceptor
+  → Usuário logado deve ser RT ou RU vinculado ao licenciamento (EnvolvidoED)
+Prazo: conforme LicenciamentoCidadaoRN.PRAZO_SOLICITAR_RECURSO_1_INSTANCIA (30 dias)
+Após confirmar, pode solicitar recurso de 1a instância (P05) se discordar.
+      </documentation>
+      <incoming>Flow_VisualizarCIV_ConfirmarCiencia</incoming>
+      <outgoing>Flow_ConfirmarCiencia_RegistrarCiencia</outgoing>
+    </userTask>
+
+    <!-- ==================== BE: REGISTRAR CIÊNCIA DO CIV ==================== -->
+    <serviceTask id="Task_BE_RegistrarCienciaCIV"
+                 name="Registrar Ciência do CIV&#10;(Encerrar — SituacaoLic: CIV)"
+                 camunda:class="br.gov.rs.cbm.sol.rn.CivCienciaCidadaoRN">
+      <documentation>
+ServiceTask — Sistema SOL Backend
+Classe: CivCienciaCidadaoRN.registrarCiencia(Long idLicenciamento, Long idUsuarioSoe)
+@LicenciamentoCienciaQualifier(CIV)
+@TransactionAttribute(REQUIRED)
+Operações:
+  1. TrocaEstado licenciamento:
+     @TrocaEstadoLicenciamentoQualifier: AGUARDANDO_CIENCIA_CIV_PARA_CIV
+     SituacaoLicenciamento: AGUARDANDO_CIENCIA_CIV → CIV
+  2. INSERT CBM_MARCO: TipoMarco.CIENCIA_CIV (atualizado com dthCiencia = Calendar.getInstance())
+  3. UPDATE CBM_VISTORIA: dth_ciencia_civ = now() (StatusVistoria já = REPROVADO)
+  4. Notificação de encerramento ao RT e proprietário
+SituacaoLicenciamento final: CIV
+StatusVistoria final: REPROVADO
+O RT pode iniciar P05 (recurso) ou submeter novo PPCI com adequações.
+Tabelas: CBM_LICENCIAMENTO (UPDATE), CBM_VISTORIA (UPDATE), CBM_MARCO (INSERT)
+      </documentation>
+      <incoming>Flow_ConfirmarCiencia_RegistrarCiencia</incoming>
+      <outgoing>Flow_RegistrarCiencia_EndReprovado</outgoing>
+    </serviceTask>
+
+    <!-- ==================== BE: INVIABILIDADE ==================== -->
+    <serviceTask id="Task_BE_MarcarInviavel"
+                 name="Marcar Inviabilidade&#10;(Encaminhar P11)"
+                 camunda:class="br.gov.rs.cbm.sol.rn.VistoriaConclusaoRN">
+      <documentation>
+ServiceTask — Sistema SOL Backend
+Classe: VistoriaConclusaoRN.marcarInviabilidade(Long idVistoria, Long idLicenciamento)
+Operações:
+  1. StatusVistoria: EM_VISTORIA → (estado inviabilidade)
+  2. TrocaEstado licenciamento:
+     SituacaoLicenciamento: AGUARDANDO_VISTORIA → ANALISE_INVIABILIDADE_PENDENTE
+  3. INSERT CBM_MARCO: (marco de inviabilidade)
+  4. Notificação à equipe técnica CBM-RS
+Inviabilidade: vistoria não pode ser realizada nas condições atuais do imóvel.
+→ Encaminha para Processo P11 — Análise de Inviabilidade
+Tabelas: CBM_VISTORIA (UPDATE), CBM_LICENCIAMENTO (UPDATE), CBM_MARCO (INSERT)
+      </documentation>
+      <incoming>Flow_GW_Inviavel</incoming>
+      <outgoing>Flow_MarcarInviavel_EndInviavel</outgoing>
+    </serviceTask>
+
+    <!-- ==================== BE: DEFERIMENTO / APPCI ==================== -->
+    <serviceTask id="Task_BE_HomologarDeferimento"
+                 name="Homologar Deferimento&#10;(StatusVistoria → APROVADO)"
+                 camunda:class="br.gov.rs.cbm.sol.rn.VistoriaHomologacaoAdmRN">
+      <documentation>
+ServiceTask — Sistema SOL Backend
+Classe: VistoriaHomologacaoAdmRN.defere(Long idVistoria, Long idUsuarioSoeHomolog)
+@Permissao(objeto="VISTORIA", acao="HOMOLOGAR")
+@TransactionAttribute(REQUIRED)
+Operações:
+  1. Valida StatusVistoria == EM_APROVACAO
+  2. StatusVistoria: EM_APROVACAO → APROVADO
+  3. VistoriaED.idUsuarioSoeHomolog = idUsuarioSoeHomolog (ADM homologador)
+  4. TrocaEstado licenciamento:
+     Normal: @TrocaEstadoLicenciamentoQualifier: EM_HOMOLOGACAO_VISTORIA_PARA_AGUARDANDO_PRPCI
+     Renovação: @TrocaEstadoLicenciamentoQualifier: EM_HOMOLOGACAO_VISTORIA_RENOVACAO_PARA_...
+  5. INSERT CBM_MARCO: TipoMarco.HOMOLOG_VISTORIA_DEFERIDO
+     (ou HOMOLOG_VISTORIA_RENOV_DEFERIDO para renovação)
+  6. UPDATE CBM_VISTORIA (status = 'APROVADO', id_usuario_soe_homolog)
+  7. Envers: CBM_VISTORIA_AUD, CBM_LICENCIAMENTO_AUD
+Tabelas: CBM_VISTORIA (UPDATE), CBM_MARCO (INSERT), CBM_LICENCIAMENTO (UPDATE)
+      </documentation>
+      <incoming>Flow_GWDecisao_Deferir</incoming>
+      <outgoing>Flow_HomologarDeferimento_GerarAPPCI</outgoing>
+    </serviceTask>
+
+    <serviceTask id="Task_BE_GerarAPPCI"
+                 name="Gerar Documento APPCI&#10;(PDF → Alfresco)"
+                 camunda:class="br.gov.rs.cbm.sol.rn.VistoriaDocumentoAppciRN">
+      <documentation>
+ServiceTask — Sistema SOL Backend
+Classe: VistoriaDocumentoAppciRN.incluirArquivo(Long idLicenciamento)
+Operações:
+  1. AppciRN.consultaUltimoAppci(idLicenciamento) → verifica existência anterior
+  2. Cria novo AppciED (CBM_APPCI):
+     - dataValidade: Calendar.getInstance() + 12 meses
+     - versao: último versão + 1 (sequencial)
+     - localizacao: FK para LocalizacaoED (CBM_LOCALIZACAO)
+     - INSERT CBM_APPCI (SEQ_CBM_APPCI.nextval)
+  3. Gera PDF do APPCI (Alvará de Prevenção e Proteção Contra Incêndio):
+     - Conteúdo: dados do imóvel, validade, fiscal e ADM responsáveis, PPCI aprovado
+     - Autenticado com QR Code para verificação
+  4. Upload para Alfresco:
+     ArquivoED.identificadorAlfresco = "workspace://SpacesStore/{UUID}"
+     Pasta: /sol/licenciamento/{nroPpci}/vistoria/appci/
+  5. INSERT CBM_ARQUIVO (id_licenciamento, identificador_alfresco, tipo='APPCI')
+Tabelas: CBM_APPCI (INSERT), CBM_ARQUIVO (INSERT), CBM_LOCALIZACAO (SELECT)
+      </documentation>
+      <incoming>Flow_HomologarDeferimento_GerarAPPCI</incoming>
+      <outgoing>Flow_GerarAPPCI_GWTipoVistoria</outgoing>
+    </serviceTask>
+
+    <exclusiveGateway id="GW_TipoVistoria" name="Tipo de&#10;Vistoria?">
+      <documentation>
+Gateway Exclusivo — Diferencia fluxo de renovação do fluxo normal
+Avalia: VistoriaED.tipoVistoria (enum TipoVistoria)
+
+DEFINITIVA(1) ou PARCIAL(2) — fluxo normal:
+  TrocaEstado: EM_HOMOLOGACAO_VISTORIA → AGUARDANDO_PRPCI
+  TipoMarco: VISTORIA_APPCI, CIENCIA_APPCI
+
+RENOVACAO(3) — fluxo de renovação:
+  TrocaEstado: EM_HOMOLOGACAO_VISTORIA_RENOVACAO → AGUARDANDO_ACEITE_PRPCI_RENOVACAO
+  TipoMarco: VISTORIA_RENOVACAO, CIENCIA_APPCI (com flag renovação)
+
+Condição de renovação: tipoVistoria == TipoVistoria.VISTORIA_RENOVACAO
+      </documentation>
+      <incoming>Flow_GerarAPPCI_GWTipoVistoria</incoming>
+      <outgoing>Flow_GWTipo_Normal</outgoing>
+      <outgoing>Flow_GWTipo_Renovacao</outgoing>
+    </exclusiveGateway>
+
+    <!-- ==================== BE: FLUXO NORMAL (DEFINITIVA/PARCIAL) ==================== -->
+    <serviceTask id="Task_BE_TransicionarPrpci"
+                 name="Transicionar para&#10;AGUARDANDO_PRPCI"
+                 camunda:class="br.gov.rs.cbm.sol.rn.TrocaEstadoLicenciamentoBean">
+      <documentation>
+ServiceTask — Sistema SOL Backend (fluxo normal: DEFINITIVA/PARCIAL)
+@TrocaEstadoLicenciamentoQualifier: EM_HOMOLOGACAO_VISTORIA_PARA_AGUARDANDO_PRPCI
+Operações:
+  1. SituacaoLicenciamento: EM_HOMOLOGACAO_VISTORIA → AGUARDANDO_PRPCI
+  2. INSERT CBM_MARCO: TipoMarco.CIENCIA_APPCI
+  3. VistoriaED.aceitePrpci = 'N' (SimNaoBooleanConverter — aguardando aceite do proprietário)
+  4. Notificação ao RT/Proprietário: APPCI emitido, comparecer ao CBM-RS para retirar o PRPCI
+Tabelas: CBM_LICENCIAMENTO (UPDATE situacao), CBM_VISTORIA (UPDATE aceite_prpci), CBM_MARCO (INSERT)
+      </documentation>
+      <incoming>Flow_GWTipo_Normal</incoming>
+      <outgoing>Flow_TransicionarPrpci_IntegrarLAI</outgoing>
+    </serviceTask>
+
+    <serviceTask id="Task_BE_IntegrarLAI"
+                 name="Integrar LAI&#10;(Pesquisa de Satisfação)"
+                 camunda:class="br.gov.rs.cbm.sol.rn.LicenciamentoIntegracaoLaiRN">
+      <documentation>
+ServiceTask — Sistema SOL Backend
+Classe: LicenciamentoIntegracaoLaiRN.cadastrarDemandaUnicaVistoria(Long idLicenciamento)
+Integração com sistema LAI (Lei de Acesso à Informação / pesquisa de satisfação):
+  1. Cadastra demanda única de pesquisa de satisfação para o licenciamento
+  2. Envia link de pesquisa ao cidadão/RT por e-mail
+  3. Registra idDemandaLai em LicenciamentoED (CBM_LICENCIAMENTO.id_demanda_lai)
+Condição: executado apenas se integração LAI habilitada (parâmetro de configuração)
+@Asynchronous — executado de forma assíncrona (não bloqueia o fluxo principal)
+Tabela: CBM_LICENCIAMENTO (UPDATE id_demanda_lai)
+      </documentation>
+      <incoming>Flow_TransicionarPrpci_IntegrarLAI</incoming>
+      <outgoing>Flow_IntegrarLAI_EndAprovado</outgoing>
+    </serviceTask>
+
+    <!-- ==================== BE: FLUXO RENOVAÇÃO ==================== -->
+    <serviceTask id="Task_BE_TransicionarAceitePrpci"
+                 name="Transicionar para&#10;AGUARDANDO_ACEITE_PRPCI_RENOV"
+                 camunda:class="br.gov.rs.cbm.sol.rn.TrocaEstadoLicenciamentoBean">
+      <documentation>
+ServiceTask — Sistema SOL Backend (fluxo renovação: RENOVACAO=3)
+@TrocaEstadoLicenciamentoQualifier: EM_HOMOLOGACAO_VISTORIA_RENOVACAO_PARA_AGUARDANDO_ACEITE_PRPCI
+Operações:
+  1. SituacaoLicenciamento: EM_HOMOLOGACAO_VISTORIA_RENOVACAO → AGUARDANDO_ACEITE_PRPCI_RENOVACAO
+  2. INSERT CBM_MARCO: TipoMarco.CIENCIA_APPCI (com indicação de renovação)
+  3. VistoriaED.aceitePrpci = 'N' (SimNaoBooleanConverter)
+  4. Notificação ao RT/Proprietário: APPCI de renovação emitido
+Tabelas: CBM_LICENCIAMENTO (UPDATE), CBM_VISTORIA (UPDATE), CBM_MARCO (INSERT)
+      </documentation>
+      <incoming>Flow_GWTipo_Renovacao</incoming>
+      <outgoing>Flow_TransicionarAceitePrpci_IntegrarLAI_Renov</outgoing>
+    </serviceTask>
+
+    <serviceTask id="Task_BE_IntegrarLAI_Renov"
+                 name="Integrar LAI — Renovação&#10;(Pesquisa de Satisfação)"
+                 camunda:class="br.gov.rs.cbm.sol.rn.LicenciamentoIntegracaoLaiRN">
+      <documentation>
+ServiceTask — Sistema SOL Backend (renovação)
+Classe: LicenciamentoIntegracaoLaiRN.cadastrarDemandaUnicaVistoria(Long idLicenciamento)
+Idêntico ao fluxo normal. Cadastra demanda LAI para pesquisa de satisfação na renovação.
+@Asynchronous — executado de forma assíncrona.
+Tabela: CBM_LICENCIAMENTO (UPDATE id_demanda_lai)
+      </documentation>
+      <incoming>Flow_TransicionarAceitePrpci_IntegrarLAI_Renov</incoming>
+      <outgoing>Flow_IntegrarLAI_Renov_EndAprovadoRenov</outgoing>
+    </serviceTask>
+
+    <!-- ==================== END EVENTS ==================== -->
+    <endEvent id="End_Aprovado" name="Vistoria Aprovada&#10;(AGUARDANDO_PRPCI)">
+      <documentation>
+Fim do processo P07 — Vistoria aprovada, fluxo normal (DEFINITIVA/PARCIAL).
+SituacaoLicenciamento final: AGUARDANDO_PRPCI
+StatusVistoria final: APROVADO
+Marcos registrados: DISTRIBUICAO_VISTORIA, VISTORIA_APPCI, HOMOLOG_VISTORIA_DEFERIDO, CIENCIA_APPCI
+Próximo processo: P08 — Emissão do PRPCI (Proprietário retira o Alvará PRPCI no CBM-RS).
+      </documentation>
+      <incoming>Flow_IntegrarLAI_EndAprovado</incoming>
+    </endEvent>
+
+    <endEvent id="End_AprovadoRenov" name="Renovação Aprovada&#10;(AGUARDANDO_ACEITE_PRPCI_RENOV)">
+      <documentation>
+Fim do processo P07 — Vistoria de renovação aprovada.
+SituacaoLicenciamento final: AGUARDANDO_ACEITE_PRPCI_RENOVACAO
+StatusVistoria final: APROVADO
+Marcos registrados: DISTRIBUICAO_VISTORIA, VISTORIA_RENOVACAO, HOMOLOG_VISTORIA_RENOV_DEFERIDO, CIENCIA_APPCI
+Próximo: aceite do PRPCI de renovação pelo Proprietário/RU.
+      </documentation>
+      <incoming>Flow_IntegrarLAI_Renov_EndAprovadoRenov</incoming>
+    </endEvent>
+
+    <endEvent id="End_Reprovado" name="Vistoria Reprovada&#10;(SituacaoLic: CIV)">
+      <documentation>
+Fim do processo P07 — Vistoria reprovada; RT/cidadão tomou ciência do CIV.
+SituacaoLicenciamento final: CIV
+StatusVistoria final: REPROVADO
+Marcos registrados: DISTRIBUICAO_VISTORIA, VISTORIA_CIV, CIENCIA_CIV
+O PPCI retorna para análise de adequações (RT pode submeter novo PPCI ou solicitar recurso P05).
+      </documentation>
+      <incoming>Flow_RegistrarCiencia_EndReprovado</incoming>
+    </endEvent>
+
+    <endEvent id="End_Inviavel" name="Vistoria Inviável&#10;(ANALISE_INVIABILIDADE_PENDENTE)">
+      <documentation>
+Fim do processo P07 — Vistoria não pode ser realizada (inviabilidade técnica ou estrutural).
+SituacaoLicenciamento final: ANALISE_INVIABILIDADE_PENDENTE
+Encaminha para Processo P11 — Análise de Inviabilidade pelo CBM-RS.
+      </documentation>
+      <incoming>Flow_MarcarInviavel_EndInviavel</incoming>
+    </endEvent>
+
+    <!-- ==================== SEQUENCE FLOWS ==================== -->
+    <sequenceFlow id="Flow_Start_Listar"
+                  sourceRef="Start_P07"
+                  targetRef="Task_ADM_ListarDistribuicao"/>
+
+    <sequenceFlow id="Flow_Listar_Config"
+                  sourceRef="Task_ADM_ListarDistribuicao"
+                  targetRef="Task_ADM_ConfigurarDistribuicao"/>
+
+    <sequenceFlow id="Flow_Config_ExecutarDist"
+                  sourceRef="Task_ADM_ConfigurarDistribuicao"
+                  targetRef="Task_BE_ExecutarDistribuicao"/>
+
+    <sequenceFlow id="Flow_ExecutarDist_NotifDist"
+                  sourceRef="Task_BE_ExecutarDistribuicao"
+                  targetRef="Task_BE_NotificarDistribuicao"/>
+
+    <sequenceFlow id="Flow_NotifDist_VisualizarVistoria"
+                  sourceRef="Task_BE_NotificarDistribuicao"
+                  targetRef="Task_FISCAL_VisualizarVistoria"/>
+
+    <sequenceFlow id="Flow_VisualizarVistoria_UploadLaudo"
+                  sourceRef="Task_FISCAL_VisualizarVistoria"
+                  targetRef="Task_FISCAL_UploadLaudo"/>
+
+    <sequenceFlow id="Flow_UploadLaudo_Concluir"
+                  sourceRef="Task_FISCAL_UploadLaudo"
+                  targetRef="Task_FISCAL_ConcluirVistoria"/>
+
+    <sequenceFlow id="Flow_Concluir_GW"
+                  sourceRef="Task_FISCAL_ConcluirVistoria"
+                  targetRef="GW_ResultadoVistoria"/>
+
+    <sequenceFlow id="Flow_GW_Rascunho" name="RASCUNHO"
+                  sourceRef="GW_ResultadoVistoria"
+                  targetRef="Task_FISCAL_SalvarRascunho">
+      <conditionExpression xsi:type="tFormalExpression">resultado == ResultadoVistoria.RASCUNHO</conditionExpression>
+    </sequenceFlow>
+
+    <sequenceFlow id="Flow_GW_Aprovado" name="APROVADO"
+                  sourceRef="GW_ResultadoVistoria"
+                  targetRef="Task_BE_RegistrarAprovacao">
+      <conditionExpression xsi:type="tFormalExpression">resultado == ResultadoVistoria.APROVADO</conditionExpression>
+    </sequenceFlow>
+
+    <sequenceFlow id="Flow_GW_Reprovado" name="REPROVADO"
+                  sourceRef="GW_ResultadoVistoria"
+                  targetRef="Task_BE_RegistrarReprovacao">
+      <conditionExpression xsi:type="tFormalExpression">resultado == ResultadoVistoria.REPROVADO</conditionExpression>
+    </sequenceFlow>
+
+    <sequenceFlow id="Flow_GW_Inviavel" name="INVIAVEL"
+                  sourceRef="GW_ResultadoVistoria"
+                  targetRef="Task_BE_MarcarInviavel">
+      <conditionExpression xsi:type="tFormalExpression">resultado == ResultadoVistoria.INVIAVEL</conditionExpression>
+    </sequenceFlow>
+
+    <sequenceFlow id="Flow_Rascunho_UploadLaudo" name="Revisar Laudo"
+                  sourceRef="Task_FISCAL_SalvarRascunho"
+                  targetRef="Task_FISCAL_UploadLaudo"/>
+
+    <sequenceFlow id="Flow_RegistrarAprovacao_ListarAprovadas"
+                  sourceRef="Task_BE_RegistrarAprovacao"
+                  targetRef="Task_ADM_ListarAprovadas"/>
+
+    <sequenceFlow id="Flow_RegistrarReprovacao_GerarCIV"
+                  sourceRef="Task_BE_RegistrarReprovacao"
+                  targetRef="Task_BE_GerarCIV"/>
+
+    <sequenceFlow id="Flow_MarcarInviavel_EndInviavel"
+                  sourceRef="Task_BE_MarcarInviavel"
+                  targetRef="End_Inviavel"/>
+
+    <sequenceFlow id="Flow_ListarAprovadas_AnalisarHomolog"
+                  sourceRef="Task_ADM_ListarAprovadas"
+                  targetRef="Task_ADM_AnalisarHomologacao"/>
+
+    <sequenceFlow id="Flow_AnalisarHomolog_GWDecisao"
+                  sourceRef="Task_ADM_AnalisarHomologacao"
+                  targetRef="GW_DecisaoHomologacao"/>
+
+    <sequenceFlow id="Flow_GWDecisao_Deferir" name="DEFERIR"
+                  sourceRef="GW_DecisaoHomologacao"
+                  targetRef="Task_BE_HomologarDeferimento">
+      <conditionExpression xsi:type="tFormalExpression">decisao == "DEFERIR"</conditionExpression>
+    </sequenceFlow>
+
+    <sequenceFlow id="Flow_GWDecisao_Indeferir" name="INDEFERIR"
+                  sourceRef="GW_DecisaoHomologacao"
+                  targetRef="Task_BE_RegistrarIndeferimento">
+      <conditionExpression xsi:type="tFormalExpression">decisao == "INDEFERIR"</conditionExpression>
+    </sequenceFlow>
+
+    <sequenceFlow id="Flow_Indefer_UploadLaudo" name="Nova Vistoria"
+                  sourceRef="Task_BE_RegistrarIndeferimento"
+                  targetRef="Task_FISCAL_UploadLaudo"/>
+
+    <sequenceFlow id="Flow_GerarCIV_TransicionarCIV"
+                  sourceRef="Task_BE_GerarCIV"
+                  targetRef="Task_BE_TransicionarCienciaCIV"/>
+
+    <sequenceFlow id="Flow_TransicionarCIV_VisualizarCIV"
+                  sourceRef="Task_BE_TransicionarCienciaCIV"
+                  targetRef="Task_RT_VisualizarCIV"/>
+
+    <sequenceFlow id="Flow_VisualizarCIV_ConfirmarCiencia"
+                  sourceRef="Task_RT_VisualizarCIV"
+                  targetRef="Task_RT_ConfirmarCienciaCIV"/>
+
+    <sequenceFlow id="Flow_ConfirmarCiencia_RegistrarCiencia"
+                  sourceRef="Task_RT_ConfirmarCienciaCIV"
+                  targetRef="Task_BE_RegistrarCienciaCIV"/>
+
+    <sequenceFlow id="Flow_RegistrarCiencia_EndReprovado"
+                  sourceRef="Task_BE_RegistrarCienciaCIV"
+                  targetRef="End_Reprovado"/>
+
+    <sequenceFlow id="Flow_HomologarDeferimento_GerarAPPCI"
+                  sourceRef="Task_BE_HomologarDeferimento"
+                  targetRef="Task_BE_GerarAPPCI"/>
+
+    <sequenceFlow id="Flow_GerarAPPCI_GWTipoVistoria"
+                  sourceRef="Task_BE_GerarAPPCI"
+                  targetRef="GW_TipoVistoria"/>
+
+    <sequenceFlow id="Flow_GWTipo_Normal" name="DEFINITIVA / PARCIAL"
+                  sourceRef="GW_TipoVistoria"
+                  targetRef="Task_BE_TransicionarPrpci">
+      <conditionExpression xsi:type="tFormalExpression">tipoVistoria != TipoVistoria.VISTORIA_RENOVACAO</conditionExpression>
+    </sequenceFlow>
+
+    <sequenceFlow id="Flow_GWTipo_Renovacao" name="RENOVACAO"
+                  sourceRef="GW_TipoVistoria"
+                  targetRef="Task_BE_TransicionarAceitePrpci">
+      <conditionExpression xsi:type="tFormalExpression">tipoVistoria == TipoVistoria.VISTORIA_RENOVACAO</conditionExpression>
+    </sequenceFlow>
+
+    <sequenceFlow id="Flow_TransicionarPrpci_IntegrarLAI"
+                  sourceRef="Task_BE_TransicionarPrpci"
+                  targetRef="Task_BE_IntegrarLAI"/>
+
+    <sequenceFlow id="Flow_IntegrarLAI_EndAprovado"
+                  sourceRef="Task_BE_IntegrarLAI"
+                  targetRef="End_Aprovado"/>
+
+    <sequenceFlow id="Flow_TransicionarAceitePrpci_IntegrarLAI_Renov"
+                  sourceRef="Task_BE_TransicionarAceitePrpci"
+                  targetRef="Task_BE_IntegrarLAI_Renov"/>
+
+    <sequenceFlow id="Flow_IntegrarLAI_Renov_EndAprovadoRenov"
+                  sourceRef="Task_BE_IntegrarLAI_Renov"
+                  targetRef="End_AprovadoRenov"/>
+
+  </process>
+
+  <!-- ==================== BPMN DIAGRAM ==================== -->
+  <bpmndi:BPMNDiagram id="BPMNDiagram_P07">
+    <bpmndi:BPMNPlane id="BPMNPlane_P07" bpmnElement="Collab_P07">
+
+      <!-- Pool / Participant -->
+      <bpmndi:BPMNShape id="P07_Pool_di" bpmnElement="P07_Pool" isHorizontal="true">
+        <dc:Bounds x="150" y="60" width="3200" height="900"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- Lanes -->
+      <bpmndi:BPMNShape id="Lane_RT_di" bpmnElement="Lane_RT" isHorizontal="true">
+        <dc:Bounds x="180" y="60" width="3170" height="120"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Fiscal_di" bpmnElement="Lane_Fiscal" isHorizontal="true">
+        <dc:Bounds x="180" y="180" width="3170" height="150"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_ADM_di" bpmnElement="Lane_ADM" isHorizontal="true">
+        <dc:Bounds x="180" y="330" width="3170" height="150"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_BE_di" bpmnElement="Lane_BE" isHorizontal="true">
+        <dc:Bounds x="180" y="480" width="3170" height="480"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- ===== START EVENT (ADM) ===== -->
+      <bpmndi:BPMNShape id="Start_P07_di" bpmnElement="Start_P07">
+        <dc:Bounds x="222" y="387" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="196" y="430" width="90" height="40"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- ===== ADM: DISTRIBUIÇÃO ===== -->
+      <bpmndi:BPMNShape id="Task_ADM_ListarDistribuicao_di" bpmnElement="Task_ADM_ListarDistribuicao">
+        <dc:Bounds x="290" y="365" width="140" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_ADM_ConfigurarDistribuicao_di" bpmnElement="Task_ADM_ConfigurarDistribuicao">
+        <dc:Bounds x="480" y="365" width="140" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- ===== BE: DISTRIBUIÇÃO (row1, y=520-600) ===== -->
+      <bpmndi:BPMNShape id="Task_BE_ExecutarDistribuicao_di" bpmnElement="Task_BE_ExecutarDistribuicao">
+        <dc:Bounds x="480" y="520" width="140" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_BE_NotificarDistribuicao_di" bpmnElement="Task_BE_NotificarDistribuicao">
+        <dc:Bounds x="670" y="520" width="140" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- ===== FISCAL: EXECUÇÃO ===== -->
+      <bpmndi:BPMNShape id="Task_FISCAL_VisualizarVistoria_di" bpmnElement="Task_FISCAL_VisualizarVistoria">
+        <dc:Bounds x="860" y="215" width="140" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_FISCAL_UploadLaudo_di" bpmnElement="Task_FISCAL_UploadLaudo">
+        <dc:Bounds x="1050" y="215" width="140" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_FISCAL_ConcluirVistoria_di" bpmnElement="Task_FISCAL_ConcluirVistoria">
+        <dc:Bounds x="1240" y="215" width="140" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="GW_ResultadoVistoria_di" bpmnElement="GW_ResultadoVistoria" isMarkerVisible="true">
+        <dc:Bounds x="1430" y="230" width="50" height="50"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1412" y="287" width="86" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_FISCAL_SalvarRascunho_di" bpmnElement="Task_FISCAL_SalvarRascunho">
+        <dc:Bounds x="1530" y="215" width="140" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- ===== BE: APROVAÇÃO (row1) ===== -->
+      <bpmndi:BPMNShape id="Task_BE_RegistrarAprovacao_di" bpmnElement="Task_BE_RegistrarAprovacao">
+        <dc:Bounds x="1530" y="520" width="140" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- ===== ADM: HOMOLOGAÇÃO ===== -->
+      <bpmndi:BPMNShape id="Task_ADM_ListarAprovadas_di" bpmnElement="Task_ADM_ListarAprovadas">
+        <dc:Bounds x="1710" y="365" width="140" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_ADM_AnalisarHomologacao_di" bpmnElement="Task_ADM_AnalisarHomologacao">
+        <dc:Bounds x="1900" y="365" width="140" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="GW_DecisaoHomologacao_di" bpmnElement="GW_DecisaoHomologacao" isMarkerVisible="true">
+        <dc:Bounds x="2090" y="380" width="50" height="50"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2068" y="437" width="94" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- ===== BE: INDEFERIMENTO (row2) ===== -->
+      <bpmndi:BPMNShape id="Task_BE_RegistrarIndeferimento_di" bpmnElement="Task_BE_RegistrarIndeferimento">
+        <dc:Bounds x="2065" y="660" width="140" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- ===== BE: REPROVAÇÃO/CIV (row2, y=660-740) ===== -->
+      <bpmndi:BPMNShape id="Task_BE_RegistrarReprovacao_di" bpmnElement="Task_BE_RegistrarReprovacao">
+        <dc:Bounds x="1530" y="660" width="140" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_BE_GerarCIV_di" bpmnElement="Task_BE_GerarCIV">
+        <dc:Bounds x="1710" y="660" width="140" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_BE_TransicionarCienciaCIV_di" bpmnElement="Task_BE_TransicionarCienciaCIV">
+        <dc:Bounds x="1900" y="660" width="140" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_BE_RegistrarCienciaCIV_di" bpmnElement="Task_BE_RegistrarCienciaCIV">
+        <dc:Bounds x="2255" y="660" width="140" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="End_Reprovado_di" bpmnElement="End_Reprovado">
+        <dc:Bounds x="2447" y="682" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2420" y="725" width="90" height="40"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- ===== RT: CIÊNCIA CIV ===== -->
+      <bpmndi:BPMNShape id="Task_RT_VisualizarCIV_di" bpmnElement="Task_RT_VisualizarCIV">
+        <dc:Bounds x="2065" y="80" width="140" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_RT_ConfirmarCienciaCIV_di" bpmnElement="Task_RT_ConfirmarCienciaCIV">
+        <dc:Bounds x="2255" y="80" width="140" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- ===== BE: INVIABILIDADE (row3, y=830-910) ===== -->
+      <bpmndi:BPMNShape id="Task_BE_MarcarInviavel_di" bpmnElement="Task_BE_MarcarInviavel">
+        <dc:Bounds x="1530" y="830" width="140" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="End_Inviavel_di" bpmnElement="End_Inviavel">
+        <dc:Bounds x="1712" y="852" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1685" y="895" width="90" height="40"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- ===== BE: DEFERIMENTO / APPCI (row1) ===== -->
+      <bpmndi:BPMNShape id="Task_BE_HomologarDeferimento_di" bpmnElement="Task_BE_HomologarDeferimento">
+        <dc:Bounds x="2190" y="520" width="140" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_BE_GerarAPPCI_di" bpmnElement="Task_BE_GerarAPPCI">
+        <dc:Bounds x="2380" y="520" width="140" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="GW_TipoVistoria_di" bpmnElement="GW_TipoVistoria" isMarkerVisible="true">
+        <dc:Bounds x="2570" y="535" width="50" height="50"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2553" y="592" width="84" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- ===== BE: FLUXO NORMAL (row1) ===== -->
+      <bpmndi:BPMNShape id="Task_BE_TransicionarPrpci_di" bpmnElement="Task_BE_TransicionarPrpci">
+        <dc:Bounds x="2670" y="520" width="140" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_BE_IntegrarLAI_di" bpmnElement="Task_BE_IntegrarLAI">
+        <dc:Bounds x="2860" y="520" width="140" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="End_Aprovado_di" bpmnElement="End_Aprovado">
+        <dc:Bounds x="3052" y="542" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3024" y="585" width="92" height="40"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- ===== BE: FLUXO RENOVAÇÃO (row2) ===== -->
+      <bpmndi:BPMNShape id="Task_BE_TransicionarAceitePrpci_di" bpmnElement="Task_BE_TransicionarAceitePrpci">
+        <dc:Bounds x="2670" y="660" width="140" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_BE_IntegrarLAI_Renov_di" bpmnElement="Task_BE_IntegrarLAI_Renov">
+        <dc:Bounds x="2860" y="660" width="140" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="End_AprovadoRenov_di" bpmnElement="End_AprovadoRenov">
+        <dc:Bounds x="3052" y="682" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3020" y="725" width="100" height="40"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- ==================== SEQUENCE FLOW EDGES ==================== -->
+
+      <!-- Start → ADM Listar -->
+      <bpmndi:BPMNEdge id="Flow_Start_Listar_di" bpmnElement="Flow_Start_Listar">
+        <di:waypoint x="258" y="405"/>
+        <di:waypoint x="290" y="405"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- ADM Listar → ADM Config -->
+      <bpmndi:BPMNEdge id="Flow_Listar_Config_di" bpmnElement="Flow_Listar_Config">
+        <di:waypoint x="430" y="405"/>
+        <di:waypoint x="480" y="405"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- ADM Config → BE ExecutarDist (mesmo x, desce) -->
+      <bpmndi:BPMNEdge id="Flow_Config_ExecutarDist_di" bpmnElement="Flow_Config_ExecutarDist">
+        <di:waypoint x="550" y="445"/>
+        <di:waypoint x="550" y="520"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- BE ExecutarDist → BE NotifDist -->
+      <bpmndi:BPMNEdge id="Flow_ExecutarDist_NotifDist_di" bpmnElement="Flow_ExecutarDist_NotifDist">
+        <di:waypoint x="620" y="560"/>
+        <di:waypoint x="670" y="560"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- BE NotifDist → FISCAL VisualizarVistoria (cross lane — sobe) -->
+      <bpmndi:BPMNEdge id="Flow_NotifDist_VisualizarVistoria_di" bpmnElement="Flow_NotifDist_VisualizarVistoria">
+        <di:waypoint x="810" y="520"/>
+        <di:waypoint x="810" y="255"/>
+        <di:waypoint x="860" y="255"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- FISCAL Visualizar → FISCAL Upload -->
+      <bpmndi:BPMNEdge id="Flow_VisualizarVistoria_UploadLaudo_di" bpmnElement="Flow_VisualizarVistoria_UploadLaudo">
+        <di:waypoint x="1000" y="255"/>
+        <di:waypoint x="1050" y="255"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- FISCAL Upload → FISCAL Concluir -->
+      <bpmndi:BPMNEdge id="Flow_UploadLaudo_Concluir_di" bpmnElement="Flow_UploadLaudo_Concluir">
+        <di:waypoint x="1190" y="255"/>
+        <di:waypoint x="1240" y="255"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- FISCAL Concluir → GW Resultado -->
+      <bpmndi:BPMNEdge id="Flow_Concluir_GW_di" bpmnElement="Flow_Concluir_GW">
+        <di:waypoint x="1380" y="255"/>
+        <di:waypoint x="1430" y="255"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW Resultado → RASCUNHO (vai à direita) -->
+      <bpmndi:BPMNEdge id="Flow_GW_Rascunho_di" bpmnElement="Flow_GW_Rascunho">
+        <di:waypoint x="1480" y="255"/>
+        <di:waypoint x="1530" y="255"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1484" y="234" width="60" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW Resultado → APROVADO (desce para BE row1) -->
+      <bpmndi:BPMNEdge id="Flow_GW_Aprovado_di" bpmnElement="Flow_GW_Aprovado">
+        <di:waypoint x="1455" y="280"/>
+        <di:waypoint x="1455" y="560"/>
+        <di:waypoint x="1530" y="560"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1460" y="416" width="60" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW Resultado → REPROVADO (desce para BE row2) -->
+      <bpmndi:BPMNEdge id="Flow_GW_Reprovado_di" bpmnElement="Flow_GW_Reprovado">
+        <di:waypoint x="1455" y="280"/>
+        <di:waypoint x="1455" y="700"/>
+        <di:waypoint x="1530" y="700"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1460" y="630" width="65" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW Resultado → INVIAVEL (desce para BE row3) -->
+      <bpmndi:BPMNEdge id="Flow_GW_Inviavel_di" bpmnElement="Flow_GW_Inviavel">
+        <di:waypoint x="1455" y="280"/>
+        <di:waypoint x="1455" y="870"/>
+        <di:waypoint x="1530" y="870"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1460" y="803" width="55" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- RASCUNHO loop back: SalvarRascunho → UploadLaudo (acima da lane Fiscal) -->
+      <bpmndi:BPMNEdge id="Flow_Rascunho_UploadLaudo_di" bpmnElement="Flow_Rascunho_UploadLaudo">
+        <di:waypoint x="1600" y="215"/>
+        <di:waypoint x="1600" y="172"/>
+        <di:waypoint x="1120" y="172"/>
+        <di:waypoint x="1120" y="215"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1320" y="152" width="80" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- BE RegistrarAprovacao → ADM ListarAprovadas (sobe para ADM) -->
+      <bpmndi:BPMNEdge id="Flow_RegistrarAprovacao_ListarAprovadas_di" bpmnElement="Flow_RegistrarAprovacao_ListarAprovadas">
+        <di:waypoint x="1670" y="520"/>
+        <di:waypoint x="1780" y="520"/>
+        <di:waypoint x="1780" y="445"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNEdge>
+
+      <!-- BE RegistrarReprovacao → BE GerarCIV -->
+      <bpmndi:BPMNEdge id="Flow_RegistrarReprovacao_GerarCIV_di" bpmnElement="Flow_RegistrarReprovacao_GerarCIV">
+        <di:waypoint x="1670" y="700"/>
+        <di:waypoint x="1710" y="700"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- BE MarcarInviavel → End Inviavel -->
+      <bpmndi:BPMNEdge id="Flow_MarcarInviavel_EndInviavel_di" bpmnElement="Flow_MarcarInviavel_EndInviavel">
+        <di:waypoint x="1670" y="870"/>
+        <di:waypoint x="1712" y="870"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- ADM ListarAprovadas → ADM AnalisarHomolog -->
+      <bpmndi:BPMNEdge id="Flow_ListarAprovadas_AnalisarHomolog_di" bpmnElement="Flow_ListarAprovadas_AnalisarHomolog">
+        <di:waypoint x="1850" y="405"/>
+        <di:waypoint x="1900" y="405"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- ADM AnalisarHomolog → GW Decisao -->
+      <bpmndi:BPMNEdge id="Flow_AnalisarHomolog_GWDecisao_di" bpmnElement="Flow_AnalisarHomolog_GWDecisao">
+        <di:waypoint x="2040" y="405"/>
+        <di:waypoint x="2090" y="405"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW Decisao → DEFERIR: BE HomologarDeferimento (desce para BE row1) -->
+      <bpmndi:BPMNEdge id="Flow_GWDecisao_Deferir_di" bpmnElement="Flow_GWDecisao_Deferir">
+        <di:waypoint x="2115" y="430"/>
+        <di:waypoint x="2115" y="560"/>
+        <di:waypoint x="2190" y="560"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2120" y="492" width="45" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW Decisao → INDEFERIR: BE RegistrarIndeferimento (desce para BE row2) -->
+      <bpmndi:BPMNEdge id="Flow_GWDecisao_Indeferir_di" bpmnElement="Flow_GWDecisao_Indeferir">
+        <di:waypoint x="2115" y="430"/>
+        <di:waypoint x="2115" y="700"/>
+        <di:waypoint x="2065" y="700"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2056" y="562" width="55" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- INDEFERIMENTO loop back: BE RegistrarIndeferimento → FISCAL UploadLaudo (abaixo do pool) -->
+      <bpmndi:BPMNEdge id="Flow_Indefer_UploadLaudo_di" bpmnElement="Flow_Indefer_UploadLaudo">
+        <di:waypoint x="2135" y="740"/>
+        <di:waypoint x="2135" y="976"/>
+        <di:waypoint x="1120" y="976"/>
+        <di:waypoint x="1120" y="295"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1545" y="979" width="80" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- BE GerarCIV → BE TransicionarCienciaCIV -->
+      <bpmndi:BPMNEdge id="Flow_GerarCIV_TransicionarCIV_di" bpmnElement="Flow_GerarCIV_TransicionarCIV">
+        <di:waypoint x="1850" y="700"/>
+        <di:waypoint x="1900" y="700"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- BE TransicionarCienciaCIV → RT VisualizarCIV (sobe muitas lanes) -->
+      <bpmndi:BPMNEdge id="Flow_TransicionarCIV_VisualizarCIV_di" bpmnElement="Flow_TransicionarCIV_VisualizarCIV">
+        <di:waypoint x="2040" y="660"/>
+        <di:waypoint x="2040" y="44"/>
+        <di:waypoint x="2135" y="44"/>
+        <di:waypoint x="2135" y="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNEdge>
+
+      <!-- RT VisualizarCIV → RT ConfirmarCiencia -->
+      <bpmndi:BPMNEdge id="Flow_VisualizarCIV_ConfirmarCiencia_di" bpmnElement="Flow_VisualizarCIV_ConfirmarCiencia">
+        <di:waypoint x="2205" y="120"/>
+        <di:waypoint x="2255" y="120"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- RT ConfirmarCiencia → BE RegistrarCienciaCIV (desce para BE row2) -->
+      <bpmndi:BPMNEdge id="Flow_ConfirmarCiencia_RegistrarCiencia_di" bpmnElement="Flow_ConfirmarCiencia_RegistrarCiencia">
+        <di:waypoint x="2325" y="160"/>
+        <di:waypoint x="2325" y="660"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNEdge>
+
+      <!-- BE RegistrarCienciaCIV → End Reprovado -->
+      <bpmndi:BPMNEdge id="Flow_RegistrarCiencia_EndReprovado_di" bpmnElement="Flow_RegistrarCiencia_EndReprovado">
+        <di:waypoint x="2395" y="700"/>
+        <di:waypoint x="2447" y="700"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- BE HomologarDeferimento → BE GerarAPPCI -->
+      <bpmndi:BPMNEdge id="Flow_HomologarDeferimento_GerarAPPCI_di" bpmnElement="Flow_HomologarDeferimento_GerarAPPCI">
+        <di:waypoint x="2330" y="560"/>
+        <di:waypoint x="2380" y="560"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- BE GerarAPPCI → GW TipoVistoria -->
+      <bpmndi:BPMNEdge id="Flow_GerarAPPCI_GWTipoVistoria_di" bpmnElement="Flow_GerarAPPCI_GWTipoVistoria">
+        <di:waypoint x="2520" y="560"/>
+        <di:waypoint x="2570" y="560"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW TipoVistoria → BE TransicionarPrpci (NORMAL — vai à direita) -->
+      <bpmndi:BPMNEdge id="Flow_GWTipo_Normal_di" bpmnElement="Flow_GWTipo_Normal">
+        <di:waypoint x="2620" y="560"/>
+        <di:waypoint x="2670" y="560"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2620" y="538" width="50" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW TipoVistoria → BE TransicionarAceitePrpci (RENOVACAO — desce) -->
+      <bpmndi:BPMNEdge id="Flow_GWTipo_Renovacao_di" bpmnElement="Flow_GWTipo_Renovacao">
+        <di:waypoint x="2595" y="585"/>
+        <di:waypoint x="2595" y="700"/>
+        <di:waypoint x="2670" y="700"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2598" y="636" width="65" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- BE TransicionarPrpci → BE IntegrarLAI -->
+      <bpmndi:BPMNEdge id="Flow_TransicionarPrpci_IntegrarLAI_di" bpmnElement="Flow_TransicionarPrpci_IntegrarLAI">
+        <di:waypoint x="2810" y="560"/>
+        <di:waypoint x="2860" y="560"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- BE IntegrarLAI → End Aprovado -->
+      <bpmndi:BPMNEdge id="Flow_IntegrarLAI_EndAprovado_di" bpmnElement="Flow_IntegrarLAI_EndAprovado">
+        <di:waypoint x="3000" y="560"/>
+        <di:waypoint x="3052" y="560"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- BE TransicionarAceitePrpci → BE IntegrarLAI_Renov -->
+      <bpmndi:BPMNEdge id="Flow_TransicionarAceitePrpci_IntegrarLAI_Renov_di" bpmnElement="Flow_TransicionarAceitePrpci_IntegrarLAI_Renov">
+        <di:waypoint x="2810" y="700"/>
+        <di:waypoint x="2860" y="700"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- BE IntegrarLAI_Renov → End AprovadoRenov -->
+      <bpmndi:BPMNEdge id="Flow_IntegrarLAI_Renov_EndAprovadoRenov_di" bpmnElement="Flow_IntegrarLAI_Renov_EndAprovadoRenov">
+        <di:waypoint x="3000" y="700"/>
+        <di:waypoint x="3052" y="700"/>
+      </bpmndi:BPMNEdge>
+
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</definitions>

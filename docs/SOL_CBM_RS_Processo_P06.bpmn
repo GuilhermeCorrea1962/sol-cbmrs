@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI"
+             xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+             targetNamespace="http://solcbm.procergs.rs.gov.br/bpmn"
+             id="definitions_P06">
+
+  <!-- ================================================================ -->
+  <!-- PROCESSO 06 – SOLICITAÇÃO DE ISENÇÃO DE TAXA                     -->
+  <!-- Cidadão solicita isenção → sistema valida status SOLICITADA →    -->
+  <!-- ADM analisa documentação comprobatória →                         -->
+  <!--   Conceder: marca isenção no sistema, avança sem pagamento        -->
+  <!--   Negar: notifica cidadão, mantém obrigação de pagamento         -->
+  <!-- ================================================================ -->
+  <process id="Proc_06" name="06 - Solicitação de Isenção de Taxa" isExecutable="false">
+
+    <startEvent id="P06_Start" name="Cidadão Solicita&#10;Isenção de Taxa">
+      <outgoing>P06_sf01</outgoing>
+    </startEvent>
+
+    <userTask id="P06_T01" name="Preencher Requerimento&#10;e Anexar Documentos">
+      <incoming>P06_sf01</incoming>
+      <outgoing>P06_sf02</outgoing>
+    </userTask>
+
+    <serviceTask id="P06_T02" name="Validar Status da Solicitação&#10;(deve ser SOLICITADA)">
+      <incoming>P06_sf02</incoming>
+      <outgoing>P06_sf03</outgoing>
+    </serviceTask>
+
+    <exclusiveGateway id="P06_GW01" name="Status&#10;Válido?">
+      <incoming>P06_sf03</incoming>
+      <outgoing>P06_sf04</outgoing>
+      <outgoing>P06_sf05</outgoing>
+    </exclusiveGateway>
+
+    <endEvent id="P06_EndErr" name="Erro: Status&#10;Inválido (406)">
+      <incoming>P06_sf04</incoming>
+      <errorEventDefinition id="P06_ErrDef"/>
+    </endEvent>
+
+    <userTask id="P06_T03" name="ADM Analisa Documentação&#10;e Decide sobre Isenção">
+      <incoming>P06_sf05</incoming>
+      <outgoing>P06_sf06</outgoing>
+    </userTask>
+
+    <exclusiveGateway id="P06_GW02" name="Isenção&#10;Concedida?">
+      <incoming>P06_sf06</incoming>
+      <outgoing>P06_sf07</outgoing>
+      <outgoing>P06_sf08</outgoing>
+    </exclusiveGateway>
+
+    <serviceTask id="P06_T04" name="Registrar Isenção e Avançar&#10;Processo sem Pagamento">
+      <incoming>P06_sf07</incoming>
+      <outgoing>P06_sf09</outgoing>
+    </serviceTask>
+
+    <serviceTask id="P06_T05" name="Negar Isenção e Notificar&#10;Cidadão (Mantém Pagamento)">
+      <incoming>P06_sf08</incoming>
+      <outgoing>P06_sf10</outgoing>
+    </serviceTask>
+
+    <endEvent id="P06_EndConcedida" name="Isenção&#10;Concedida com Sucesso">
+      <incoming>P06_sf09</incoming>
+    </endEvent>
+
+    <endEvent id="P06_EndNegada" name="Isenção&#10;Negada – Pagar Boleto">
+      <incoming>P06_sf10</incoming>
+    </endEvent>
+
+    <sequenceFlow id="P06_sf01" sourceRef="P06_Start"  targetRef="P06_T01"/>
+    <sequenceFlow id="P06_sf02" sourceRef="P06_T01"    targetRef="P06_T02"/>
+    <sequenceFlow id="P06_sf03" sourceRef="P06_T02"    targetRef="P06_GW01"/>
+    <sequenceFlow id="P06_sf04" name="Não"             sourceRef="P06_GW01" targetRef="P06_EndErr"/>
+    <sequenceFlow id="P06_sf05" name="Sim"             sourceRef="P06_GW01" targetRef="P06_T03"/>
+    <sequenceFlow id="P06_sf06" sourceRef="P06_T03"    targetRef="P06_GW02"/>
+    <sequenceFlow id="P06_sf07" name="Sim"             sourceRef="P06_GW02" targetRef="P06_T04"/>
+    <sequenceFlow id="P06_sf08" name="Não"             sourceRef="P06_GW02" targetRef="P06_T05"/>
+    <sequenceFlow id="P06_sf09" sourceRef="P06_T04"    targetRef="P06_EndConcedida"/>
+    <sequenceFlow id="P06_sf10" sourceRef="P06_T05"    targetRef="P06_EndNegada"/>
+  </process>
+
+  <bpmndi:BPMNDiagram id="diagram_P06">
+    <bpmndi:BPMNPlane id="plane_P06" bpmnElement="Proc_06">
+      <bpmndi:BPMNShape id="shape_P06_Start" bpmnElement="P06_Start">
+        <omgdc:Bounds x="102" y="242" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P06_T01" bpmnElement="P06_T01">
+        <omgdc:Bounds x="200" y="220" width="160" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P06_T02" bpmnElement="P06_T02">
+        <omgdc:Bounds x="420" y="220" width="170" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P06_GW01" bpmnElement="P06_GW01" isMarkerVisible="true">
+        <omgdc:Bounds x="645" y="235" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P06_EndErr" bpmnElement="P06_EndErr" isMarkerVisible="true">
+        <omgdc:Bounds x="652" y="102" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P06_T03" bpmnElement="P06_T03">
+        <omgdc:Bounds x="755" y="220" width="180" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P06_GW02" bpmnElement="P06_GW02" isMarkerVisible="true">
+        <omgdc:Bounds x="990" y="235" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P06_T04" bpmnElement="P06_T04">
+        <omgdc:Bounds x="1100" y="100" width="190" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P06_T05" bpmnElement="P06_T05">
+        <omgdc:Bounds x="1100" y="340" width="190" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P06_EndConcedida" bpmnElement="P06_EndConcedida">
+        <omgdc:Bounds x="1352" y="122" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P06_EndNegada" bpmnElement="P06_EndNegada">
+        <omgdc:Bounds x="1352" y="362" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNEdge id="edge_P06_sf01" bpmnElement="P06_sf01">
+        <omgdi:waypoint x="138" y="260"/>
+        <omgdi:waypoint x="200" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P06_sf02" bpmnElement="P06_sf02">
+        <omgdi:waypoint x="360" y="260"/>
+        <omgdi:waypoint x="420" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P06_sf03" bpmnElement="P06_sf03">
+        <omgdi:waypoint x="590" y="260"/>
+        <omgdi:waypoint x="645" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P06_sf04" bpmnElement="P06_sf04">
+        <omgdi:waypoint x="670" y="235"/>
+        <omgdi:waypoint x="670" y="138"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P06_sf05" bpmnElement="P06_sf05">
+        <omgdi:waypoint x="695" y="260"/>
+        <omgdi:waypoint x="755" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P06_sf06" bpmnElement="P06_sf06">
+        <omgdi:waypoint x="935" y="260"/>
+        <omgdi:waypoint x="990" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P06_sf07" bpmnElement="P06_sf07">
+        <omgdi:waypoint x="1015" y="235"/>
+        <omgdi:waypoint x="1015" y="140"/>
+        <omgdi:waypoint x="1100" y="140"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P06_sf08" bpmnElement="P06_sf08">
+        <omgdi:waypoint x="1015" y="285"/>
+        <omgdi:waypoint x="1015" y="380"/>
+        <omgdi:waypoint x="1100" y="380"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P06_sf09" bpmnElement="P06_sf09">
+        <omgdi:waypoint x="1290" y="140"/>
+        <omgdi:waypoint x="1352" y="140"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P06_sf10" bpmnElement="P06_sf10">
+        <omgdi:waypoint x="1290" y="380"/>
+        <omgdi:waypoint x="1352" y="380"/>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</definitions>

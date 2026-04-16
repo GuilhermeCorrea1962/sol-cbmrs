@@ -1,0 +1,1296 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+             targetNamespace="http://solcbm.rs.gov.br/bpmn/p01"
+             exporter="Claude Code" exporterVersion="2.0">
+
+  <!-- ================================================================
+       P01 — Autenticação e Verificação de Cadastro | SOL/CBM-RS
+       Stack atual: Angular + angular-oauth2-oidc (Implicit Flow)
+                    Java EE (JAX-RS / EJB / CDI / JPA) / WildFly
+                    IdP: meu.hml.rs.gov.br (PROCERGS / SOE)
+       Raias: Cidadão/Usuário | Frontend Angular | IdP Estadual | Backend Java EE
+       RNs cobertos: RN-01 a RN-24
+       ================================================================ -->
+
+  <collaboration id="Collab_P01">
+    <participant id="Participant_P01"
+                 name="P01 — Autenticação e Verificação de Cadastro | SOL/CBM-RS"
+                 processRef="Process_P01"/>
+  </collaboration>
+
+  <process id="Process_P01" name="P01 Autenticação SOL CBM-RS" isExecutable="false">
+
+    <laneSet id="LaneSet_P01">
+
+      <lane id="Lane_USR" name="Cidadão / RT / Fiscal (Usuário)">
+        <flowNodeRef>UT_USR_001</flowNodeRef>
+      </lane>
+
+      <lane id="Lane_FE" name="Frontend Angular (angular-oauth2-oidc / Implicit Flow / AuthStorageService)">
+        <flowNodeRef>SE_001</flowNodeRef>
+        <flowNodeRef>T_FE_001</flowNodeRef>
+        <flowNodeRef>T_FE_002</flowNodeRef>
+        <flowNodeRef>GW_FE_001</flowNodeRef>
+        <flowNodeRef>T_FE_003</flowNodeRef>
+        <flowNodeRef>T_FE_004</flowNodeRef>
+        <flowNodeRef>T_FE_005</flowNodeRef>
+        <flowNodeRef>T_FE_006</flowNodeRef>
+        <flowNodeRef>T_FE_007</flowNodeRef>
+        <flowNodeRef>T_FE_008</flowNodeRef>
+        <flowNodeRef>GW_FE_002</flowNodeRef>
+        <flowNodeRef>T_FE_009</flowNodeRef>
+        <flowNodeRef>EE_FE_002</flowNodeRef>
+        <flowNodeRef>GW_FE_003</flowNodeRef>
+        <flowNodeRef>T_FE_010</flowNodeRef>
+        <flowNodeRef>T_FE_011</flowNodeRef>
+        <flowNodeRef>T_FE_012</flowNodeRef>
+        <flowNodeRef>EE_FE_001</flowNodeRef>
+      </lane>
+
+      <lane id="Lane_IDP" name="IdP Estadual (meu.hml.rs.gov.br / PROCERGS / SOE — OAuth2/OIDC)">
+        <flowNodeRef>T_IDP_001</flowNodeRef>
+        <flowNodeRef>T_IDP_002</flowNodeRef>
+        <flowNodeRef>T_IDP_003</flowNodeRef>
+        <flowNodeRef>GW_IDP_001</flowNodeRef>
+        <flowNodeRef>EE_IDP_001</flowNodeRef>
+        <flowNodeRef>T_IDP_004</flowNodeRef>
+      </lane>
+
+      <lane id="Lane_BE" name="Backend Java EE (WildFly / JAX-RS / EJB / CDI / JPA — Oracle)">
+        <flowNodeRef>T_BE_001</flowNodeRef>
+        <flowNodeRef>T_BE_002</flowNodeRef>
+        <flowNodeRef>GW_BE_001</flowNodeRef>
+        <flowNodeRef>T_BE_003</flowNodeRef>
+        <flowNodeRef>T_BE_004</flowNodeRef>
+      </lane>
+
+    </laneSet>
+
+    <!-- ============================================================ -->
+    <!-- FASE 0 — INICIALIZAÇÃO DA APLICAÇÃO                          -->
+    <!-- ============================================================ -->
+
+    <startEvent id="SE_001" name="Usuário acessa URL do sistema SOL no browser">
+      <documentation>
+        Evento de início: usuário digita ou clica em link para o SOL.
+        A aplicação Angular (SPA) é carregada pelo browser.
+        AppComponent.ngOnInit() é invocado imediatamente.
+        isReady = false (loading ativo) até toda a inicialização completar.
+        RN-01: Toda operação no SOL exige autenticação válida via OIDC.
+      </documentation>
+      <outgoing>SF_001</outgoing>
+    </startEvent>
+
+    <!-- RF-FE-01: AppConfigService.getConfig() -->
+    <serviceTask id="T_FE_001"
+                 name="AppConfigService.getConfig()&#10;Obtém config OIDC do servidor&#10;{issuer, clientId, redirectUri, scope, flags}"
+                 camunda:class="AppConfigService">
+      <documentation>
+        RF-FE-01: AppComponent.ngOnInit() chama configService.getConfig() ANTES de configurar o OAuthService.
+        Endpoint: GET /config (ou assets/config.json)
+        Resposta: { authConfig: {issuer, clientId, redirectUri, scope}, licenciamentoHabilitado, riscoMedioHabilitado, tamanhoMaxArquivo }
+        Regras:
+          - redirectUri = window.location.origin + authConfig.redirectUri
+          - Se URL com contexto (isUrlContexto()): ajusta via substituiContexto()
+          - postLogoutRedirectUri = redirectUri
+          - silentRefreshRedirectUri = redirectUri + '/silent-refresh.html'
+          - isReady permanece false até finalize() do getConfig() (flag via finalize: isReady = true temporariamente)
+        Stores atualizados: licenciamentoHabilitadoStore, riscoMedioHabilitadoStore, tamanhoMaxArquivoStore
+        Critério: sistema não exibe conteúdo enquanto config não é carregada — config NUNCA hardcoded.
+      </documentation>
+      <incoming>SF_001</incoming>
+      <outgoing>SF_002</outgoing>
+    </serviceTask>
+
+    <!-- RF-FE-02: AppComponent.configureAuth() -->
+    <serviceTask id="T_FE_002"
+                 name="AppComponent.configureAuth()&#10;NullValidationHandler [RN-02] | setupSilentRefresh [RF-FE-10]&#10;Listeners: session_terminated + token_received"
+                 camunda:class="AppComponent#configureAuth">
+      <documentation>
+        RF-FE-02 / RF-FE-10 / RN-02 / RN-23:
+        Execução obrigatória NESTA ORDEM:
+          1. oauthService.configure(authConfig) — aplica configuração recebida
+          2. oauthService.setStorage(authStorage) — usa AuthStorageService (impl. de OAuthStorage)
+          3. oauthService.tokenValidationHandler = new NullValidationHandler()
+             RN-02: DESABILITA validação de assinatura JWT no frontend
+             Razão: IdP estadual não disponibiliza JWKS acessível pelo SPA
+          4. Verifica getIdentityClaims():
+             - SE há claims (sessão ativa): loadDiscoveryDocumentAndLogin(); se hasValidAccessToken() → verificaCadastro()
+             - SE não há claims: loadDiscoveryDocumentAndTryLogin(); então router.initialNavigation()
+          5. oauthService.setupAutomaticSilentRefresh()
+             RF-FE-10: renova token via iframe oculto antes da expiração
+             Arquivo: {redirectUri}/silent-refresh.html deve existir
+          6. Listener session_terminated: console.log('Your session has been terminated!') apenas [RN-23]
+             Sem redirecionamento automático
+          7. Listener token_received: oauthService.loadUserProfile() → verificaCadastro()
+        Parâmetros obrigatórios na authConfig:
+          scope: 'openid public_profile email name cpf birthdate phone_number'
+          sessionChecksEnabled: false
+          showDebugInformation: true
+          responseType: 'token' (Implicit Flow)
+      </documentation>
+      <incoming>SF_002</incoming>
+      <outgoing>SF_003</outgoing>
+    </serviceTask>
+
+    <!-- ============================================================ -->
+    <!-- FASE 1 — DISCOVERY DOCUMENT E VERIFICAÇÃO DE TOKEN           -->
+    <!-- ============================================================ -->
+
+    <!-- IdP responde ao Discovery Document -->
+    <serviceTask id="T_IDP_001"
+                 name="IdP retorna Discovery Document&#10;GET /.well-known/openid-configuration&#10;{authorization_endpoint, userinfo_endpoint...}"
+                 camunda:class="IdP#openidConfiguration">
+      <documentation>
+        RF-FE-02: OAuthService chama loadDiscoveryDocument() ou loadDiscoveryDocumentAndTryLogin().
+        Request: GET https://meu.hml.rs.gov.br/.well-known/openid-configuration
+        Resposta JSON:
+          { issuer, authorization_endpoint, token_endpoint,
+            userinfo_endpoint, end_session_endpoint, jwks_uri, ... }
+        O OAuthService armazena todos os endpoints para uso posterior.
+        Após retorno: GW_FE_001 verifica presença de access_token.
+      </documentation>
+      <incoming>SF_003</incoming>
+      <outgoing>SF_004</outgoing>
+    </serviceTask>
+
+    <!-- Gateway: token presente? -->
+    <exclusiveGateway id="GW_FE_001" name="access_token presente&#10;no localStorage[appToken]?">
+      <documentation>
+        RF-FE-02 / RF-FE-04 / RN-04:
+        OAuthService.hasValidAccessToken() E getIdentityClaims() verificados pelo Guard.
+        UsuarioAutenticadoGuard.verificaLogin():
+          SE (!hasToken E !claims)  → initImplicitFlow()     [caminho NÃO]
+          SE (!hasToken E  claims)  → loadDiscoveryDocumentAndLogin()  [tratado em configureAuth]
+          SE ( hasToken E !claims.name) → loadUserProfile()  [tratado em configureAuth]
+          ELSE                      → sem ação (sessão ativa com token e claims)
+        RN-04: Guard SEMPRE retorna canActivate()=true. A proteção real é via OIDC.
+        Caminho NÃO: sem token válido → inicia Implicit Flow (redirect ao IdP)
+        Caminho SIM: token existente (retorno de redirect ou refresh bem-sucedido)
+      </documentation>
+      <incoming>SF_004</incoming>
+      <outgoing>SF_005</outgoing>
+      <outgoing>SF_006</outgoing>
+    </exclusiveGateway>
+
+    <!-- ============================================================ -->
+    <!-- FASE 2A — FLUXO SEM TOKEN: REDIRECT AO IDP                   -->
+    <!-- ============================================================ -->
+
+    <!-- RF-FE-08: initImplicitFlow -->
+    <serviceTask id="T_FE_003"
+                 name="oauthService.initImplicitFlow() [RN-01]&#10;Redirect browser → IdP /authorize&#10;response_type=token | nonce gerado | state fixo"
+                 camunda:class="OAuthService#initImplicitFlow">
+      <documentation>
+        RF-FE-08 / RN-01: Chamado quando não há token válido no localStorage['appToken'].
+        Monta URL de autorização (Implicit Flow):
+          https://meu.hml.rs.gov.br/authorize
+            ?response_type=token
+            &amp;client_id={clientId}
+            &amp;redirect_uri={redirectUri}
+            &amp;scope=openid+public_profile+email+name+cpf+birthdate+phone_number
+            &amp;nonce={nonce_gerado}
+            &amp;state=/some-state;p1=1;p2=2   ← state FIXO (RF-FE-08)
+        O browser é redirecionado para o IdP.
+        A aplicação Angular encerra neste ponto — aguarda callback do IdP.
+        Também chamado via login() quando usuário clica em botão "Entrar" (RF-FE-08).
+      </documentation>
+      <incoming>SF_005</incoming>
+      <outgoing>SF_007</outgoing>
+    </serviceTask>
+
+    <!-- IdP exibe tela de autenticação -->
+    <serviceTask id="T_IDP_002"
+                 name="IdP exibe formulário de autenticação&#10;(CPF+senha ou certificado digital)&#10;meu.hml.rs.gov.br/auth/realms/rs"
+                 camunda:class="IdP#authorizationEndpoint">
+      <documentation>
+        O browser foi redirecionado ao IdP estadual (PROCERGS/SOE).
+        O IdP exibe o formulário de autenticação:
+          - Cidadão: CPF + senha cadastrada no meu.rs.gov.br
+          - Servidor estadual (SOE): login SOE + senha
+          - Certificado digital: via provider configurado no IdP
+        O SOL NÃO tem acesso às credenciais — autenticação é 100% delegada ao IdP.
+        Após preenchimento pelo usuário, formulário é submetido ao IdP para validação.
+      </documentation>
+      <incoming>SF_007</incoming>
+      <outgoing>SF_008</outgoing>
+    </serviceTask>
+
+    <!-- Usuário preenche credenciais (Lane_USR) -->
+    <userTask id="UT_USR_001"
+              name="Usuário preenche credenciais&#10;(CPF + senha / Certificado Digital)&#10;e clica em Entrar no IdP"
+              camunda:assignee="${usuarioExterno}"
+              camunda:formKey="idp-login-form">
+      <documentation>
+        Ator: Cidadão, RT, Fiscal CBM ou ADM CBM.
+        Interação exclusivamente com o formulário do IdP — o SOL não participa.
+        Campos típicos: CPF (ou login SOE) e senha.
+        Após submissão: IdP processa a autenticação internamente.
+        Cenários de erro: senha incorreta, CPF não cadastrado, conta bloqueada, MFA falho.
+      </documentation>
+      <incoming>SF_008</incoming>
+      <outgoing>SF_009</outgoing>
+    </userTask>
+
+    <!-- IdP valida credenciais -->
+    <serviceTask id="T_IDP_003"
+                 name="IdP valida credenciais e perfis SOE&#10;Verifica MFA se configurado&#10;Carrega claims: cpf, name, email, roles"
+                 camunda:class="IdP#validateCredentials">
+      <documentation>
+        O IdP (PROCERGS) processa as credenciais submetidas.
+        Se válido: carrega claims do usuário do diretório SOE/LDAP:
+          cpf, name, email, phone_number, birthdate, sub (identificador único)
+        Para servidores estaduais: também carrega papéis e permissões do SOE.
+        Se MFA habilitado: desafia o usuário com segundo fator antes de emitir token.
+        Decisão: GW_IDP_001 — credenciais válidas ou inválidas.
+      </documentation>
+      <incoming>SF_009</incoming>
+      <outgoing>SF_010</outgoing>
+    </serviceTask>
+
+    <!-- Gateway IdP: credenciais válidas? -->
+    <exclusiveGateway id="GW_IDP_001" name="Credenciais válidas&#10;no IdP estadual?">
+      <documentation>
+        O IdP avalia as credenciais.
+        SIM (autenticado): emite access_token via Implicit Flow (T_IDP_004)
+        NÃO (erro): retorna mensagem de erro ao browser (EE_IDP_001)
+        Cenários de falha: senha errada, CPF não cadastrado no SOE, conta bloqueada,
+          MFA inválido, sessão expirada no IdP, certificado digital inválido.
+      </documentation>
+      <incoming>SF_010</incoming>
+      <outgoing>SF_011</outgoing>
+      <outgoing>SF_012</outgoing>
+    </exclusiveGateway>
+
+    <!-- End: Autenticação negada no IdP -->
+    <endEvent id="EE_IDP_001" name="Autenticação negada no IdP&#10;(credenciais inválidas)">
+      <documentation>
+        O IdP rejeitou as credenciais. O browser exibe mensagem de erro do IdP.
+        O processo P01 não prossegue no SOL.
+        Nenhum token é emitido. O usuário pode tentar novamente clicando no link de login.
+        O SOL não recebe nenhuma notificação sobre esta falha.
+      </documentation>
+      <incoming>SF_011</incoming>
+      <errorEventDefinition id="EED_IDP_001"/>
+    </endEvent>
+
+    <!-- IdP emite access_token (Implicit Flow) -->
+    <serviceTask id="T_IDP_004"
+                 name="IdP emite access_token (Implicit Flow)&#10;Redirect browser: {redirectUri}#access_token=...&#10;&amp;token_type=bearer&amp;expires_in=3600&amp;id_token=..."
+                 camunda:class="IdP#implicitFlowResponse">
+      <documentation>
+        RN-01: Implicit Flow — access_token retornado no fragmento URL (#), nunca via servidor.
+        URL de redirect emitida pelo IdP:
+          {redirectUri}
+            #access_token=eyJhbGc...
+            &amp;token_type=bearer
+            &amp;expires_in=3600
+            &amp;id_token=eyJhbGc...
+            &amp;session_state=xxxxxxxx
+        O browser navega de volta para o redirectUri (aplicação Angular).
+        O token NUNCA passa pelo servidor backend — é interceptado pelo Angular.
+        Após este redirect, o Angular processa o fragment na inicialização.
+      </documentation>
+      <incoming>SF_012</incoming>
+      <outgoing>SF_013</outgoing>
+    </serviceTask>
+
+    <!-- ============================================================ -->
+    <!-- FASE 2B — PROCESSAMENTO DO TOKEN (JOIN DAS DUAS FASES)       -->
+    <!-- ============================================================ -->
+
+    <!-- JOIN: token novo (pós-redirect IdP) OU token existente (sessão ativa) -->
+    <serviceTask id="T_FE_004"
+                 name="oauthService.tryLoginImplicitFlow()&#10;[JOIN] Token pós-redirect IdP OU token existente&#10;Extrai #fragment | Dispara token_received"
+                 camunda:class="OAuthService#tryLoginImplicitFlow">
+      <documentation>
+        RF-FE-02: Ponto de CONVERGÊNCIA de dois caminhos:
+          1. Retorno do IdP após autenticação: URL contém #access_token=...
+          2. Token existente (SIM path de GW_FE_001): token em localStorage['appToken']
+        tryLoginImplicitFlow() processa o fragment da URL (se presente):
+          - Extrai access_token, id_token, expires_in, session_state
+          - Valida nonce (gerado em initImplicitFlow, armazenado em localStorage)
+          - Dispara evento interno token_received
+        O listener token_received (registrado em T_FE_002):
+          → oauthService.loadUserProfile() → verificaCadastro()
+        Se fragment não presente (sessão ativa): apenas verifica token existente.
+      </documentation>
+      <incoming>SF_006</incoming>
+      <incoming>SF_013</incoming>
+      <outgoing>SF_014</outgoing>
+    </serviceTask>
+
+    <!-- RF-FE-02: NullValidationHandler — extrai claims sem validar assinatura -->
+    <serviceTask id="T_FE_005"
+                 name="NullValidationHandler: extrai claims JWT [RN-02]&#10;SEM validar assinatura criptográfica&#10;Claims: name, cpf, email, phone_number, birthdate"
+                 camunda:class="NullValidationHandler">
+      <documentation>
+        RF-FE-02 / RN-02: NullValidationHandler é configurado em T_FE_002.
+        O payload do JWT é decodificado via Base64 SEM verificar assinatura criptográfica.
+        Claims extraídas do access_token ou id_token:
+          name, cpf, email, phone_number, birthdate, sub
+        RN-02: Razão arquitetural — IdP estadual não disponibiliza JWKS acessível pelo SPA.
+        ATENÇÃO DE SEGURANÇA: A validação real ocorre no backend (T_BE_001).
+        O frontend usa as claims apenas para UX (exibir nome, redirecionar por status).
+        A proteção de dados ocorre via Bearer token validado a cada requisição no backend.
+      </documentation>
+      <incoming>SF_014</incoming>
+      <outgoing>SF_015</outgoing>
+    </serviceTask>
+
+    <!-- RF-FE-03: AuthStorageService.setItem() -->
+    <serviceTask id="T_FE_006"
+                 name="AuthStorageService.setItem() [RN-03]&#10;localStorage[&apos;appToken&apos;] = JSON agregado&#10;{access_token, id_token, expires_at, nonce, session_state}"
+                 camunda:class="AuthStorageService#setItem">
+      <documentation>
+        RF-FE-03 / RN-03: AuthStorageService implementa a interface OAuthStorage da biblioteca.
+        Estrutura em localStorage['appToken'] (objeto JSON único):
+          {
+            "access_token": "eyJhbGc...",
+            "id_token": "eyJhbGc...",
+            "expires_at": "1710000000000",
+            "token_type": "bearer",
+            "nonce": "abc123...",
+            "session_state": "xxxxxxxx"
+          }
+        Método setItem(key, data): parse do JSON, atribui store[key]=data, serializa de volta.
+        Método getItem(key): parse do JSON, retorna store[key] ou null.
+        Método removeItem(key): parse do JSON, deleta store[key], serializa.
+        Método clean(): localStorage.removeItem('appToken') — remove o objeto inteiro (RF-FE-09).
+        RN-03: Múltiplas chamadas a setItem() ACUMULAM chaves — não substituem o objeto inteiro.
+      </documentation>
+      <incoming>SF_015</incoming>
+      <outgoing>SF_016</outgoing>
+    </serviceTask>
+
+    <!-- RF-FE-02: loadUserProfile() -->
+    <serviceTask id="T_FE_007"
+                 name="oauthService.loadUserProfile()&#10;GET {userinfo_endpoint} — Authorization: Bearer&#10;Resposta: {sub, name, cpf, email, phone_number}"
+                 camunda:class="OAuthService#loadUserProfile">
+      <documentation>
+        RF-FE-02: Chamado após token_received E em configureAuth() se claims já presentes.
+        Request: GET https://meu.hml.rs.gov.br/auth/realms/rs/protocol/openid-connect/userinfo
+        Header: Authorization: Bearer {access_token}
+        Resposta: { sub, name, cpf, email, phone_number, birthdate }
+        As claims são armazenadas internamente pelo OAuthService.
+        Acessíveis via: oauthService.getIdentityClaims()
+        Após este passo: verificaCadastro() usa claims['cpf'] para consultar o backend.
+      </documentation>
+      <incoming>SF_016</incoming>
+      <outgoing>SF_017</outgoing>
+    </serviceTask>
+
+    <!-- ============================================================ -->
+    <!-- FASE 3 — VERIFICAÇÃO DE CADASTRO NO SOL                      -->
+    <!-- ============================================================ -->
+
+    <!-- RF-FE-06: verificaCadastro() -->
+    <serviceTask id="T_FE_008"
+                 name="AppComponent.verificaCadastro()&#10;isReady=false | Extrai claims (name, cpf, email)&#10;GET /usuarios/{cpf} com Bearer token [RN-05]"
+                 camunda:class="AppComponent#verificaCadastro">
+      <documentation>
+        RF-FE-06 / RF-FE-05 / RN-05:
+        Algoritmo completo de verificaCadastro():
+          1. claims = oauthService.getIdentityClaims()
+             SE !claims → retorna (sem ação)
+          2. user = claims['name']   — exibe no header da aplicação
+             cpf  = claims['cpf']
+             email = claims['email']
+          3. isReady = false — ativa loading spinner
+          4. cadastroUsuarioService.buscarUsuario(cpf)
+             → GET /usuarios/{cpf}
+             → HttpAuthorizationInterceptor injeta: Authorization: Bearer {access_token} [RN-05]
+        RF-FE-11: isReady=false durante toda a chamada ao backend.
+        RN-05: HttpAuthorizationInterceptor.intercept() verifica request.url.indexOf(AppSettings.baseUrl) !== -1.
+               Apenas URLs contendo baseUrl recebem o header. Chamadas ao IdP (discovery, userinfo) NÃO recebem.
+      </documentation>
+      <incoming>SF_017</incoming>
+      <outgoing>SF_018</outgoing>
+    </serviceTask>
+
+    <!-- RF-BE-01: ContainerRequestFilter — valida Bearer, popula CidadaoSessionMB -->
+    <serviceTask id="T_BE_001"
+                 name="JAX-RS ContainerRequestFilter&#10;Extrai Bearer | Valida JWT (chave pública IdP)&#10;CidadaoSessionMB.setCidadaoED(cidadao) [@RequestScoped]"
+                 camunda:class="com.procergs.solcbm.seguranca.CidadaoSessionMB">
+      <documentation>
+        RF-BE-01 / RN-18: Para CADA requisição HTTP ao backend, o ContainerRequestFilter executa ANTES de qualquer EJB.
+        Passos:
+          1. Extrai header Authorization: Bearer {token}
+             Se ausente → 401 Unauthorized
+          2. Valida o JWT:
+             - Verifica assinatura usando chave pública obtida do JWKS do IdP
+             - Verifica claims: iss (issuer), exp (expiração), aud (clientId)
+          3. Decodifica claims: cpf, name, email, birthdate, phone_number
+          4. Consulta permissões no banco SOL/SOE:
+             SELECT permissao FROM PERMISSAO WHERE cpf=:cpf AND sistema='SOLCBM'
+          5. Cria CidadaoED com todos os dados (RF-BE-02):
+             { nome, cpf, dtNascimento, email, telefone, permissoes: Set&lt;PermissaoED&gt;, papeis: List&lt;TipoPapel&gt; }
+          6. cidadaoSessionMB.setCidadaoED(cidadao) — @RequestScoped, instância por requisição
+        RN-18: hasPermission(objeto, acao) verifica tripla (SISTEMA="SOLCBM", objeto, acao).
+        RF-BE-13: hasSession() = cidadaoSessionMB.getCidadaoED() != null.
+        RF-BE-02: CidadaoED.nullInstance() retorna objeto com email="" para evitar NPE antes da sessão.
+        SISTEMA = "SOLCBM" — constante de identificação do sistema no conjunto de permissões.
+      </documentation>
+      <incoming>SF_018</incoming>
+      <outgoing>SF_019</outgoing>
+    </serviceTask>
+
+    <!-- RF-BE-03: UsuarioRN.consultaPorCpf() -->
+    <serviceTask id="T_BE_002"
+                 name="UsuarioRN.consultaPorCpf(cpf)&#10;@TransactionAttribute(SUPPORTS)&#10;Consulta completa com coleções (enderecos, graduacoes...)"
+                 camunda:class="com.procergs.solcbm.usuario.UsuarioRN#consultaPorCpf">
+      <documentation>
+        RF-BE-03 / RF-BE-10 / RN-19 / RN-20:
+        Endpoint: GET /usuarios/{cpf}  [UsuarioRestImpl]
+        @Produces(APPLICATION_JSON) / @TransactionAttribute(SUPPORTS)
+
+        Algoritmo completo:
+          1. SE cpf == null → retorna null (resultará em HTTP 404)
+          2. RN-20: verificaMascarasPesquisa(cpf) — remove pontos e traços se CPF com máscara
+          3. usuarioBD.consultarPorCpf(cpf) → SELECT * FROM USUARIO WHERE CPF = :cpf
+          4. SE usuarioED == null → retorna null (HTTP 404)
+          5. RN-19: usuarioED.getDtNascimento().set(Calendar.HOUR, 12)
+             Workaround timezone: evita data -1 dia em zonas UTC-n por arredondamento
+          6. instrutorRN.buscaInstrutorPorCPF(cpf) — dados de credenciamento de instrutor
+          7. BuilderUsuario.of() monta objeto Usuario completo:
+             Dados básicos: id, nome, cpf, rg, estadoEmissor, dtNascimento, nomeMae, email, telefone1, telefone2
+             + status, mensagemStatus, ctrDthInc, ctrDthAtu
+             + enderecos (EnderecoUsuarioRN.listarEnderecosUsuario)
+             + graduacoes (GraduacaoUsuarioRN.listarGraduacoesUsuario)
+             + especializacoes (EspecializacaoUsuarioRN.listarEspecializacoesUsuario)
+             + arquivoRG: id e nomeArquivo (via Optional — evita NPE)
+             + diasParaVencerCredenciamento, alertaVencimento, dataVencimentoCredenciamento (se instrutor)
+
+        RF-BE-08: UsuarioRN.isUsuarioRtValido() = status==APROVADO E graduacoes.size() &gt; 0
+        RF-BE-10: getUsuarioLogado() = usuarioBD.consultarPorCpf(cidadaoSessionMB.getCidadaoED().getCpf())
+      </documentation>
+      <incoming>SF_019</incoming>
+      <outgoing>SF_020</outgoing>
+    </serviceTask>
+
+    <!-- Gateway BE: usuário encontrado? -->
+    <exclusiveGateway id="GW_BE_001" name="Usuário encontrado&#10;no BD SOL (USUARIO)?">
+      <documentation>
+        UsuarioRN.consultaPorCpf() retorna null quando CPF não encontrado.
+        UsuarioRestImpl converte null → HTTP 404 Not Found.
+        NÃO (404): usuário nunca se cadastrou no SOL → FE navega para /cadastro [RN-08]
+        SIM (200): retorna objeto Usuario completo → T_BE_003 monta resposta
+      </documentation>
+      <incoming>SF_020</incoming>
+      <outgoing>SF_021</outgoing>
+      <outgoing>SF_022</outgoing>
+    </exclusiveGateway>
+
+    <!-- Monta e retorna Usuario completo (HTTP 200) -->
+    <serviceTask id="T_BE_003"
+                 name="Retorna Usuario completo (HTTP 200)&#10;[RN-19] Workaround timezone dtNascimento&#10;Inclui enderecos, graduacoes, especializacoes, arquivoRG"
+                 camunda:class="com.procergs.solcbm.usuario.UsuarioRN#toUsuario">
+      <documentation>
+        RF-BE-03 / RN-19: Usuario encontrado — monta resposta completa.
+        RN-19: dtNascimento.set(Calendar.HOUR, 12) — corrige problema de timezone.
+        Objeto Usuario serializado como JSON:
+          { id, nome, cpf, rg, estadoEmissor, dtNascimento, nomeMae, email, telefone1, telefone2,
+            status (enum: INCOMPLETO/ANALISE_PENDENTE/EM_ANALISE/APROVADO/REPROVADO),
+            mensagemStatus, ctrDthInc, ctrDthAtu,
+            arquivoRG: { id, nomeArquivo },
+            graduacoes: [...], especializacoes: [...], enderecos: [...],
+            diasParaVencerCredenciamento, alertaVencimento, dataVencimentoCredenciamento }
+        HTTP 200 retornado ao Angular (verificaCadastro()).
+        O Angular examina usuario.status para determinar o roteamento.
+      </documentation>
+      <incoming>SF_022</incoming>
+      <outgoing>SF_023</outgoing>
+    </serviceTask>
+
+    <!-- ============================================================ -->
+    <!-- FASE 4 — ANÁLISE DE STATUS E ROTEAMENTO                      -->
+    <!-- ============================================================ -->
+
+    <!-- Gateway FE: status do cadastro? -->
+    <exclusiveGateway id="GW_FE_002" name="Status do cadastro&#10;retornado pelo backend?">
+      <documentation>
+        RF-FE-06 / RN-08:
+        verificaCadastro() analisa usuario.status retornado pelo backend (ou 404):
+          - INCOMPLETO: cadastro criado mas documentos não enviados → navigate(['/cadastro'])
+          - 404 NOT FOUND: usuário ainda não cadastrado no SOL → navigate(['/cadastro'])
+          - ANALISE_PENDENTE: documentos enviados, aguardando fila → continua (acesso permitido)
+          - EM_ANALISE: em análise por ADM → continua (acesso permitido, mas email não sincroniza)
+          - APROVADO: cadastro aprovado, RT habilitado → continua
+          - REPROVADO: cadastro reprovado → continua (acesso ao painel, não a funções de RT)
+        Enum mapeado: StatusCadastroUsuarioEnum[usuario.status] no Angular.
+      </documentation>
+      <incoming>SF_023</incoming>
+      <outgoing>SF_024</outgoing>
+      <outgoing>SF_025</outgoing>
+    </exclusiveGateway>
+
+    <!-- RF-FE-06: navigate('/cadastro') — INCOMPLETO ou 404 -->
+    <serviceTask id="T_FE_009"
+                 name="router.navigate([&apos;/cadastro&apos;]) [RN-08]&#10;[INCOMPLETO] Cadastro existe mas incompleto&#10;[HTTP 404] Usuário não cadastrado → P02"
+                 camunda:class="AppComponent#navigateCadastro">
+      <documentation>
+        RF-FE-06 / RN-08: Dois caminhos chegam aqui:
+          1. HTTP 404 de GW_BE_001: CPF não existe na tabela USUARIO → usuário novo
+          2. Status INCOMPLETO de GW_FE_002: cadastro criado mas documentos não enviados
+
+        Em ambos: router.navigate(['/cadastro'])
+        isReady permanece false durante a navegação (não ativa o conteúdo principal).
+        O componente de cadastro (P02 — CadastroUsuarioComponent) será renderizado.
+
+        Cenário de erro inesperado em verificaCadastro() (nem 404, nem status reconhecido):
+          setTimeout(50ms) → alertService.show({ titulo: 'Erro', mensagem: 'Erro inesperado.' })
+          isReady = true → ao clicar OK → router.navigate(['/'])
+
+        RF-FE-09 (Logout): oauthService.logOut() + authStorage.clean() quando chamado com redireciona=false.
+          authStorage.clean() = localStorage.removeItem('appToken') — remove todo o objeto JSON.
+      </documentation>
+      <incoming>SF_021</incoming>
+      <incoming>SF_024</incoming>
+      <outgoing>SF_026</outgoing>
+    </serviceTask>
+
+    <!-- End: Usuário redirecionado para /cadastro -->
+    <endEvent id="EE_FE_002" name="Usuário → /cadastro&#10;(P02 iniciado)">
+      <documentation>
+        P01 encerra para este usuário via redirecionamento ao P02.
+        Cenários: (1) usuário novo sem cadastro no SOL, (2) cadastro incompleto.
+        O processo P02 (Cadastro de Responsável Técnico / Usuário) assumirá o fluxo.
+        isReady permanece false — o loading não é removido até P02 carregar.
+      </documentation>
+      <incoming>SF_026</incoming>
+    </endEvent>
+
+    <!-- ============================================================ -->
+    <!-- FASE 5 — SINCRONIZAÇÃO DE E-MAIL (CONDICIONAL)               -->
+    <!-- ============================================================ -->
+
+    <!-- Gateway FE: email diverge? -->
+    <exclusiveGateway id="GW_FE_003" name="email claims ≠ BD&#10;E status ≠ EM_ANALISE? [RN-06]">
+      <documentation>
+        RF-FE-06 / RF-FE-07 / RN-06:
+        Condição: claims['email'] != usuario.email  AND  usuario.status != 'EM_ANALISE'
+        SIM (diverge E pode sincronizar): atualiza e-mail via atualizarUsuario() [T_FE_010 → T_BE_004]
+        NÃO (e-mail igual OU status=EM_ANALISE): prossegue sem sincronização
+        RN-06: Motivo para não sincronizar em EM_ANALISE:
+          O ADM pode estar comparando o e-mail histórico durante análise manual.
+          Alteração automática conflitaria com o processo de análise.
+        Comparação: case-insensitive, trim dos espaços.
+      </documentation>
+      <incoming>SF_025</incoming>
+      <outgoing>SF_027</outgoing>
+      <outgoing>SF_028</outgoing>
+    </exclusiveGateway>
+
+    <!-- RF-FE-07: atualizarUsuario() — sincroniza email -->
+    <serviceTask id="T_FE_010"
+                 name="AppComponent.atualizarUsuario() [RN-07]&#10;PUT /usuarios/{id} → atualiza email&#10;Após sucesso: alteraProprietario(cpf, email, &apos;F&apos;)"
+                 camunda:class="AppComponent#atualizarUsuario">
+      <documentation>
+        RF-FE-07 / RN-06 / RN-07:
+        Algoritmo de atualizarUsuario(usuario):
+          1. usuario.email = claims['email']  — substitui e-mail do BD pelo do IdP
+          2. cadastroUsuarioService.salvar(usuario)
+             → PUT /usuarios/{id}   Body: JSON do Usuario atualizado
+             → HttpAuthorizationInterceptor injeta Bearer token [RN-05]
+          3. Na resposta de SUCESSO de salvar():
+             cadastroUsuarioService.alteraProprietario(cpf, email, 'F')
+             'F' = pessoa física (identifica tipo de proprietário no sistema integrado)
+             RN-07: alteraProprietario sincroniza o proprietário em sistema externo integrado
+          4. Erros em alteraProprietario() são IGNORADOS silenciosamente (sem alerta ao usuário)
+          5. loadingService.dismiss() chamado no finalize() de salvar() (garante dismiss mesmo em erro)
+        Resultado: o e-mail fica consistente entre IdP e banco SOL para as próximas chamadas.
+      </documentation>
+      <incoming>SF_027</incoming>
+      <outgoing>SF_029</outgoing>
+    </serviceTask>
+
+    <!-- RF-BE-06: UsuarioRN.alterar() — persiste e-mail sincronizado -->
+    <serviceTask id="T_BE_004"
+                 name="UsuarioRN.alterar(id, usuario)&#10;@TransactionAttribute(REQUIRED)&#10;Verifica ctrDthAtu [RN-11] | Persiste email atualizado"
+                 camunda:class="com.procergs.solcbm.usuario.UsuarioRN#alterar">
+      <documentation>
+        RF-BE-06 / RN-11 / RF-BE-12:
+        Endpoint: PUT /usuarios/{id}   @TransactionAttribute(REQUIRED)
+        Algoritmo de alterar(Long id, Usuario usuario):
+          1. getEDAtualizado(id, usuario) → copia campos para UsuarioED existente no BD
+             Campos copiados: nome, cpf, rg, estadoEmissor, dtNascimento, nomeMae, email, telefone1, telefone2, status
+          2. RN-11: Verificação de concorrência otimista (somente se status != INCOMPLETO):
+             SE usuarioED.getCtrDthAtu() != usuario.getCtrDthAtu()
+               → lança WebApplicationRNException HTTP 409 CONFLICT
+               → mensagem: "analise.data_atualizacao.divergente"
+          3. Atualiza coleções via RNs: graduacaoUsuarioRN, especializacaoUsuarioRN, enderecoUsuarioRN
+          4. Recarrega coleções após atualização
+          5. altera(usuarioED) → UPDATE USUARIO SET EMAIL=:email, CTR_DTH_ATU=NOW() WHERE ID=:id
+          6. usuario.setMensagemStatus("Alterações realizadas com sucesso.")
+          7. Retorna usuario com ctrDthAtu atualizado
+
+        RF-BE-09: Upload de arquivos (RG, Doc. Profissional, Especialização) — gestão via P02.
+        RF-BE-11: analistasPorObjetoAcao(objeto, acao) — usada em P04 para distribuição.
+      </documentation>
+      <incoming>SF_029</incoming>
+      <outgoing>SF_030</outgoing>
+    </serviceTask>
+
+    <!-- ============================================================ -->
+    <!-- FASE 6 — INICIALIZAÇÃO DO DASHBOARD                          -->
+    <!-- ============================================================ -->
+
+    <!-- setUsuarioLocalStorage + router.initialNavigation + isReady=true -->
+    <serviceTask id="T_FE_011"
+                 name="setUsuarioLocalStorage(usuario)&#10;router.initialNavigation() | isReady=true&#10;[JOIN] Recebe de: sem-sync OU pós-sync email"
+                 camunda:class="AppComponent#inicializarSessao">
+      <documentation>
+        RF-FE-06 / RF-FE-11:
+        JOIN: recebe de dois caminhos:
+          - GW_FE_003 NÃO (sem sincronização de e-mail)
+          - T_BE_004 (após sincronização bem-sucedida de e-mail)
+
+        Passos:
+          1. setUsuarioLocalStorage(usuario) — persiste dados do usuário para componentes filhos
+          2. status = StatusCadastroUsuarioEnum[usuario.status] — converte string para enum
+          3. router.initialNavigation() — Angular processa a rota solicitada originalmente
+          4. isReady = true — remove loading spinner, exibe conteúdo da aplicação
+
+        RF-FE-11 — Transições de isReady:
+          ngOnInit() → false
+          getConfig() completa (finalize) → true
+          NavigationStart / GuardsCheckEnd → false
+          NavigationEnd / NavigationCancel / GuardsCheckStart → true
+          verificaCadastro() inicia chamada API → false
+          Usuário INCOMPLETO/404 → permanece false (navega para P02)
+          Usuário com outro status → true (AQUI)
+          Erro inesperado → true (após setTimeout 50ms)
+      </documentation>
+      <incoming>SF_028</incoming>
+      <incoming>SF_030</incoming>
+      <outgoing>SF_031</outgoing>
+    </serviceTask>
+
+    <!-- RF-FE-12: getNotificacoes() -->
+    <serviceTask id="T_FE_012"
+                 name="getNotificacoes() [RN-24]&#10;Carrega notificações pendentes do usuário&#10;Falha ignorada: handleErrorAndContinue([])"
+                 camunda:class="AppComponent#getNotificacoes">
+      <documentation>
+        RF-FE-12 / RN-24:
+        notificacaoService.consultarNotificacoes() → GET /notificacoes
+        Chamado APÓS router.initialNavigation() — falha NÃO interrompe o acesso.
+        RN-24: erro tratado com handleErrorAndContinue([]) → lista vazia, sistema continua.
+
+        Roteamento de notificações ao clicar (onSelectNotificacao):
+          1. Remove da lista local: filter(noti =&gt; noti.id !== notificacao.id)
+          2. notificacao.lida = true
+          3. notificacaoService.alterarNotificacao(notificacao) → persiste no backend
+          4. Navega para rota do contexto:
+             CADASTRO / INSTRUTOR → /cadastro
+             LICENCIAMENTO_ACEITE / LICENCIAMENTO → /licenciamento/meus-licenciamentos
+             FACT → /fact/minhas-solicitacoes
+             RECURSO → /licenciamento/meus-recursos
+
+        RF-FE-10: setupAutomaticSilentRefresh() (configurado em T_FE_002) renova token
+          automaticamente antes da expiração via iframe oculto (silent-refresh.html).
+          Evento session_terminated (T_FE_002 listener): apenas loga, sem redirecionamento [RN-23].
+        RF-FE-09 (Logout): logout(redireciona: boolean):
+          Se redireciona=true: logoutUrl = window.location.origin + '/solcbm/app'
+          oauthService.logOut() — invalida sessão no IdP
+          authStorage.clean() — remove localStorage['appToken']
+      </documentation>
+      <incoming>SF_031</incoming>
+      <outgoing>SF_032</outgoing>
+    </serviceTask>
+
+    <!-- End: Dashboard apresentado com sucesso -->
+    <endEvent id="EE_FE_001" name="Usuário autenticado&#10;Dashboard SOL apresentado">
+      <documentation>
+        P01 concluído com sucesso. O usuário está autenticado no SOL.
+        Estado final:
+          - isReady = true — conteúdo visível
+          - localStorage['appToken'] contém access_token e id_token válidos
+          - usuario armazenado em localStorage para todos os componentes Angular
+          - Notificações pendentes carregadas (ou [] em caso de falha)
+          - Bearer token injetado automaticamente em todas as chamadas para baseUrl [RN-05]
+          - Silent Refresh ativo para renovação transparente antes da expiração [RF-FE-10]
+          - CidadaoSessionMB populado a cada requisição HTTP ao backend [RF-BE-01]
+
+        Próximos processos acessíveis conforme status e permissões:
+          - P03: Solicitação de Licenciamento (se RT com status APROVADO)
+          - P04: Análise Técnica (se Fiscal/ADM com permissão 'analisar')
+          - P06: Solicitação de Isenção de Taxa
+          - P10: Recurso (CIA/CIV)
+          - P11: Acompanhamento de Pagamento de Boleto
+          - P12: Extinção de Licenciamento
+          - P14: Renovação de Licenciamento
+
+        RN-16: RT válido = status APROVADO E pelo menos uma graduação cadastrada.
+               UsuarioRN.isUsuarioRtValido() verifica esta condição.
+      </documentation>
+      <incoming>SF_032</incoming>
+    </endEvent>
+
+    <!-- ============================================================ -->
+    <!-- SEQUENCE FLOWS                                                -->
+    <!-- ============================================================ -->
+
+    <!-- Fase 0: Inicialização -->
+    <sequenceFlow id="SF_001" sourceRef="SE_001" targetRef="T_FE_001"/>
+    <sequenceFlow id="SF_002" sourceRef="T_FE_001" targetRef="T_FE_002"/>
+    <sequenceFlow id="SF_003" sourceRef="T_FE_002" targetRef="T_IDP_001"
+                  name="loadDiscoveryDocument()"/>
+
+    <!-- Fase 1: Discovery e verificação de token -->
+    <sequenceFlow id="SF_004" sourceRef="T_IDP_001" targetRef="GW_FE_001"
+                  name="Discovery Document retornado"/>
+    <sequenceFlow id="SF_005" name="NÃO — sem token válido"
+                  sourceRef="GW_FE_001" targetRef="T_FE_003"/>
+    <sequenceFlow id="SF_006" name="SIM — token existente (sessão ativa)"
+                  sourceRef="GW_FE_001" targetRef="T_FE_004"/>
+
+    <!-- Fase 2A: Redirect ao IdP -->
+    <sequenceFlow id="SF_007" sourceRef="T_FE_003" targetRef="T_IDP_002"
+                  name="Browser redirected → IdP /authorize"/>
+    <sequenceFlow id="SF_008" sourceRef="T_IDP_002" targetRef="UT_USR_001"
+                  name="IdP exibe formulário"/>
+    <sequenceFlow id="SF_009" sourceRef="UT_USR_001" targetRef="T_IDP_003"
+                  name="Usuário submete credenciais"/>
+    <sequenceFlow id="SF_010" sourceRef="T_IDP_003" targetRef="GW_IDP_001"/>
+    <sequenceFlow id="SF_011" name="NÃO — credenciais inválidas"
+                  sourceRef="GW_IDP_001" targetRef="EE_IDP_001"/>
+    <sequenceFlow id="SF_012" name="SIM — autenticado"
+                  sourceRef="GW_IDP_001" targetRef="T_IDP_004"/>
+    <sequenceFlow id="SF_013" sourceRef="T_IDP_004" targetRef="T_FE_004"
+                  name="Browser redirect: {redirectUri}#access_token=..."/>
+
+    <!-- Fase 2B: Processamento do token -->
+    <sequenceFlow id="SF_014" sourceRef="T_FE_004" targetRef="T_FE_005"/>
+    <sequenceFlow id="SF_015" sourceRef="T_FE_005" targetRef="T_FE_006"/>
+    <sequenceFlow id="SF_016" sourceRef="T_FE_006" targetRef="T_FE_007"/>
+    <sequenceFlow id="SF_017" sourceRef="T_FE_007" targetRef="T_FE_008"/>
+
+    <!-- Fase 3: Verificação de cadastro FE → BE → FE -->
+    <sequenceFlow id="SF_018" sourceRef="T_FE_008" targetRef="T_BE_001"
+                  name="GET /usuarios/{cpf} Authorization: Bearer"/>
+    <sequenceFlow id="SF_019" sourceRef="T_BE_001" targetRef="T_BE_002"/>
+    <sequenceFlow id="SF_020" sourceRef="T_BE_002" targetRef="GW_BE_001"/>
+    <sequenceFlow id="SF_021" name="NÃO — HTTP 404 (usuário não cadastrado)"
+                  sourceRef="GW_BE_001" targetRef="T_FE_009"/>
+    <sequenceFlow id="SF_022" name="SIM — HTTP 200 (usuário encontrado)"
+                  sourceRef="GW_BE_001" targetRef="T_BE_003"/>
+    <sequenceFlow id="SF_023" sourceRef="T_BE_003" targetRef="GW_FE_002"
+                  name="HTTP 200 Usuario JSON"/>
+
+    <!-- Fase 4: Roteamento por status -->
+    <sequenceFlow id="SF_024" name="INCOMPLETO"
+                  sourceRef="GW_FE_002" targetRef="T_FE_009"/>
+    <sequenceFlow id="SF_025" name="ANALISE_PENDENTE / EM_ANALISE / APROVADO / REPROVADO"
+                  sourceRef="GW_FE_002" targetRef="GW_FE_003"/>
+    <sequenceFlow id="SF_026" sourceRef="T_FE_009" targetRef="EE_FE_002"/>
+
+    <!-- Fase 5: Sincronização condicional de e-mail -->
+    <sequenceFlow id="SF_027" name="SIM — email diverge E status ≠ EM_ANALISE"
+                  sourceRef="GW_FE_003" targetRef="T_FE_010"/>
+    <sequenceFlow id="SF_028" name="NÃO — email igual OU status=EM_ANALISE"
+                  sourceRef="GW_FE_003" targetRef="T_FE_011"/>
+    <sequenceFlow id="SF_029" sourceRef="T_FE_010" targetRef="T_BE_004"
+                  name="PUT /usuarios/{id}"/>
+    <sequenceFlow id="SF_030" sourceRef="T_BE_004" targetRef="T_FE_011"
+                  name="HTTP 200 Usuario atualizado"/>
+
+    <!-- Fase 6: Dashboard -->
+    <sequenceFlow id="SF_031" sourceRef="T_FE_011" targetRef="T_FE_012"/>
+    <sequenceFlow id="SF_032" sourceRef="T_FE_012" targetRef="EE_FE_001"/>
+
+  </process>
+
+  <!-- ============================================================ -->
+  <!-- DIAGRAM INTERCHANGE (DI)                                     -->
+  <!-- Pool: 3860 x 1050                                            -->
+  <!-- Lane_USR:  y=0-120    (h=120)                                -->
+  <!-- Lane_FE:   y=120-450  (h=330)                                -->
+  <!-- Lane_IDP:  y=450-690  (h=240)                                -->
+  <!-- Lane_BE:   y=690-1050 (h=360)                                -->
+  <!-- ============================================================ -->
+
+  <bpmndi:BPMNDiagram id="BPMNDiagram_P01">
+    <bpmndi:BPMNPlane id="BPMNPlane_P01" bpmnElement="Collab_P01">
+
+      <!-- Pool -->
+      <bpmndi:BPMNShape id="Shape_Participant_P01" bpmnElement="Participant_P01" isHorizontal="true">
+        <dc:Bounds x="0" y="0" width="3860" height="1050"/>
+      </bpmndi:BPMNShape>
+
+      <!-- Lanes -->
+      <bpmndi:BPMNShape id="Shape_Lane_USR" bpmnElement="Lane_USR" isHorizontal="true">
+        <dc:Bounds x="30" y="0" width="3830" height="120"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Lane_FE" bpmnElement="Lane_FE" isHorizontal="true">
+        <dc:Bounds x="30" y="120" width="3830" height="330"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Lane_IDP" bpmnElement="Lane_IDP" isHorizontal="true">
+        <dc:Bounds x="30" y="450" width="3830" height="240"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Lane_BE" bpmnElement="Lane_BE" isHorizontal="true">
+        <dc:Bounds x="30" y="690" width="3830" height="360"/>
+      </bpmndi:BPMNShape>
+
+      <!-- ======================================================== -->
+      <!-- SHAPES: FASE 0 — INICIALIZAÇÃO                           -->
+      <!-- ======================================================== -->
+
+      <!-- SE_001: Start — center (130, 285) -->
+      <bpmndi:BPMNShape id="Shape_SE_001" bpmnElement="SE_001">
+        <dc:Bounds x="112" y="267" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="80" y="310" width="100" height="40"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- T_FE_001: AppConfigService.getConfig() — center (270, 285) -->
+      <bpmndi:BPMNShape id="Shape_T_FE_001" bpmnElement="T_FE_001">
+        <dc:Bounds x="200" y="245" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- T_FE_002: configureAuth / NullValidationHandler — center (455, 285) -->
+      <bpmndi:BPMNShape id="Shape_T_FE_002" bpmnElement="T_FE_002">
+        <dc:Bounds x="375" y="245" width="160" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- ======================================================== -->
+      <!-- SHAPES: FASE 1 — DISCOVERY E GATEWAY TOKEN               -->
+      <!-- ======================================================== -->
+
+      <!-- T_IDP_001: Discovery Document — center (520, 570) -->
+      <bpmndi:BPMNShape id="Shape_T_IDP_001" bpmnElement="T_IDP_001">
+        <dc:Bounds x="450" y="530" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- GW_FE_001: token presente? — center (620, 285) -->
+      <bpmndi:BPMNShape id="Shape_GW_FE_001" bpmnElement="GW_FE_001" isMarkerVisible="true">
+        <dc:Bounds x="600" y="265" width="40" height="40"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="548" y="313" width="144" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- ======================================================== -->
+      <!-- SHAPES: FASE 2A — REDIRECT AO IDP                        -->
+      <!-- ======================================================== -->
+
+      <!-- T_FE_003: initImplicitFlow — center (740, 285) -->
+      <bpmndi:BPMNShape id="Shape_T_FE_003" bpmnElement="T_FE_003">
+        <dc:Bounds x="670" y="245" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- T_IDP_002: Exibe formulário autenticação — center (820, 570) -->
+      <bpmndi:BPMNShape id="Shape_T_IDP_002" bpmnElement="T_IDP_002">
+        <dc:Bounds x="750" y="530" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- UT_USR_001: Usuário preenche credenciais — center (1060, 60) -->
+      <bpmndi:BPMNShape id="Shape_UT_USR_001" bpmnElement="UT_USR_001">
+        <dc:Bounds x="990" y="20" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- T_IDP_003: IdP valida credenciais — center (1110, 570) -->
+      <bpmndi:BPMNShape id="Shape_T_IDP_003" bpmnElement="T_IDP_003">
+        <dc:Bounds x="1040" y="530" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- GW_IDP_001: Credenciais válidas? — center (1290, 570) -->
+      <bpmndi:BPMNShape id="Shape_GW_IDP_001" bpmnElement="GW_IDP_001" isMarkerVisible="true">
+        <dc:Bounds x="1270" y="550" width="40" height="40"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1218" y="597" width="144" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- EE_IDP_001: Autenticação negada — center (1380, 648) -->
+      <bpmndi:BPMNShape id="Shape_EE_IDP_001" bpmnElement="EE_IDP_001">
+        <dc:Bounds x="1362" y="630" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1340" y="673" width="80" height="40"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- T_IDP_004: Emite access_token, redirect back — center (1510, 570) -->
+      <bpmndi:BPMNShape id="Shape_T_IDP_004" bpmnElement="T_IDP_004">
+        <dc:Bounds x="1440" y="530" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- ======================================================== -->
+      <!-- SHAPES: FASE 2B — PROCESSAMENTO DO TOKEN                 -->
+      <!-- ======================================================== -->
+
+      <!-- T_FE_004: tryLoginImplicitFlow (JOIN) — center (1670, 285) -->
+      <bpmndi:BPMNShape id="Shape_T_FE_004" bpmnElement="T_FE_004">
+        <dc:Bounds x="1600" y="245" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- T_FE_005: NullValidationHandler — center (1840, 285) -->
+      <bpmndi:BPMNShape id="Shape_T_FE_005" bpmnElement="T_FE_005">
+        <dc:Bounds x="1770" y="245" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- T_FE_006: AuthStorageService.setItem — center (2010, 285) -->
+      <bpmndi:BPMNShape id="Shape_T_FE_006" bpmnElement="T_FE_006">
+        <dc:Bounds x="1940" y="245" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- T_FE_007: loadUserProfile — center (2180, 285) -->
+      <bpmndi:BPMNShape id="Shape_T_FE_007" bpmnElement="T_FE_007">
+        <dc:Bounds x="2110" y="245" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- ======================================================== -->
+      <!-- SHAPES: FASE 3 — VERIFICAÇÃO DE CADASTRO                 -->
+      <!-- ======================================================== -->
+
+      <!-- T_FE_008: verificaCadastro() — center (2360, 285) -->
+      <bpmndi:BPMNShape id="Shape_T_FE_008" bpmnElement="T_FE_008">
+        <dc:Bounds x="2290" y="245" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- T_BE_001: ContainerRequestFilter — center (2360, 870) -->
+      <bpmndi:BPMNShape id="Shape_T_BE_001" bpmnElement="T_BE_001">
+        <dc:Bounds x="2290" y="830" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- T_BE_002: UsuarioRN.consultaPorCpf — center (2540, 870) -->
+      <bpmndi:BPMNShape id="Shape_T_BE_002" bpmnElement="T_BE_002">
+        <dc:Bounds x="2470" y="830" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- GW_BE_001: usuário encontrado? — center (2700, 870) -->
+      <bpmndi:BPMNShape id="Shape_GW_BE_001" bpmnElement="GW_BE_001" isMarkerVisible="true">
+        <dc:Bounds x="2680" y="850" width="40" height="40"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2632" y="897" width="136" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- T_BE_003: Retorna Usuario completo — center (2830, 870) -->
+      <bpmndi:BPMNShape id="Shape_T_BE_003" bpmnElement="T_BE_003">
+        <dc:Bounds x="2760" y="830" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- ======================================================== -->
+      <!-- SHAPES: FASE 4 — ROTEAMENTO POR STATUS                   -->
+      <!-- ======================================================== -->
+
+      <!-- GW_FE_002: status do cadastro? — center (2990, 285) -->
+      <bpmndi:BPMNShape id="Shape_GW_FE_002" bpmnElement="GW_FE_002" isMarkerVisible="true">
+        <dc:Bounds x="2970" y="265" width="40" height="40"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2916" y="313" width="148" height="40"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- T_FE_009: navigate('/cadastro') — center (3100, 175) -->
+      <bpmndi:BPMNShape id="Shape_T_FE_009" bpmnElement="T_FE_009">
+        <dc:Bounds x="3040" y="135" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- EE_FE_002: Usuário → /cadastro — center (3270, 155) -->
+      <bpmndi:BPMNShape id="Shape_EE_FE_002" bpmnElement="EE_FE_002">
+        <dc:Bounds x="3252" y="137" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3224" y="180" width="92" height="40"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- ======================================================== -->
+      <!-- SHAPES: FASE 5 — SINCRONIZAÇÃO DE E-MAIL                 -->
+      <!-- ======================================================== -->
+
+      <!-- GW_FE_003: email diverge? — center (3150, 285) -->
+      <bpmndi:BPMNShape id="Shape_GW_FE_003" bpmnElement="GW_FE_003" isMarkerVisible="true">
+        <dc:Bounds x="3130" y="265" width="40" height="40"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3072" y="313" width="156" height="40"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- T_FE_010: atualizarUsuario() — center (3280, 285) -->
+      <bpmndi:BPMNShape id="Shape_T_FE_010" bpmnElement="T_FE_010">
+        <dc:Bounds x="3210" y="245" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- T_BE_004: UsuarioRN.alterar() — center (3280, 870) -->
+      <bpmndi:BPMNShape id="Shape_T_BE_004" bpmnElement="T_BE_004">
+        <dc:Bounds x="3210" y="830" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- ======================================================== -->
+      <!-- SHAPES: FASE 6 — DASHBOARD                               -->
+      <!-- ======================================================== -->
+
+      <!-- T_FE_011: setLocalStorage + initialNavigation — center (3470, 285) -->
+      <bpmndi:BPMNShape id="Shape_T_FE_011" bpmnElement="T_FE_011">
+        <dc:Bounds x="3400" y="245" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- T_FE_012: getNotificacoes() — center (3640, 285) -->
+      <bpmndi:BPMNShape id="Shape_T_FE_012" bpmnElement="T_FE_012">
+        <dc:Bounds x="3570" y="245" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- EE_FE_001: Dashboard apresentado — center (3800, 285) -->
+      <bpmndi:BPMNShape id="Shape_EE_FE_001" bpmnElement="EE_FE_001">
+        <dc:Bounds x="3782" y="267" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3755" y="310" width="90" height="40"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- ======================================================== -->
+      <!-- EDGES: SEQUENCE FLOWS                                    -->
+      <!-- ======================================================== -->
+
+      <!-- SF_001: SE_001 → T_FE_001 -->
+      <bpmndi:BPMNEdge id="Edge_SF_001" bpmnElement="SF_001">
+        <di:waypoint x="148" y="285"/>
+        <di:waypoint x="200" y="285"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_002: T_FE_001 → T_FE_002 -->
+      <bpmndi:BPMNEdge id="Edge_SF_002" bpmnElement="SF_002">
+        <di:waypoint x="340" y="285"/>
+        <di:waypoint x="375" y="285"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_003: T_FE_002 → T_IDP_001 (FE → IDP cross-lane DOWN) -->
+      <bpmndi:BPMNEdge id="Edge_SF_003" bpmnElement="SF_003">
+        <di:waypoint x="455" y="325"/>
+        <di:waypoint x="455" y="570"/>
+        <di:waypoint x="450" y="570"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_004: T_IDP_001 → GW_FE_001 (IDP → FE cross-lane UP) -->
+      <bpmndi:BPMNEdge id="Edge_SF_004" bpmnElement="SF_004">
+        <di:waypoint x="520" y="530"/>
+        <di:waypoint x="520" y="285"/>
+        <di:waypoint x="600" y="285"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_005: GW_FE_001 → T_FE_003 (NÃO — sem token) -->
+      <bpmndi:BPMNEdge id="Edge_SF_005" bpmnElement="SF_005">
+        <di:waypoint x="640" y="285"/>
+        <di:waypoint x="670" y="285"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="635" y="258" width="90" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_006: GW_FE_001 → T_FE_004 (SIM — token existe, salta auth) -->
+      <!-- Rota acima da área de autenticação (y=145) -->
+      <bpmndi:BPMNEdge id="Edge_SF_006" bpmnElement="SF_006">
+        <di:waypoint x="620" y="265"/>
+        <di:waypoint x="620" y="145"/>
+        <di:waypoint x="1670" y="145"/>
+        <di:waypoint x="1670" y="245"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1070" y="128" width="150" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_007: T_FE_003 → T_IDP_002 (FE → IDP cross-lane DOWN) -->
+      <bpmndi:BPMNEdge id="Edge_SF_007" bpmnElement="SF_007">
+        <di:waypoint x="740" y="325"/>
+        <di:waypoint x="740" y="450"/>
+        <di:waypoint x="820" y="450"/>
+        <di:waypoint x="820" y="530"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_008: T_IDP_002 → UT_USR_001 (IDP → USR cross-lane UP) -->
+      <bpmndi:BPMNEdge id="Edge_SF_008" bpmnElement="SF_008">
+        <di:waypoint x="820" y="530"/>
+        <di:waypoint x="820" y="60"/>
+        <di:waypoint x="990" y="60"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_009: UT_USR_001 → T_IDP_003 (USR → IDP cross-lane DOWN) -->
+      <bpmndi:BPMNEdge id="Edge_SF_009" bpmnElement="SF_009">
+        <di:waypoint x="1060" y="100"/>
+        <di:waypoint x="1060" y="450"/>
+        <di:waypoint x="1110" y="450"/>
+        <di:waypoint x="1110" y="530"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_010: T_IDP_003 → GW_IDP_001 -->
+      <bpmndi:BPMNEdge id="Edge_SF_010" bpmnElement="SF_010">
+        <di:waypoint x="1180" y="570"/>
+        <di:waypoint x="1270" y="570"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_011: GW_IDP_001 → EE_IDP_001 (NÃO — inválido) -->
+      <bpmndi:BPMNEdge id="Edge_SF_011" bpmnElement="SF_011">
+        <di:waypoint x="1290" y="590"/>
+        <di:waypoint x="1290" y="648"/>
+        <di:waypoint x="1362" y="648"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1292" y="610" width="90" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_012: GW_IDP_001 → T_IDP_004 (SIM — autenticado) -->
+      <bpmndi:BPMNEdge id="Edge_SF_012" bpmnElement="SF_012">
+        <di:waypoint x="1310" y="570"/>
+        <di:waypoint x="1440" y="570"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1340" y="550" width="80" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_013: T_IDP_004 → T_FE_004 (IDP → FE cross-lane UP) -->
+      <bpmndi:BPMNEdge id="Edge_SF_013" bpmnElement="SF_013">
+        <di:waypoint x="1580" y="570"/>
+        <di:waypoint x="1670" y="570"/>
+        <di:waypoint x="1670" y="325"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_014: T_FE_004 → T_FE_005 -->
+      <bpmndi:BPMNEdge id="Edge_SF_014" bpmnElement="SF_014">
+        <di:waypoint x="1740" y="285"/>
+        <di:waypoint x="1770" y="285"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_015: T_FE_005 → T_FE_006 -->
+      <bpmndi:BPMNEdge id="Edge_SF_015" bpmnElement="SF_015">
+        <di:waypoint x="1910" y="285"/>
+        <di:waypoint x="1940" y="285"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_016: T_FE_006 → T_FE_007 -->
+      <bpmndi:BPMNEdge id="Edge_SF_016" bpmnElement="SF_016">
+        <di:waypoint x="2080" y="285"/>
+        <di:waypoint x="2110" y="285"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_017: T_FE_007 → T_FE_008 -->
+      <bpmndi:BPMNEdge id="Edge_SF_017" bpmnElement="SF_017">
+        <di:waypoint x="2250" y="285"/>
+        <di:waypoint x="2290" y="285"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_018: T_FE_008 → T_BE_001 (FE → BE cross-lane DOWN) -->
+      <bpmndi:BPMNEdge id="Edge_SF_018" bpmnElement="SF_018">
+        <di:waypoint x="2360" y="325"/>
+        <di:waypoint x="2360" y="830"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_019: T_BE_001 → T_BE_002 -->
+      <bpmndi:BPMNEdge id="Edge_SF_019" bpmnElement="SF_019">
+        <di:waypoint x="2430" y="870"/>
+        <di:waypoint x="2470" y="870"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_020: T_BE_002 → GW_BE_001 -->
+      <bpmndi:BPMNEdge id="Edge_SF_020" bpmnElement="SF_020">
+        <di:waypoint x="2610" y="870"/>
+        <di:waypoint x="2680" y="870"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_021: GW_BE_001 → T_FE_009 (404 NOT FOUND — BE → FE cross-lane UP) -->
+      <!-- Rota sobe da BE lane passando por IDP e FE lanes -->
+      <bpmndi:BPMNEdge id="Edge_SF_021" bpmnElement="SF_021">
+        <di:waypoint x="2700" y="850"/>
+        <di:waypoint x="2700" y="175"/>
+        <di:waypoint x="3040" y="175"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2706" y="500" width="140" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_022: GW_BE_001 → T_BE_003 (FOUND) -->
+      <bpmndi:BPMNEdge id="Edge_SF_022" bpmnElement="SF_022">
+        <di:waypoint x="2720" y="870"/>
+        <di:waypoint x="2760" y="870"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2722" y="848" width="90" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_023: T_BE_003 → GW_FE_002 (BE → FE cross-lane UP) -->
+      <bpmndi:BPMNEdge id="Edge_SF_023" bpmnElement="SF_023">
+        <di:waypoint x="2830" y="830"/>
+        <di:waypoint x="2830" y="285"/>
+        <di:waypoint x="2970" y="285"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_024: GW_FE_002 → T_FE_009 (INCOMPLETO) -->
+      <bpmndi:BPMNEdge id="Edge_SF_024" bpmnElement="SF_024">
+        <di:waypoint x="2990" y="265"/>
+        <di:waypoint x="2990" y="175"/>
+        <di:waypoint x="3040" y="175"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2994" y="210" width="80" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_025: GW_FE_002 → GW_FE_003 (outros status) -->
+      <bpmndi:BPMNEdge id="Edge_SF_025" bpmnElement="SF_025">
+        <di:waypoint x="3010" y="285"/>
+        <di:waypoint x="3130" y="285"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3010" y="260" width="120" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_026: T_FE_009 → EE_FE_002 -->
+      <bpmndi:BPMNEdge id="Edge_SF_026" bpmnElement="SF_026">
+        <di:waypoint x="3160" y="175"/>
+        <di:waypoint x="3252" y="155"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_027: GW_FE_003 → T_FE_010 (SIM — email diverge) -->
+      <bpmndi:BPMNEdge id="Edge_SF_027" bpmnElement="SF_027">
+        <di:waypoint x="3170" y="285"/>
+        <di:waypoint x="3210" y="285"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3165" y="260" width="80" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_028: GW_FE_003 → T_FE_011 (NÃO — sem sync, rota acima de T_FE_010) -->
+      <bpmndi:BPMNEdge id="Edge_SF_028" bpmnElement="SF_028">
+        <di:waypoint x="3150" y="265"/>
+        <di:waypoint x="3150" y="215"/>
+        <di:waypoint x="3400" y="215"/>
+        <di:waypoint x="3400" y="245"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3200" y="197" width="120" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_029: T_FE_010 → T_BE_004 (FE → BE cross-lane DOWN) -->
+      <bpmndi:BPMNEdge id="Edge_SF_029" bpmnElement="SF_029">
+        <di:waypoint x="3280" y="325"/>
+        <di:waypoint x="3280" y="830"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_030: T_BE_004 → T_FE_011 (BE → FE cross-lane UP) -->
+      <bpmndi:BPMNEdge id="Edge_SF_030" bpmnElement="SF_030">
+        <di:waypoint x="3350" y="870"/>
+        <di:waypoint x="3470" y="870"/>
+        <di:waypoint x="3470" y="325"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_031: T_FE_011 → T_FE_012 -->
+      <bpmndi:BPMNEdge id="Edge_SF_031" bpmnElement="SF_031">
+        <di:waypoint x="3540" y="285"/>
+        <di:waypoint x="3570" y="285"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_032: T_FE_012 → EE_FE_001 -->
+      <bpmndi:BPMNEdge id="Edge_SF_032" bpmnElement="SF_032">
+        <di:waypoint x="3710" y="285"/>
+        <di:waypoint x="3782" y="285"/>
+      </bpmndi:BPMNEdge>
+
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</definitions>

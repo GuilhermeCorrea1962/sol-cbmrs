@@ -1,0 +1,2937 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+             id="Definitions_P05_CienciaRecurso"
+             targetNamespace="http://sol.cbm.rs.gov.br/bpmn/p05"
+             exporter="Camunda Modeler"
+             exporterVersion="5.0.0">
+
+  <!-- ================================================================
+       P05 — CIÊNCIA CIA/CIV E RECURSO ADMINISTRATIVO
+       Sistema SOL — CBM-RS
+       Stack: Java EE 8 / WildFly, JAX-RS, CDI, EJB @Stateless,
+              JPA/Hibernate, Alfresco, JasperReports, arqjava4
+       Pacotes:
+         com.procergs.solcbm.licenciamentociencia
+         com.procergs.solcbm.recurso
+         com.procergs.solcbm.analiserecurso
+         com.procergs.solcbm.avalistaanaliserecurso
+       ================================================================ -->
+
+  <collaboration id="Collaboration_P05">
+    <participant id="Pool_P05"
+                 name="P05 — Ciência CIA/CIV e Recurso Administrativo"
+                 processRef="Process_P05"/>
+  </collaboration>
+
+  <process id="Process_P05"
+           name="P05 — Ciência CIA/CIV e Recurso Administrativo"
+           isExecutable="false">
+
+    <documentation><![CDATA[
+PROCESSO P05 — CIÊNCIA CIA/CIV E RECURSO ADMINISTRATIVO
+Sistema SOL — Corpo de Bombeiros Militar do Rio Grande do Sul
+
+PRÉ-CONDIÇÃO:
+  Licenciamento com CIA (Comunicado de Inconformidade na Análise) ou CIV
+  (Comunicado de Inconformidade na Vistoria) emitido e ciência do documento
+  pelo cidadão ainda pendente. Resultado do processo P04 (ATEC/Inviabilidade)
+  ou do processo de Vistoria. Também abrange ciência de APPCI/APPCI_RENOV
+  (sempre aprovado, sem recurso cabível).
+
+SUB-JORNADA A — CIÊNCIA DO CIA/CIV:
+  O cidadão (RT, RU ou Proprietário) toma ciência do CIA ou CIV emitido.
+  Pode ocorrer de forma MANUAL (cidadão acessa o sistema) ou AUTOMÁTICA
+  (job EJB Timer @Schedule executa após 30 dias sem ciência manual).
+
+  Tipos suportados (TipoLicenciamentoCiencia):
+    ATEC        — CIA de análise técnica → reprovado: NCA / aprovado: CA
+    INVIABILIDADE — CIA de análise de inviabilidade → reprovado: NCA / aprovado: CA
+    CIV         — CIV de vistoria → reprovado: CIV / aprovado: ALVARA_VIGENTE
+    APPCI       — APPCI vigente (sempre aprovado) → ALVARA_VIGENTE
+    APPCI_RENOV — APPCI renovação (sempre aprovado) → ALVARA_VIGENTE
+
+  Hierarquia de implementação (Template Method + CDI Qualifier):
+    LicenciamentoCienciaBaseRN (abstract)
+    ├── LicenciamentoCienciaCidadaoBaseRN (abstract)
+    │   └── *CienciaCidadaoRN (@Stateless, @LicenciamentoCienciaQualifier)
+    └── LicenciamentoCienciaAutomaticaBaseRN (abstract)
+        └── *CienciaAutomaticaRN (@Stateless, @LicenciamentoCienciaQualifier)
+
+  Job de ciência automática:
+    Classe: LicenciamentoCienciaBatchRN (@Stateless)
+    @Schedule(hour="12/12", persistent=false) → executa 12:00 e 24:00
+    DIAS_PERIODO_VERIFICACAO = -30 (30 dias atrás)
+    BatchUtil.isServerEnabled() → protege ambientes não habilitados
+
+SUB-JORNADA B — RECURSO ADMINISTRATIVO:
+  Após ciência de CIA/CIV reprovado, o cidadão pode interpor recurso:
+    1ª instância: prazo 30 dias após ciência | individual | analista CBM-RS
+    2ª instância: prazo 15 dias após ciência da resposta | colegiado (max 2)
+
+  Entidades principais:
+    CBM_RECURSO           (RecursoED)
+    CBM_ANALISE_RECURSO   (AnaliseRecursoED)
+    CBM_RECURSO_MARCO     (RecursoMarcoED)
+    CBM_RECURSO_ARQUIVO   (RecursoArquivoED)
+    CBM_AVALISTA_RECURSO  (AvalistaRecursoED)
+
+STACK TECNOLÓGICA (sem alterações):
+  Linguagem:   Java EE (JDK 8+)
+  Servidor:    WildFly / JBoss
+  REST:        JAX-RS (RESTEasy) — @Path, @Stateless EJB
+  Injeção:     CDI @Inject / @Qualifier / @Stateless
+  Persistência: JPA + Hibernate (@SequenceGenerator, @Enumerated, @Audited)
+  Segurança:   @Permissao(objeto, acao) via arqjava4 / SessionMB / @SOEAuthRest
+  ECM:         Alfresco (identificadorAlfresco = nodeRef)
+  Relatórios:  JasperReports (DocumentoRelatorioAnaliseRecursoRN)
+  Auditoria:   @Audited Hibernate Envers → tabelas *_AUD
+  Conversor:   SimNaoBooleanConverter (Boolean ↔ 'S'/'N')
+
+CONSTANTES RELEVANTES:
+  PRAZO_SOLICITAR_RECURSO_1_INSTANCIA = 30 dias (LicenciamentoCidadaoRN)
+  PRAZO_SOLICITAR_RECURSO_2_INSTANCIA = 15 dias (LicenciamentoCidadaoRN)
+  DIAS_PERIODO_VERIFICACAO            = -30      (LicenciamentoCienciaBatchRN)
+  RECURSO_1_INSTANCIA                 = 1        (AnaliseRecursoAdmRN)
+  RECURSO_2_INSTANCIA                 = 2        (AnaliseRecursoAdmRN)
+  NOME_RESPONSAVEL_SISTEMA            = "SOLCBM" (RecursoCienciaAutomaticaRN)
+    ]]></documentation>
+
+    <!-- ==============================================================
+         LANE SET
+         ============================================================== -->
+    <laneSet id="LaneSet_P05">
+
+      <lane id="Lane_Cidadao" name="Cidadão (RT / RU / Proprietário)">
+        <flowNodeRef>Start_P05</flowNodeRef>
+        <flowNodeRef>T01_AcessarDocumento</flowNodeRef>
+        <flowNodeRef>T02_AguardarCiencia</flowNodeRef>
+        <flowNodeRef>GW04_OptaRecurso</flowNodeRef>
+        <flowNodeRef>End_SemRecurso</flowNodeRef>
+        <flowNodeRef>End_AprovadoCA</flowNodeRef>
+        <flowNodeRef>T05_PreencherRecurso</flowNodeRef>
+        <flowNodeRef>T06B_AnexarDocumentos</flowNodeRef>
+        <flowNodeRef>T07_AceitesEnvolvidos</flowNodeRef>
+        <flowNodeRef>T21_AguardarCienciaResposta</flowNodeRef>
+        <flowNodeRef>GW13_OptaSegInstancia</flowNodeRef>
+        <flowNodeRef>End_SemSegInstancia</flowNodeRef>
+      </lane>
+
+      <lane id="Lane_Coordenador" name="Coordenador CBM-RS">
+        <flowNodeRef>T10_ConsultarDistribuicao</flowNodeRef>
+        <flowNodeRef>T11_SelecionarAnalista</flowNodeRef>
+        <flowNodeRef>GW_CancDistrib</flowNodeRef>
+      </lane>
+
+      <lane id="Lane_Analista" name="Analista CBM-RS">
+        <flowNodeRef>T13_AcessarRecurso</flowNodeRef>
+        <flowNodeRef>GW06_Instancia</flowNodeRef>
+        <flowNodeRef>T14_AnalisarIndividual</flowNodeRef>
+        <flowNodeRef>T14B_CriarColegiado</flowNodeRef>
+        <flowNodeRef>T15B_VotarColegiado</flowNodeRef>
+        <flowNodeRef>T17B_RedigirDespacho2</flowNodeRef>
+      </lane>
+
+      <lane id="Lane_Sistema" name="Sistema SOL — Backend Java EE">
+        <flowNodeRef>T03A_RegistrarCienciaManual</flowNodeRef>
+        <flowNodeRef>T03B_RegistrarCienciaAutomatica</flowNodeRef>
+        <flowNodeRef>GW01_JoinCiencia</flowNodeRef>
+        <flowNodeRef>T04_AtualizarLicenciamento</flowNodeRef>
+        <flowNodeRef>GW02_Aprovado</flowNodeRef>
+        <flowNodeRef>GW03_TipoDoc</flowNodeRef>
+        <flowNodeRef>End_AlvaraVigente</flowNodeRef>
+        <flowNodeRef>T06_ValidarRegistrar</flowNodeRef>
+        <flowNodeRef>GW05_TodosAceitaram</flowNodeRef>
+        <flowNodeRef>T08_CancelarRecurso</flowNodeRef>
+        <flowNodeRef>End_RecursoCancelado</flowNodeRef>
+        <flowNodeRef>T09_ConcluirAceites</flowNodeRef>
+        <flowNodeRef>T12_ExecutarDistribuicao</flowNodeRef>
+        <flowNodeRef>T12C_CancelarDistribuicao</flowNodeRef>
+        <flowNodeRef>T15_ConcluirAnalise1</flowNodeRef>
+        <flowNodeRef>GW07_TodosVotaram</flowNodeRef>
+        <flowNodeRef>T16B_MarcoFimColegiado</flowNodeRef>
+        <flowNodeRef>T18B_ConcluirAnalise2</flowNodeRef>
+        <flowNodeRef>GW08_JoinAnalise</flowNodeRef>
+        <flowNodeRef>T19_GerarRelatorio</flowNodeRef>
+        <flowNodeRef>T20_AtualizarEstado</flowNodeRef>
+        <flowNodeRef>T22_RegistrarCienciaManualResp</flowNodeRef>
+        <flowNodeRef>T22B_CienciaAutomaticaResp</flowNodeRef>
+        <flowNodeRef>GW09_JoinCienciaResp</flowNodeRef>
+        <flowNodeRef>GW10_Resultado</flowNodeRef>
+        <flowNodeRef>GW11_TipoDeferimento</flowNodeRef>
+        <flowNodeRef>T23_CriarNovaVistoria</flowNodeRef>
+        <flowNodeRef>End_NovaVistoria</flowNodeRef>
+        <flowNodeRef>T24_CancelarCIACIV</flowNodeRef>
+        <flowNodeRef>End_VoltaDistribuicao</flowNodeRef>
+        <flowNodeRef>End_DeferidoTotal</flowNodeRef>
+        <flowNodeRef>GW12_FoiSegInstancia</flowNodeRef>
+        <flowNodeRef>End_P05</flowNodeRef>
+      </lane>
+
+    </laneSet>
+
+    <!-- ==============================================================
+         FASE 1 — CIÊNCIA DO CIA/CIV
+         ============================================================== -->
+
+    <startEvent id="Start_P05"
+                name="CIA ou CIV emitido&#10;— ciência pendente">
+      <documentation><![CDATA[
+EVENTO DE INÍCIO — P05
+
+PRÉ-CONDIÇÃO:
+  Licenciamento com CIA ou CIV emitido pelo CBM-RS e ciência do cidadão
+  ainda não registrada. Situação do licenciamento: AGUARDANDO_CIENCIA
+  (ou equivalente para APPCI/APPCI_RENOV).
+
+TIPOS DE DOCUMENTO COBERTOS:
+  ATEC        → AnaliseLicenciamentoTecnicaED com status=REPROVADO ou APROVADO
+  INVIABILIDADE → AnaliseLicInviabilidadeED com status correspondente
+  CIV         → VistoriaED com status=REPROVADO ou APROVADO
+  APPCI       → AppciED (sempre "aprovado" — sem CIA)
+  APPCI_RENOV → AppciED renovação (sempre "aprovado" — sem CIA)
+
+ORIGEM:
+  P04 (Análise Técnica): emite CIA → inicia P05 para ciência do CIA
+  Vistoria: emite CIV → inicia P05 para ciência do CIV
+  P04 (APPCI): emite APPCI → inicia P05 para ciência do alvará
+
+INTERFACE RELEVANTE:
+  LicenciamentoCiencia extends Licenciamento, Ciencia
+    LicenciamentoCiencia.getCiencia() == null → ciência ainda não registrada
+    LicenciamentoCiencia.possuiCiencia() == false → pendente
+      ]]></documentation>
+      <outgoing>SF_Start_T01</outgoing>
+    </startEvent>
+
+    <userTask id="T01_AcessarDocumento"
+              name="Acessar CIA/CIV/APPCI&#10;pendente de ciência"
+              camunda:assignee="${cidadaoRT_RU_Proprietario}"
+              camunda:formKey="licenciamento-ciencia-documento">
+      <documentation><![CDATA[
+TAREFA: Cidadão (RT, RU ou Proprietário) acessa o documento pendente de ciência.
+
+PERFIL: RT (Responsável Técnico), RU (Responsável pelo Uso) ou Proprietário
+RESTRIÇÃO: @AutorizaEnvolvido + SegurancaEnvolvidoInterceptor
+
+ACESSO AO DOCUMENTO:
+  O sistema exibe o documento (CIA ou CIV ou APPCI) emitido pelo CBM-RS.
+  O cidadão pode baixar o PDF antes de confirmar a ciência:
+    REST: GET /recurso-arquivos/download/{idArquivo}
+    → ArquivoRN.toInputStream(arquivoED) → retorna stream do Alfresco
+
+TIPO DE CIÊNCIA (TipoLicenciamentoCiencia):
+  Determinado pelo tipo da entidade associada ao licenciamento:
+    ATEC        → AnaliseLicenciamentoTecnicaCienciaCidadaoRN (@ATEC)
+    INVIABILIDADE → AnaliseLicInviabilidadeCienciaCidadaoRN (@INVIABILIDADE)
+    CIV         → CivCienciaCidadaoRN (@CIV)
+    APPCI       → AppciCienciaCidadaoRN (@APPCI)
+    APPCI_RENOV → AppciCienciaCidadaoRenovacaoRN (@APPCI_RENOV)
+
+  A injeção correta é resolvida pelo CDI via:
+    @LicenciamentoCienciaQualifier(tipoLicenciamentoCiencia = TIPO)
+
+DADOS EXIBIDOS:
+  - Número do PPCI/PSPCIM
+  - Endereço do imóvel
+  - Tipo do documento (CIA de análise / CIA de inviabilidade / CIV / APPCI)
+  - Arquivo PDF do documento (identificadorAlfresco → Alfresco nodeRef)
+  - Data de emissão
+  - Prazo para ciência automática (30 dias da data de emissão)
+      ]]></documentation>
+      <incoming>SF_Start_T01</incoming>
+      <outgoing>SF_T01_T02</outgoing>
+    </userTask>
+
+    <userTask id="T02_AguardarCiencia"
+              name="Confirmar ciência do&#10;CIA / CIV / APPCI"
+              camunda:assignee="${cidadaoRT_RU_Proprietario}"
+              camunda:formKey="licenciamento-ciencia-confirmar">
+      <documentation><![CDATA[
+TAREFA: Cidadão confirma a ciência do documento emitido.
+
+PERFIL: RT, RU ou Proprietário vinculado ao licenciamento
+PRAZO: 30 dias a partir da emissão do documento (P30D)
+       Após 30 dias sem ciência manual → timer dispara → ciência automática (T03B)
+
+AÇÃO DO CIDADÃO:
+  Clicar no botão "Confirmar ciência" na interface do portal SOL.
+
+ENDPOINT REST (chamado pelo frontend após confirmação):
+  Implementado via serviço específico por tipo (invocado indiretamente pelo controller).
+  Internamente chama: LicenciamentoCienciaCidadaoBaseRN.efetuarCiencia(LicenciamentoCiencia)
+
+FLUXO INTERNO (LicenciamentoCienciaCidadaoBaseRN.efetuarCiencia):
+  1. usuarioED = usuarioRN.getUsuarioLogado()
+     → obtém UsuarioED do banco (usuário local SOL, vinculado ao CPF SOE)
+  2. aplicarCienciaBase(licenciamentoCiencia):
+     → licenciamentoCiencia.setCiencia(true)
+     → licenciamentoCiencia.setDthCiencia(dataAtualHelper.getDataAtual())
+  3. licenciamentoCiencia.setUsuarioCiencia(usuarioED)
+  4. alteraLicenciamentoCiencia(licenciamentoCiencia)
+     → persiste via BD específico (AnaliseLicenciamentoTecnicaBD.altera, etc.)
+  5. atualizarLicenciamento(licenciamentoCiencia) → ver T04
+  6. licenciamentoMarcoCidadaoRN.incluiComArquivo(getTipoMarco(), licenciamento, arquivo)
+     → @LicenciamentoMarcoQualifier(tipoResponsavel=CIDADAO)
+     → INSERT em LICEN_MARCO com tipoResponsavel=CIDADAO
+
+MARCOS REGISTRADOS (getTipoMarco por tipo):
+  ATEC aprovado        → CIENCIA_CA_ATEC
+  ATEC reprovado       → CIENCIA_CIA_ATEC
+  INVIABILIDADE aprov. → CIENCIA_CA_INVIABILIDADE
+  INVIABILIDADE reprov.→ CIENCIA_CIA_INVIABILIDADE
+  CIV definitiva aprov.→ CIENCIA_CIV
+  CIV renovação aprov. → CIENCIA_CIV_RENOVACAO
+  CIV reprovada        → CIENCIA_CIV (ou CIENCIA_CIV_RENOVACAO)
+  APPCI               → CIENCIA_APPCI
+  APPCI_RENOV         → CIENCIA_APPCI_RENOVACAO
+
+TIMER (30 dias):
+  Se o cidadão não confirmar em 30 dias → Tmr_30DiasCiencia dispara
+  → fluxo segue para T03B (ciência automática)
+      ]]></documentation>
+      <incoming>SF_T01_T02</incoming>
+      <outgoing>SF_T02_T03A</outgoing>
+    </userTask>
+
+    <!-- Timer boundary: 30 dias sem ciência manual -->
+    <boundaryEvent id="Tmr_30DiasCiencia"
+                   name="30 dias sem ciência manual"
+                   attachedToRef="T02_AguardarCiencia"
+                   cancelActivity="true">
+      <documentation><![CDATA[
+TIMER — 30 DIAS SEM CIÊNCIA MANUAL
+
+GATILHO: Decorridos 30 dias sem ciência manual do cidadão.
+
+IMPLEMENTAÇÃO REAL:
+  Classe: LicenciamentoCienciaBatchRN (@Stateless)
+  @Schedule(hour="12/12", persistent=false)
+  → Executa às 12:00 e às 24:00 (hora do servidor WildFly)
+  → persistent=false: não persiste no BD do servidor; restart cancela o timer
+
+  CONSTANTE: DIAS_PERIODO_VERIFICACAO = -30
+  dataLimite = dataAtualHelper.getDataAtual() + (-30 dias)
+  → Busca todos os licenciamentos com ciência=false e dthStatus <= dataLimite
+
+PROTEÇÃO DE AMBIENTE:
+  BatchUtil.isServerEnabled(logger) → retorna false em ambientes desabilitados
+  → O job não executa se não for o servidor habilitado (ex.: QA/DEV)
+
+TIPOS PROCESSADOS NO BATCH:
+  1. analiseLicInviabilidadeCienciaAutomaticaRN.efetuaCienciaAutomatica(dataLimite)
+  2. analiseLicenciamentoTecnicaCienciaAutomaticaRN.efetuaCienciaAutomatica(dataLimite)
+  3. civCienciaAutomaticaRN.efetuaCienciaAutomatica(dataLimite)
+  (APPCI/APPCI_RENOV não têm ciência automática via batch)
+
+TRATAMENTO DE ERRO:
+  try-catch global: em caso de exceção, envia e-mail para
+  PropriedadesEnum.EMAIL_DESTINATARIO_ERRO_JOB
+  → o erro é logado mas não propaga (não derruba o servidor)
+      ]]></documentation>
+      <outgoing>SF_Tmr_T03B</outgoing>
+      <timerEventDefinition id="TimerDef_Ciencia">
+        <timeDuration xsi:type="tFormalExpression">P30D</timeDuration>
+      </timerEventDefinition>
+    </boundaryEvent>
+
+    <serviceTask id="T03A_RegistrarCienciaManual"
+                 name="Registrar ciência manual&#10;(LicenciamentoCienciaCidadaoBaseRN)"
+                 camunda:class="com.procergs.solcbm.licenciamentociencia.LicenciamentoCienciaCidadaoBaseRN">
+      <documentation><![CDATA[
+TAREFA SISTEMA: Persiste a ciência confirmada manualmente pelo cidadão.
+
+EXECUÇÃO:
+  Esta ServiceTask representa o processamento backend já descrito em T02.
+  A chamada acontece dentro da confirmação do cidadão (endpoint REST via angular-oauth2-oidc).
+
+CLASSES ENVOLVIDAS (por tipo de ciência):
+  ATEC:        AnaliseLicenciamentoTecnicaCienciaCidadaoRN
+  INVIABILIDADE: AnaliseLicInviabilidadeCienciaCidadaoRN
+  CIV:         CivCienciaCidadaoRN
+  APPCI:       AppciCienciaCidadaoRN
+  APPCI_RENOV: AppciCienciaCidadaoRenovacaoRN
+
+RESOLUÇÃO CDI:
+  @Inject
+  @LicenciamentoCienciaQualifier(tipoLicenciamentoCiencia = TIPO)
+  LicenciamentoCienciaCidadaoRN cienciaRN;
+
+PASSOS EXECUTADOS:
+  1. aplicarCienciaBase(lc):
+       lc.setCiencia(true)
+       lc.setDthCiencia(dataAtualHelper.getDataAtual())
+  2. lc.setUsuarioCiencia(usuarioRN.getUsuarioLogado())
+  3. alteraLicenciamentoCiencia(lc) → BD específico:
+       ATEC:        AnaliseLicenciamentoTecnicaBD.altera(ed) → UPDATE ANAL_LIC_TECNICA
+       INVIABILIDADE: AnaliseLicInviabilidadeBD.altera(ed)  → UPDATE ANAL_LIC_INVIABILIDADE
+       CIV:         VistoriaRN.altera(ed)                    → UPDATE CBM_VISTORIA
+       APPCI:       AppciRN.altera(ed)                       → UPDATE CBM_APPCI
+  4. atualizarLicenciamento(lc) → ver T04_AtualizarLicenciamento
+  5. licenciamentoMarcoCidadaoRN.incluiComArquivo(getTipoMarco(), licenciamento, arquivo)
+       → INSERT em LICEN_MARCO (tipoResponsavel=CIDADAO)
+
+TABELAS AFETADAS:
+  ANAL_LIC_TECNICA / ANAL_LIC_INVIABILIDADE / CBM_VISTORIA / CBM_APPCI (UPDATE ciencia, dthCiencia, usuarioCiencia)
+  LICEN_MARCO (INSERT marco de ciência)
+  *_AUD (Hibernate Envers)
+      ]]></documentation>
+      <incoming>SF_T02_T03A</incoming>
+      <outgoing>SF_T03A_GW01</outgoing>
+    </serviceTask>
+
+    <serviceTask id="T03B_RegistrarCienciaAutomatica"
+                 name="Registrar ciência automática&#10;(LicenciamentoCienciaAutomaticaBaseRN)"
+                 camunda:class="com.procergs.solcbm.licenciamentociencia.LicenciamentoCienciaBatchRN">
+      <documentation><![CDATA[
+TAREFA SISTEMA: Registra a ciência automática (após 30 dias sem ciência manual).
+
+JOB REAL:
+  Classe: LicenciamentoCienciaBatchRN.efetuaCienciaAutomatica()
+  @Schedule(hour="12/12", persistent=false) — job executa às 12h e 24h
+
+CLASSES CONCRETAS (por tipo):
+  ATEC:        AnaliseLicenciamentoTecnicaCienciaAutomaticaRN
+  INVIABILIDADE: AnaliseLicInviabilidadeCienciaAutomaticaRN
+  CIV:         CivCienciaAutomaticaRN
+
+MÉTODO BASE (LicenciamentoCienciaAutomaticaBaseRN.efetuarCienciaAutomatica):
+  1. Busca pendentes: listarPendentesDeCiencia(dataLimite)
+       ATEC: AnaliseLicenciamentoTecnicaBD.listarPendentesDeCiencia(dataLimite)
+             → WHERE ciencia IS NULL AND dthStatus &lt;= :dataLimite
+                 AND status IN (APROVADO, REPROVADO)
+       CIV:  VistoriaRN.lista(ciencia=false, dthStatus=dataLimite, status=REPROVADO)
+  2. Para cada pendente:
+       a. aplicarCienciaBase(lc): lc.setCiencia(true), setDthCiencia(now())
+          ** NÃO preenche usuarioCiencia (ação do sistema, sem usuário) **
+       b. alteraLicenciamentoCiencia(lc) → BD UPDATE
+       c. atualizarLicenciamento(lc) → ver T04
+       d. licenciamentoMarcoSistemaRN.incluiComArquivo(getTipoMarco(), licenciamento, arquivo)
+            → @LicenciamentoMarcoQualifier(tipoResponsavel=SISTEMA)
+            → INSERT LICEN_MARCO tipoResponsavel=SISTEMA
+
+MARCOS AUTOMÁTICOS (getTipoMarco por tipo):
+  ATEC aprovado    → CIENCIA_AUTO_CA_ATEC
+  ATEC reprovado   → CIENCIA_AUTO_CIA_ATEC
+  INVIABILIDADE ap.→ CIENCIA_AUTO_CA_INVIABILIDADE
+  INVIABILIDADE rep→ CIENCIA_AUTO_CIA_INVIABILIDADE
+  CIV              → CIENCIA_AUTO_CIV (não diferencia renovação)
+
+TABELAS AFETADAS:
+  ANAL_LIC_TECNICA / ANAL_LIC_INVIABILIDADE / CBM_VISTORIA (UPDATE ciencia, dthCiencia)
+  LICEN_MARCO (INSERT, tipoResponsavel=SISTEMA, usuarioSoeNome="SOLCBM")
+  *_AUD (Envers)
+      ]]></documentation>
+      <incoming>SF_Tmr_T03B</incoming>
+      <outgoing>SF_T03B_GW01</outgoing>
+    </serviceTask>
+
+    <exclusiveGateway id="GW01_JoinCiencia"
+                      name="Ciência registrada&#10;(manual ou automática)">
+      <documentation><![CDATA[
+GATEWAY DE CONVERGÊNCIA — após ciência manual (T03A) ou automática (T03B).
+Ambos os caminhos convergem aqui antes de avaliar o resultado do documento.
+      ]]></documentation>
+      <incoming>SF_T03A_GW01</incoming>
+      <incoming>SF_T03B_GW01</incoming>
+      <outgoing>SF_GW01_T04</outgoing>
+    </exclusiveGateway>
+
+    <serviceTask id="T04_AtualizarLicenciamento"
+                 name="Atualizar situação do licenciamento&#10;(LicenciamentoCienciaBaseRN)"
+                 camunda:class="com.procergs.solcbm.licenciamentociencia.LicenciamentoCienciaBaseRN">
+      <documentation><![CDATA[
+TAREFA SISTEMA: Atualiza a situação do licenciamento conforme resultado do documento.
+
+CLASSE: LicenciamentoCienciaBaseRN.atualizarLicenciamento(LicenciamentoCiencia lc)
+MÉTODO: protected void atualizarLicenciamento(LicenciamentoCiencia lc)
+
+LÓGICA:
+  if (!isLicenciamentoCienciaAprovado(lc)) {
+      if (lc.getLicenciamento().getSituacao() == SituacaoLicenciamento.EXTINGUIDO) {
+          licenciamentoRN.atualizarComSituacao(lic, SituacaoLicenciamento.EXTINGUIDO)
+          // Licenciamento extinto → mantém EXTINGUIDO mesmo com ciência
+      } else {
+          licenciamentoRN.atualizarComSituacao(lic, getProximoStatusLicenciamentoCienciaReprovado())
+      }
+  }
+  // Se aprovado: transição para CA/ALVARA_VIGENTE ocorre em outro ponto do fluxo
+  // (gerada anteriormente no P04 ao emitir o CA/APPCI)
+
+getProximoStatusLicenciamentoCienciaReprovado() por tipo:
+  ATEC          → SituacaoLicenciamento.NCA
+  INVIABILIDADE → SituacaoLicenciamento.NCA
+  CIV           → SituacaoLicenciamento.CIV
+  APPCI         → SituacaoLicenciamento.ALVARA_VIGENTE (nunca chamado — isAprovado=true)
+  APPCI_RENOV   → SituacaoLicenciamento.ALVARA_VIGENTE (nunca chamado — isAprovado=true)
+
+isLicenciamentoCienciaAprovado() por tipo:
+  ATEC:    StatusAnaliseLicenciamentoTecnica.APROVADO.equals(ed.getStatus())
+  INVIABILIDADE: StatusAnaliseLicenciamentoInviabilidade.APROVADO.equals(ed.getStatus())
+  CIV:     StatusVistoria.APROVADO.equals(vistoria.getStatus())
+  APPCI/APPCI_RENOV: return true (sempre)
+
+TABELAS AFETADAS:
+  LICENCIAMENTO (UPDATE situacao)
+  LICENCIAMENTO_AUD (Envers)
+      ]]></documentation>
+      <incoming>SF_GW01_T04</incoming>
+      <outgoing>SF_T04_GW02</outgoing>
+    </serviceTask>
+
+    <exclusiveGateway id="GW02_Aprovado"
+                      name="Documento aprovado?">
+      <documentation><![CDATA[
+GATEWAY DE DECISÃO: O resultado do documento (CIA/CIV/APPCI) é aprovado?
+
+CONDIÇÃO "aprovado":
+  ATEC:        AnaliseLicenciamentoTecnicaED.status == APROVADO
+  INVIABILIDADE: AnaliseLicInviabilidadeED.status == APROVADO (equivalente)
+  CIV:         VistoriaED.status == StatusVistoria.APROVADO
+  APPCI/APPCI_RENOV: sempre aprovado (isAprovado() retorna true hardcoded)
+
+PATH APROVADO: → GW03_TipoDoc (determinar tipo de aprovação para correto end event)
+PATH REPROVADO: → GW04_OptaRecurso (cidadão decide se interpõe recurso)
+
+NOTA: Se reprovado + EXTINGUIDO → processo já ajustado em T04 para manter EXTINGUIDO.
+      ]]></documentation>
+      <incoming>SF_T04_GW02</incoming>
+      <outgoing>SF_GW02_GW03</outgoing>
+      <outgoing>SF_GW02_GW04</outgoing>
+    </exclusiveGateway>
+
+    <exclusiveGateway id="GW03_TipoDoc"
+                      name="Tipo de aprovação?">
+      <documentation><![CDATA[
+GATEWAY: Diferencia o tipo de documento aprovado para correto encerramento do processo.
+
+PATH APPCI / APPCI_RENOV:
+  → Licenciamento transita para SituacaoLicenciamento.ALVARA_VIGENTE
+  → Emite/atualiza APPCI (AppciRN.altera) com status vigente
+  → End_AlvaraVigente
+
+PATH OUTROS (ATEC/INVIABILIDADE/CIV aprovado):
+  → Licenciamento em SituacaoLicenciamento.CA ou equivalente
+  → CA (Certificado de Aprovação) já emitido no P04
+  → End_AprovadoCA
+
+RECURSO NÃO CABE em aprovação — processo P05 termina aqui para estes casos.
+      ]]></documentation>
+      <incoming>SF_GW02_GW03</incoming>
+      <outgoing>SF_GW03_EndAppci</outgoing>
+      <outgoing>SF_GW03_EndCA</outgoing>
+    </exclusiveGateway>
+
+    <endEvent id="End_AlvaraVigente"
+              name="APPCI emitido&#10;→ ALVARA_VIGENTE">
+      <documentation><![CDATA[
+FIM: APPCI vigente. Licenciamento em SituacaoLicenciamento.ALVARA_VIGENTE.
+Marco registrado: CIENCIA_APPCI ou CIENCIA_APPCI_RENOVACAO.
+AppciCienciaCidadaoRN / AppciCienciaCidadaoRenovacaoRN.
+      ]]></documentation>
+      <incoming>SF_GW03_EndAppci</incoming>
+    </endEvent>
+
+    <endEvent id="End_AprovadoCA"
+              name="CA emitido&#10;— sem recurso cabível">
+      <documentation><![CDATA[
+FIM: Documento aprovado (CA). Licenciamento avança para emissão do CA/APPCI.
+Marco registrado: CIENCIA_CA_ATEC ou CIENCIA_CA_INVIABILIDADE ou CIENCIA_CIV.
+Não cabe recurso administrativo em caso de aprovação.
+      ]]></documentation>
+      <incoming>SF_GW03_EndCA</incoming>
+    </endEvent>
+
+    <exclusiveGateway id="GW04_OptaRecurso"
+                      name="Cidadão decide interpor&#10;recurso? (prazo 30 dias)">
+      <documentation><![CDATA[
+GATEWAY DE DECISÃO: Cidadão opta por interpor recurso administrativo?
+
+PRAZO: 30 dias após a ciência do CIA/CIV (manual ou automática)
+       PRAZO_SOLICITAR_RECURSO_1_INSTANCIA = 30 (LicenciamentoCidadaoRN)
+
+CONDIÇÃO PARA RECURSO:
+  - Documento REPROVADO (NCA ou CIV)
+  - Dentro do prazo de 30 dias
+  - Ao menos um envolvido com CPF cadastrado no licenciamento
+
+PATH "NÃO INTERPÕE" ou "PRAZO EXPIRADO": → End_SemRecurso
+PATH "INTERPÕE RECURSO": → T05_PreencherRecurso (1ª instância, instancia=1)
+PATH "INTERPÕE RECURSO 2ª INSTÂNCIA" (via loop do GW13): → T05_PreencherRecurso (instancia=2)
+      ]]></documentation>
+      <incoming>SF_GW02_GW04</incoming>
+      <incoming>SF_GW13_T05</incoming>
+      <outgoing>SF_GW04_EndSem</outgoing>
+      <outgoing>SF_GW04_T05</outgoing>
+    </exclusiveGateway>
+
+    <endEvent id="End_SemRecurso"
+              name="Processo encerrado&#10;sem recurso">
+      <documentation><![CDATA[
+FIM: Cidadão não interpôs recurso ou prazo expirado.
+Licenciamento permanece em NCA (análise) ou CIV (vistoria).
+      ]]></documentation>
+      <incoming>SF_GW04_EndSem</incoming>
+    </endEvent>
+
+    <!-- ==============================================================
+         FASE 2 — REGISTRO DO RECURSO ADMINISTRATIVO
+         ============================================================== -->
+
+    <userTask id="T05_PreencherRecurso"
+              name="Preencher formulário&#10;do recurso administrativo"
+              camunda:assignee="${cidadaoRT_RU_Proprietario}"
+              camunda:formKey="recurso-preencher-form">
+      <documentation><![CDATA[
+TAREFA: Cidadão preenche e submete o formulário do recurso administrativo.
+
+PERFIL: RT, RU ou Proprietário vinculado ao licenciamento
+PRAZO: 1ª instância: 30 dias após ciência do CIA/CIV
+        2ª instância: 15 dias após ciência da resposta da 1ª instância
+
+CAMPOS DO FORMULÁRIO (RecursoDTO):
+  idLicenciamento    Long    — ID do licenciamento contestado (obrigatório)
+  idArquivoCiaCiv    Long    — ID do ArquivoED do CIA ou CIV contestado (obrigatório)
+  instancia          Integer — 1 (1ª instância) ou 2 (2ª instância) (obrigatório)
+  tipoRecurso        Enum    — CORRECAO_DE_ANALISE("A") | CORRECAO_DE_VISTORIA("V") (obrigatório)
+  tipoSolicitacao    Enum    — INTEGRAL("I") | PARCIAL("P") (obrigatório)
+  fundamentacaoLegal String  — texto da fundamentação legal (obrigatório, não-blank)
+  cpfRts[]           List    — CPFs dos RTs envolvidos (ao menos um obrigatório no conjunto)
+  cpfRus[]           List    — CPFs dos RUs envolvidos
+  cpfProprietarios[] List    — CPFs dos proprietários envolvidos
+
+REGRAS (RecursoRNVal.valida):
+  RN-P05-R01: tipoSolicitacao, tipoRecurso, instancia (1-2), fundamentacaoLegal obrigatórios
+  RN-P05-R02: idLicenciamento e idArquivoCiaCiv obrigatórios
+  RN-P05-R03: ao menos um CPF entre cpfRts, cpfRus, cpfProprietarios
+  RN-P05-R04: instancia deve ser 1 ou 2 (> 0 e &lt;= 2)
+
+OBSERVAÇÃO:
+  Em caso de 2ª instância (loop via GW13): instancia=2, cpfRts=mesmos do recurso anterior.
+  TipoRecurso deve ser o mesmo (CORRECAO_DE_ANALISE ou CORRECAO_DE_VISTORIA).
+      ]]></documentation>
+      <incoming>SF_GW04_T05</incoming>
+      <outgoing>SF_T05_T06B</outgoing>
+    </userTask>
+
+    <userTask id="T06B_AnexarDocumentos"
+              name="Anexar documentos&#10;de suporte ao recurso"
+              camunda:assignee="${cidadaoRT_RU_Proprietario}"
+              camunda:formKey="recurso-anexar-documentos">
+      <documentation><![CDATA[
+TAREFA: Cidadão faz upload dos documentos de suporte ao recurso.
+
+PERFIL: RT, RU ou Proprietário
+OPCIONAL: O cidadão pode pular esta etapa se não houver documentos adicionais.
+
+ENDPOINT REST:
+  POST /recurso-arquivos/{recursoId}/upload
+  Content-Type: multipart/form-data
+
+CLASSE REST: RecursoArquivoRest (@Path("/recurso-arquivos"))
+MÉTODO: upload(@PathParam("recursoId") Long recursoId, MultipartFile arquivo)
+
+FLUXO INTERNO:
+  1. Recebe arquivo via multipart
+  2. ArquivoRN.incluirArquivo(ArquivoED) → upload para Alfresco → retorna nodeRef
+  3. Cria RecursoArquivoED:
+       recursoED  = RecursoED (FK: NRO_INT_RECURSO)
+       arquivoED  = ArquivoED criado acima (FK: NRO_INT_ARQUIVO)
+  4. Persiste RecursoArquivoED → INSERT CBM_RECURSO_ARQUIVO
+
+TABELA: CBM_RECURSO_ARQUIVO (NRO_INT_RECURSO_ARQUIVO, NRO_INT_RECURSO, NRO_INT_ARQUIVO)
+ARMAZENAMENTO: Alfresco (identificadorAlfresco = nodeRef)
+
+DEMAIS ENDPOINTS DE ARQUIVO:
+  GET    /recurso-arquivos/{recursoId}          → lista arquivos do recurso
+  GET    /recurso-arquivos/download/{idArquivo} → download do arquivo
+  DELETE /recurso-arquivos/{arquivoId}          → remove arquivo do recurso
+      ]]></documentation>
+      <incoming>SF_T05_T06B</incoming>
+      <outgoing>SF_T06B_T06</outgoing>
+    </userTask>
+
+    <serviceTask id="T06_ValidarRegistrar"
+                 name="Validar e registrar recurso&#10;(RecursoRNVal + RecursoRN.registra)"
+                 camunda:class="com.procergs.solcbm.recurso.RecursoRN">
+      <documentation><![CDATA[
+TAREFA SISTEMA: Valida e persiste o recurso administrativo.
+
+CLASSE: RecursoRN (@Stateless, @AppInterceptor)
+MÉTODO: registra(RecursoDTO dto)
+REST:   POST /recursos → RecursoRest (@Path("/recursos"))
+RESPOSTA: 201 Created + RecursoResponseDTO
+
+VALIDAÇÃO (RecursoRNVal.valida):
+  boolean valid = true
+  - tipoSolicitacao == null → valid=false
+  - tipoRecurso == null → valid=false
+  - instancia == null || &lt;= 0 || > 2 → valid=false
+  - StringUtils.isBlank(fundamentacaoLegal) → valid=false
+  - idLicenciamento == null → valid=false
+  - idArquivoCiaCiv == null → valid=false
+  - cpfRts, cpfRus, cpfProprietarios todos vazios →
+      throw WebApplicationRNException(MSG_ENVOLVIDOS_NAO_INFORMADOS, BAD_REQUEST)
+  - !valid → throw WebApplicationRNException(MSG_CAMPOS_OBRIGATORIOS, BAD_REQUEST)
+
+CRIAÇÃO DA ENTIDADE RecursoED:
+  RecursoED.builder()
+    .licenciamentoED(licenciamentoRN.consultar(dto.getIdLicenciamento()))
+    .instancia(dto.getInstancia())
+    .situacao(SituacaoRecurso.AGUARDANDO_APROVACAO_ENVOLVIDOS)
+    .tipoRecurso(dto.getTipoRecurso())
+    .tipoSolicitacao(dto.getTipoSolicitacao())
+    .fundamentacaoLegal(dto.getFundamentacaoLegal())
+    .arquivoCiaCivED(arquivoRN.consultar(dto.getIdArquivoCiaCiv()))
+    .build()
+
+CRIAÇÃO DOS ENVOLVIDOS:
+  Para cada CPF em cpfRts → cria SolicitacaoResponsavelTecnicoED
+  Para cada CPF em cpfRus → cria SolicitacaoResponsavelUsuarioED
+  Para cada CPF em cpfProprietarios → cria SolicitacaoProprietarioED
+
+TABELAS AFETADAS:
+  CBM_RECURSO (INSERT — NRO_INT_RECURSO_SEQ, NRO_INT_LICENCIAMENTO,
+               NRO_INSTANCIA, TP_SITUACAO=0 [ordinal AGUARDANDO_APROVACAO_ENVOLVIDOS],
+               TP_RECURSO, TP_SOLICITACAO, TXT_FUNDAMENTACAO_LEGAL, NRO_INT_ARQUIVO_CIA_CIV)
+  CBM_SOLICITACAO_RT / CBM_SOLICITACAO_RU / CBM_SOLICITACAO_PROPRIETARIO (INSERT envolvidos)
+  CBM_RECURSO_AUD (Envers)
+
+SITUAÇÃO INICIAL: SituacaoRecurso.AGUARDANDO_APROVACAO_ENVOLVIDOS ("E")
+      ]]></documentation>
+      <incoming>SF_T06B_T06</incoming>
+      <outgoing>SF_T06_T07</outgoing>
+    </serviceTask>
+
+    <!-- ==============================================================
+         FASE 3 — ACEITES DOS ENVOLVIDOS
+         ============================================================== -->
+
+    <userTask id="T07_AceitesEnvolvidos"
+              name="Confirmar aceite ou recusar&#10;o recurso (RT / RU / Proprietário)"
+              camunda:assignee="${envolvidos}"
+              camunda:formKey="recurso-aceite-form">
+      <documentation><![CDATA[
+TAREFA: Cada envolvido (RT, RU, Proprietário) confirma ou recusa o recurso.
+
+PERFIL: Todos os envolvidos listados no RecursoED (por CPF)
+PARALELO: Cada envolvido confirma/recusa individualmente.
+
+ENDPOINT — ACEITE:
+  PUT /recursos/{recursoId}
+  Body: RecursoDTO (com confirmação do aceite)
+  Classe: RecursoRest.realizarAceite()
+  RN: RecursoRN.alterarRecurso(Long id, RecursoDTO dto)
+
+ENDPOINT — RECUSA:
+  PUT /recursos/{recursoId}/recusar
+  Classe: RecursoRest.recusar()
+  RN: RecursoRN.recusar(Long id) → situacao = CANCELADO
+
+REGRAS DE ACEITE (RecursoRN.alterarRecurso):
+  RN-P05-A01: Somente envolvidos listados no recurso (por CPF) podem confirmar
+  RN-P05-A02: Aceite confirmado não pode ser desfeito
+  RN-P05-A03: Quando TODOS os envolvidos confirmam:
+               situacao = AGUARDANDO_DISTRIBUICAO
+               dataEnvioAnalise = now()
+  RN-P05-A04: Marco ENVIO_RECURSO_ANALISE e/ou FIM_ACEITES_RECURSO_ANALISE
+  RN-P05-A05: Se qualquer envolvido recusar: situacao = CANCELADO
+
+ENDPOINT — SALVAR RASCUNHO:
+  PUT /recursos/{recursoId}/salvar
+  → Permite ao cidadão salvar informações sem confirmar aceite
+
+LISTAGEM DOS RECURSOS DO CIDADÃO:
+  GET /recursos/listar (com QPs: situacoes, tipoRecurso, numeroLicenciamento, etc.)
+  GET /recursos/{recursoId} → consulta individual
+  GET /recursos/historico/{recursoId} → marcos do recurso
+
+CANCELAMENTO PELO CIDADÃO:
+  DELETE /recursos/cancelar-recurso/{recursoId} (v1)
+  DELETE /recursos/{recursoId}/cancelar (v2)
+  → situacao = CANCELADO
+      ]]></documentation>
+      <incoming>SF_T06_T07</incoming>
+      <outgoing>SF_T07_GW05</outgoing>
+    </userTask>
+
+    <exclusiveGateway id="GW05_TodosAceitaram"
+                      name="Todos os envolvidos&#10;confirmaram aceite?">
+      <documentation><![CDATA[
+GATEWAY DE DECISÃO: Todos os envolvidos do recurso confirmaram o aceite?
+
+PATH "RECUSA" (ao menos um recusou):
+  RecursoRN.recusar(id) → situacao = SituacaoRecurso.CANCELADO ("CA")
+  → T08_CancelarRecurso → End_RecursoCancelado
+
+PATH "TODOS ACEITARAM":
+  situacao = SituacaoRecurso.AGUARDANDO_DISTRIBUICAO ("D")
+  dataEnvioAnalise = now()
+  Marco: ENVIO_RECURSO_ANALISE
+  → T09_ConcluirAceites → T10 (distribuição)
+
+ENTIDADE: RecursoED.situacao (@Enumerated ordinal, TP_SITUACAO)
+  AGUARDANDO_APROVACAO_ENVOLVIDOS=0, AGUARDANDO_DISTRIBUICAO=1,
+  ANALISE_CONCLUIDA=2, EM_ANALISE=3, CANCELADO=4, RASCUNHO=5
+      ]]></documentation>
+      <incoming>SF_T07_GW05</incoming>
+      <outgoing>SF_GW05_T08</outgoing>
+      <outgoing>SF_GW05_T09</outgoing>
+    </exclusiveGateway>
+
+    <serviceTask id="T08_CancelarRecurso"
+                 name="Cancelar recurso&#10;(RecursoRN.recusar → CANCELADO)"
+                 camunda:class="com.procergs.solcbm.recurso.RecursoRN">
+      <documentation><![CDATA[
+TAREFA SISTEMA: Cancela o recurso quando um envolvido recusa.
+
+CLASSE: RecursoRN (@Stateless)
+MÉTODO: recusar(Long id)
+REST:   PUT /recursos/{recursoId}/recusar
+
+PASSOS:
+  1. Busca RecursoED por ID
+  2. recursoED.setSituacao(SituacaoRecurso.CANCELADO)
+  3. Persiste via RecursoBD.altera(recursoED)
+  4. Registra marco de recusa
+
+ALTERNATIVA (cancelamento pelo próprio cidadão):
+  RecursoRN.cancelarRecurso(Long id) ou cancelar(Long id)
+  DELETE /recursos/cancelar-recurso/{recursoId}
+  DELETE /recursos/{recursoId}/cancelar
+
+REATIVAÇÃO (se necessário):
+  RecursoRN.habilitarEdicao(Long id) → reabilita para edição
+  PUT /recursos/{recursoId}/habilitar-edicao
+
+TABELAS:
+  CBM_RECURSO (UPDATE TP_SITUACAO = 4 [CANCELADO ordinal])
+  CBM_RECURSO_AUD
+      ]]></documentation>
+      <incoming>SF_GW05_T08</incoming>
+      <outgoing>SF_T08_EndCancel</outgoing>
+    </serviceTask>
+
+    <endEvent id="End_RecursoCancelado"
+              name="Recurso cancelado&#10;(recusa ou desistência)">
+      <documentation><![CDATA[
+FIM: Recurso cancelado. SituacaoRecurso.CANCELADO.
+Cidadão pode registrar novo recurso dentro do prazo remanescente.
+      ]]></documentation>
+      <incoming>SF_T08_EndCancel</incoming>
+    </endEvent>
+
+    <serviceTask id="T09_ConcluirAceites"
+                 name="Concluir aceites → AGUARDANDO_DISTRIBUICAO&#10;(RecursoRN.alterarRecurso)"
+                 camunda:class="com.procergs.solcbm.recurso.RecursoRN">
+      <documentation><![CDATA[
+TAREFA SISTEMA: Conclui os aceites e transita recurso para aguardar distribuição.
+
+CLASSE: RecursoRN.alterarRecurso(Long id, RecursoDTO dto)
+REST:   PUT /recursos/{recursoId}
+
+PASSOS QUANDO TODOS ACEITARAM:
+  1. recursoED.setSituacao(SituacaoRecurso.AGUARDANDO_DISTRIBUICAO)
+  2. recursoED.setDataEnvioAnalise(LocalDateTime.now())
+  3. Persiste via RecursoBD.altera(recursoED)
+  4. Marco ENVIO_RECURSO_ANALISE no recurso (TipoResponsavelMarco.CIDADAO)
+  5. Marco ENVIO_RECURSO_ANALISE no licenciamento
+
+TABELAS:
+  CBM_RECURSO (UPDATE TP_SITUACAO=1 [AGUARDANDO_DISTRIBUICAO], DTH_ENVIO_ANALISE)
+  CBM_RECURSO_MARCO (INSERT ENVIO_RECURSO_ANALISE)
+  LICEN_MARCO (INSERT ENVIO_RECURSO_ANALISE)
+      ]]></documentation>
+      <incoming>SF_GW05_T09</incoming>
+      <outgoing>SF_T09_T10</outgoing>
+    </serviceTask>
+
+    <!-- ==============================================================
+         FASE 4 — DISTRIBUIÇÃO PARA ANALISTA
+         ============================================================== -->
+
+    <userTask id="T10_ConsultarDistribuicao"
+              name="Consultar recursos aguardando&#10;distribuição"
+              camunda:assignee="${coordenadorCBMRS}"
+              camunda:formKey="recurso-distribuicao-lista">
+      <documentation><![CDATA[
+TAREFA: Coordenador CBM-RS consulta a lista de recursos aguardando distribuição.
+
+PERFIL: Coordenador CBM-RS
+PERMISSÃO: @Permissao(objeto="DISTRIBUICAOANALISE", acao="DISTRIBUIR")
+
+ENDPOINT REST:
+  GET /adm/recurso-analise/distribuicao-listar
+  Classe: RecursoAnaliseRestImpl (@Path("/adm/recurso-analise"), @SOEAuthRest)
+  RN: RecursoAdmRN.listaParaDistribuicao()
+
+QUERY PARAMETERS:
+  paginaAtual    Integer (paginação)
+  tamanho        Integer (itens por página)
+  instancia      Integer (1 ou 2)
+  tipoRecurso    TipoRecurso (CORRECAO_DE_ANALISE | CORRECAO_DE_VISTORIA)
+  situacaoRecurso SituacaoRecurso (AGUARDANDO_DISTRIBUICAO)
+
+FILTROS (listagem administrativa completa — RecursoAdmRestImpl):
+  GET /adm/recursos/listar (12 QPs: instancia, tipoRecurso, numeroLicenciamento,
+    situacaoRecurso, logradouro, cidade, nomeSolicitante, dataInicioSolicitacao,
+    dataFimSolicitacao, etc.)
+  REGRA: ao menos um filtro deve ser informado (validarAoMenosUmFiltroInformado)
+  REGRA: dataInicio > dataFim → HTTP 400
+  PERMISSÃO RECURSO/LISTAR → vê todos os batalhões
+  Sem RECURSO/LISTAR → filtra pelo batalhão do usuário logado
+
+ENDPOINT ANALISTAS DISPONÍVEIS:
+  GET /adm/recurso-analise/recurso-analistas
+  → RecursoAdmRN.listaRecursoAnalise() — retorna analistas com qtd de processos
+
+SITUAÇÃO FILTRADA: SituacaoRecurso.AGUARDANDO_DISTRIBUICAO
+      ]]></documentation>
+      <incoming>SF_T09_T10</incoming>
+      <incoming>SF_T12C_T10</incoming>
+      <outgoing>SF_T10_T11</outgoing>
+    </userTask>
+
+    <userTask id="T11_SelecionarAnalista"
+              name="Selecionar analista e&#10;confirmar distribuição"
+              camunda:assignee="${coordenadorCBMRS}"
+              camunda:formKey="recurso-distribuicao-selecionar">
+      <documentation><![CDATA[
+TAREFA: Coordenador seleciona o analista responsável e confirma a distribuição.
+
+PERFIL: Coordenador CBM-RS
+PERMISSÃO: @Permissao(objeto="DISTRIBUICAOANALISE", acao="DISTRIBUIR")
+
+DADOS COLETADOS:
+  recursoId[]    List&lt;Long&gt; — IDs dos recursos a distribuir (pode ser múltiplos)
+  usuarioSoeId   Long         — ID do analista selecionado no SOE PROCERGS
+
+CONSULTA DE ANALISTAS DISPONÍVEIS:
+  GET /adm/recurso-analise/analistas-disponivel?codBatalhao=X
+  Retorna: List&lt;AnalistaDisponivelDTO&gt; {
+    idUsuarioSoe, nomeAnalista, codBatalhao, qtdRecursosEmAndamento
+  }
+
+ENDPOINT PARA CONSULTA PENDENTES DO ANALISTA:
+  GET /adm/recurso-analise/pendentes-listar
+  → Lista recursos EM_ANALISE do analista logado
+
+DTO SUBMETIDO:
+  PUT /adm/recurso-analise/distribuicoes-recurso
+  Body: RecursoDistribuicaoAnaliseDTO {
+    recursoId: List&lt;Long&gt;
+    usuarioSoeId: Long
+  }
+      ]]></documentation>
+      <incoming>SF_T10_T11</incoming>
+      <outgoing>SF_T11_GW_Canc</outgoing>
+    </userTask>
+
+    <exclusiveGateway id="GW_CancDistrib"
+                      name="Confirmar ou cancelar&#10;distribuição?">
+      <documentation><![CDATA[
+GATEWAY DE DECISÃO: Coordenador confirma a distribuição ou cancela?
+
+PATH "CONFIRMAR": → T12_ExecutarDistribuicao
+PATH "CANCELAR": → T12C_CancelarDistribuicao → T10 (nova consulta)
+
+CANCELAMENTO APÓS DISTRIBUIÇÃO (RecursoAdmRN.cancelarDistribuicaoRecurso):
+  PUT /adm/recurso-analise/{recursotId}/cancelar-distribuicao
+  @Permissao(objeto="DISTRIBUICAOANALISE", acao="CANCELAR")
+  Passos:
+    1. recursoED.setIdUsuarioSoe(null)
+    2. recursoED.setSituacao(AGUARDANDO_DISTRIBUICAO)
+    3. Se instancia == 2:
+         Exclui todos AvalistaRecursoED do recurso
+         Exclui AnaliseRecursoED do recurso
+    4. Marco CANCELA_DISTRIBUICAO_ANALISE_RECURSO
+      ]]></documentation>
+      <incoming>SF_T11_GW_Canc</incoming>
+      <outgoing>SF_GW_Canc_T12C</outgoing>
+      <outgoing>SF_GW_Canc_T12</outgoing>
+    </exclusiveGateway>
+
+    <serviceTask id="T12C_CancelarDistribuicao"
+                 name="Cancelar distribuição&#10;(RecursoAdmRN.cancelarDistribuicaoRecurso)"
+                 camunda:class="com.procergs.solcbm.recurso.adm.RecursoAdmRN">
+      <documentation><![CDATA[
+TAREFA SISTEMA: Cancela a distribuição e retorna o recurso para a fila.
+
+CLASSE: RecursoAdmRN (@Stateless, @AppInterceptor)
+MÉTODO: cancelarDistribuicaoRecurso(Long recursoId)
+REST:   PUT /adm/recurso-analise/{recursotId}/cancelar-distribuicao
+PERMISSÃO: @Permissao(objeto="DISTRIBUICAOANALISE", acao="CANCELAR")
+
+PASSOS:
+  1. recursoED.setIdUsuarioSoe(null) — remove analista atribuído
+  2. recursoED.setSituacao(SituacaoRecurso.AGUARDANDO_DISTRIBUICAO)
+  3. Se instancia == RECURSO_2_INSTANCIA (2):
+       - Exclui todos os AvalistaRecursoED vinculados ao recurso
+       - Exclui AnaliseRecursoED vinculado ao recurso
+  4. recursoRN.altera(recursoED) → UPDATE CBM_RECURSO
+  5. Marco CANCELA_DISTRIBUICAO_ANALISE_RECURSO no recurso (BOMBEIROS)
+  6. Marco CANCELA_DISTRIBUICAO_ANALISE_RECURSO no licenciamento
+
+TABELAS:
+  CBM_RECURSO (UPDATE NRO_INT_USUARIO_SOE=NULL, TP_SITUACAO=1)
+  CBM_AVALISTA_RECURSO (DELETE — se 2ª instância)
+  CBM_ANALISE_RECURSO (DELETE — se 2ª instância)
+  CBM_RECURSO_MARCO (INSERT CANCELA_DISTRIBUICAO_ANALISE_RECURSO)
+  LICEN_MARCO (INSERT CANCELA_DISTRIBUICAO_ANALISE_RECURSO)
+      ]]></documentation>
+      <incoming>SF_GW_Canc_T12C</incoming>
+      <outgoing>SF_T12C_T10</outgoing>
+    </serviceTask>
+
+    <serviceTask id="T12_ExecutarDistribuicao"
+                 name="Executar distribuição para analista&#10;(RecursoAdmRN.distribuirRecurso → EM_ANALISE)"
+                 camunda:class="com.procergs.solcbm.recurso.adm.RecursoAdmRN">
+      <documentation><![CDATA[
+TAREFA SISTEMA: Executa a distribuição do recurso para o analista selecionado.
+
+CLASSE: RecursoAdmRN (@Stateless, @AppInterceptor)
+MÉTODO: distribuirRecurso(RecursoDistribuicaoAnaliseDTO dto)
+REST:   PUT /adm/recurso-analise/distribuicoes-recurso
+PERMISSÃO: @Permissao(objeto="DISTRIBUICAOANALISE", acao="DISTRIBUIR")
+
+PASSOS:
+  1. Lista RecursoED por dto.recursoId (list of IDs)
+  2. Para cada RecursoED:
+       a. recursoED.setIdUsuarioSoe(dto.usuarioSoeId)  → coluna NRO_INT_USUARIO_SOE
+       b. recursoED.setSituacao(SituacaoRecurso.EM_ANALISE)
+       c. recursoRN.altera(recursoED) → UPDATE CBM_RECURSO
+       d. Marco DISTRIBUICAO_ANALISE_RECURSO no recurso (BOMBEIROS)
+       e. Marco DISTRIBUICAO_ANALISE_RECURSO no licenciamento
+
+SITUAÇÃO RESULTANTE: SituacaoRecurso.EM_ANALISE ("A")
+
+TABELAS:
+  CBM_RECURSO (UPDATE NRO_INT_USUARIO_SOE=analista, TP_SITUACAO=3 [EM_ANALISE])
+  CBM_RECURSO_MARCO (INSERT DISTRIBUICAO_ANALISE_RECURSO)
+  LICEN_MARCO (INSERT DISTRIBUICAO_ANALISE_RECURSO)
+
+RESERVA:
+  PUT /adm/recursos/reserva/{idLic} → alterna flag de reserva do licenciamento
+  @Permissao(objeto="RESERVADEPPCI", acao="RESERVAR")
+      ]]></documentation>
+      <incoming>SF_GW_Canc_T12</incoming>
+      <outgoing>SF_T12_T13</outgoing>
+    </serviceTask>
+
+    <!-- ==============================================================
+         FASE 5 — ANÁLISE DO RECURSO
+         ============================================================== -->
+
+    <userTask id="T13_AcessarRecurso"
+              name="Acessar recurso para análise&#10;(lista de análises do analista)"
+              camunda:assignee="${analistaCBMRS}"
+              camunda:formKey="recurso-analise-detalhe">
+      <documentation><![CDATA[
+TAREFA: Analista acessa o recurso atribuído e visualiza todas as informações.
+
+PERFIL: Analista CBM-RS (NRO_INT_USUARIO_SOE do RecursoED)
+PERMISSÃO: @Permissao(objeto="ANALISERECURSO", acao="ANALISAR")
+           @Permissao(objeto="RECURSO", acao="CONSULTAR")
+
+CONSULTA DE RECURSOS DO ANALISTA:
+  GET /adm/recurso-analise/pendentes-listar
+  → Lista recursos EM_ANALISE do analista logado (SessionMB.getUser().getId())
+
+DETALHE DO RECURSO:
+  GET /adm/recurso-analise/{recursoId}
+  RN: RecursoRN.consultarSolicitacao(Long id)
+  DTO: RecursoResponseDTO {
+    id, licenciamento, tipoRecurso, tipoSolicitacao, instancia, situacao,
+    rts[], rus[], proprietarios[], arquivosRecurso[], recursoDecisao,
+    fundamentacaoLegal, numeroSequencial, reserva
+  }
+
+CONSULTA DE ANÁLISE EXISTENTE:
+  GET /adm/recurso-analise/consulta-analise/{recursoId}
+  GET /adm/recurso-analise/recurso/{recursoId}
+  DTO: AnaliseRecursoResponseDTO { id, despacho, decisao, recursoDTO, colegiado[] }
+
+HISTÓRICO DE MARCOS:
+  GET /adm/recursos/marcos/{recursoId}  (RecursoAdmRestImpl)
+  GET /adm/recurso-analise/historico/{recursoId}
+  → Lista todos os RecursoMarcoED associados ao recurso
+
+DADOS PARA ANÁLISE:
+  - CIA ou CIV contestado (arquivoCiaCivED → download via Alfresco)
+  - Documentos anexados pelo cidadão (RecursoArquivoED[])
+  - GET /recurso-arquivos/{recursoId} → lista os arquivos
+  - GET /recurso-arquivos/download/{idArquivo} → download
+      ]]></documentation>
+      <incoming>SF_T12_T13</incoming>
+      <outgoing>SF_T13_GW06</outgoing>
+    </userTask>
+
+    <exclusiveGateway id="GW06_Instancia"
+                      name="1ª ou 2ª instância?">
+      <documentation><![CDATA[
+GATEWAY DE DECISÃO: Qual instância do recurso está sendo analisada?
+
+CONDIÇÃO: RecursoED.instancia == 1 → 1ª instância (análise individual)
+          RecursoED.instancia == 2 → 2ª instância (colegiado de até 2 avalistaes)
+
+PATH 1ª INSTÂNCIA:
+  Analista individual analisa e emite despacho.
+  → T14_AnalisarIndividual → T15_ConcluirAnalise1
+
+PATH 2ª INSTÂNCIA:
+  Análise por colegiado com até 2 avalistaes que votam concordo/discordado,
+  seguida de despacho final do coordenador.
+  → T14B_CriarColegiado → T15B_VotarColegiado → T16B_MarcoFimColegiado
+  → T17B_RedigirDespacho2 → T18B_ConcluirAnalise2
+
+CONSTANTES (AnaliseRecursoAdmRN):
+  RECURSO_1_INSTANCIA = 1
+  RECURSO_2_INSTANCIA = 2
+      ]]></documentation>
+      <incoming>SF_T13_GW06</incoming>
+      <outgoing>SF_GW06_T14</outgoing>
+      <outgoing>SF_GW06_T14B</outgoing>
+    </exclusiveGateway>
+
+    <!-- PATH 1ª INSTÂNCIA -->
+    <userTask id="T14_AnalisarIndividual"
+              name="[1ª INST] Analisar recurso e&#10;redigir despacho individual"
+              camunda:assignee="${analistaCBMRS}"
+              camunda:formKey="recurso-analise-1-instancia">
+      <documentation><![CDATA[
+TAREFA [1ª INSTÂNCIA]: Analista analisa o recurso, estuda os fundamentos e redige o despacho.
+
+PERFIL: Analista CBM-RS designado (NRO_INT_USUARIO_SOE)
+PERMISSÃO: @Permissao(objeto="ANALISERECURSO", acao="ANALISAR")
+PRAZO: Não definido por timer no sistema — controlado administrativamente
+
+AÇÕES DO ANALISTA:
+  1. Visualizar CIA/CIV contestado (download Alfresco via /recurso-arquivos/download)
+  2. Visualizar documentos do cidadão (download via /recurso-arquivos/{recursoId})
+  3. Redigir fundamentação e decisão no campo "despacho" (editor de texto rico)
+  4. Selecionar "decisao" (StatusRecurso):
+       DEFERIDO_TOTAL  ("T") — recurso integralmente acolhido
+       DEFERIDO_PARCIAL("P") — recurso parcialmente acolhido
+       INDEFERIDO      ("I") — recurso negado
+  5. Confirmar análise → chama T15_ConcluirAnalise1
+
+DADOS COLETADOS (AnaliseRecursoDTO):
+  recursoId  Long         — ID do RecursoED
+  despacho   String       — texto do parecer (HTML via editor rico)
+  decisao    StatusRecurso — DEFERIDO_TOTAL | DEFERIDO_PARCIAL | INDEFERIDO
+
+BUSCA DO ANALISTA ESPECÍFICO:
+  GET /adm/recurso-analise/busca-analista/{usuarioSoeID}
+  → Análises de um analista específico
+      ]]></documentation>
+      <incoming>SF_GW06_T14</incoming>
+      <outgoing>SF_T14_T15</outgoing>
+    </userTask>
+
+    <serviceTask id="T15_ConcluirAnalise1"
+                 name="[1ª INST] Concluir análise e&#10;transitar estado licenciamento"
+                 camunda:class="com.procergs.solcbm.analiserecurso.AnaliseRecursoAdmRN">
+      <documentation><![CDATA[
+TAREFA SISTEMA [1ª INSTÂNCIA]: Persiste a análise e executa todas as transições de estado.
+
+CLASSE: AnaliseRecursoAdmRN (@Stateless, @AppInterceptor)
+MÉTODO: analisarRecurso(AnaliseRecursoDTO dto)
+REST:   POST /adm/recurso-analise
+PERMISSÃO: @Permissao(objeto="ANALISERECURSO", acao="ANALISAR")
+
+PASSOS DETALHADOS:
+  1. Busca RecursoED por dto.recursoId → HTTP 404 se não encontrado
+  2. Valida: dto.despacho != null e não-blank; dto.decisao != null → HTTP 400 se inválido
+  3. MÉTODO deferimentoTotal1Instancia(recursoED, dto):
+       SE dto.tipoSolicitacao == INTEGRAL e dto.decisao == DEFERIDO_TOTAL:
+         SE tipoRecurso == CORRECAO_DE_VISTORIA:
+           → Cria nova VistoriaED (status=EM_VISTORIA, numeroVistoria=atual+1)
+           → Licenciamento: AGUARDANDO_DISTRIBUICAO_RENOV (renovação)
+                         ou AGUARDA_DISTRIBUICAO_VISTORIA (definitiva)
+           → Marco DOCUMENTO_CIA_CIV_CANCELADO (SISTEMA) — CIA/CIV NÃO é cancelado
+         SE tipoRecurso == CORRECAO_DE_ANALISE:
+           → Cancela AnaliseLicenciamentoTecnicaED (status=CANCELADA)
+             ou AnaliseLicInviabilidadeED (status=CANCELADO)
+           → Licenciamento: AGUARDANDO_DISTRIBUICAO
+           → Marco DOCUMENTO_CIA_CIV_CANCELADO
+       SENÃO:
+         → atualizarSituacaoLicenciamento(recursoED):
+              CORRECAO_DE_ANALISE → NCA
+              CORRECAO_DE_VISTORIA → CIV
+  4. Cria AnaliseRecursoED:
+       AnaliseRecursoED.builder()
+         .recursoED(recursoED)
+         .despacho(dto.getDespacho())
+         .idUsuarioSoe(Long.parseLong(sessionMB.getUser().getId()))
+         .status(dto.getDecisao())
+         .situacao(SituacaoAnaliseRecursoEnum.ANALISE_CONCLUIDA) [STRING no BD]
+         .ciencia(false) [SimNaoBooleanConverter → 'N']
+         .build()
+       analiseRecursoED.setDataConclusaoAnalise(dataAtualHelper.getDataAtual())
+       inclui(analiseRecursoED) → INSERT CBM_ANALISE_RECURSO
+  5. recursoED.setSituacao(SituacaoRecurso.ANALISE_CONCLUIDA)
+  6. recursoRN.altera(recursoED) → UPDATE CBM_RECURSO
+  7. Marco RESPOSTA_RECURSO no recurso (BOMBEIROS)
+  8. Marco RESPOSTA_RECURSO no licenciamento (BOMBEIROS)
+  9. geraRelatorioAnalise(analiseRecursoED) → ver T19_GerarRelatorio
+
+TABELAS:
+  CBM_ANALISE_RECURSO (INSERT — NRO_INT_ANALISE_RECURSO_SEQ, NRO_INT_RECURSO,
+                       TP_STATUS=ordinal, TXT_DESPACHO, NRO_INT_USUARIO_SOE,
+                       IND_CIENCIA='N', TP_SITUACAO='ANALISE_CONCLUIDA',
+                       CTR_DTH_CONCLUSAO_ANALISE)
+  CBM_RECURSO (UPDATE TP_SITUACAO=2 [ANALISE_CONCLUIDA])
+  LICENCIAMENTO (UPDATE situacao conforme tipo e decisão)
+  CBM_RECURSO_MARCO (INSERT RESPOSTA_RECURSO)
+  LICEN_MARCO (INSERT RESPOSTA_RECURSO)
+      ]]></documentation>
+      <incoming>SF_T14_T15</incoming>
+      <outgoing>SF_T15_GW08</outgoing>
+    </serviceTask>
+
+    <!-- PATH 2ª INSTÂNCIA -->
+    <userTask id="T14B_CriarColegiado"
+              name="[2ª INST] Criar colegiado&#10;(selecionar até 2 avalistaes)"
+              camunda:assignee="${analistaCBMRS}"
+              camunda:formKey="recurso-colegiado-criar">
+      <documentation><![CDATA[
+TAREFA [2ª INSTÂNCIA]: Analista/coordenador cria o colegiado para análise do recurso.
+
+PERFIL: Analista/Coordenador CBM-RS
+PERMISSÃO: @Permissao(objeto="ANALISERECURSO", acao="ANALISAR")
+
+ENDPOINT REST:
+  POST /adm/recurso-analise/colegiado
+  Body: AnaliseRecursoColegiadoDTO { recursoId: Long, usuariosSoeId: List&lt;Long&gt; }
+  Classe: RecursoAnaliseRestImpl
+  RN: AvalistaRecursoAdmRN.criarColegiado(AnaliseRecursoColegiadoDTO dto)
+
+VALIDAÇÕES:
+  - dto.recursoId != null → HTTP 400 se nulo
+  - dto.usuariosSoeId != null e não-vazio → HTTP 400 se vazio
+  - dto.usuariosSoeId.size() &lt;= 2 → HTTP 400 se mais de 2 avalistaes
+  - recursoED.instancia == 2 → HTTP 400 se não for 2ª instância
+
+PASSOS (AvalistaRecursoAdmRN.criarColegiado):
+  1. Cria AnaliseRecursoED:
+       situacao = SituacaoAnaliseRecursoEnum.AGUARDANDO_AVALIACAO_COLEGIADO [STRING]
+       idUsuarioSoe = Long.parseLong(sessionMB.getUser().getId())
+       recursoED = recursoED encontrado
+       ciencia = false [SimNaoBooleanConverter → 'N']
+       → INSERT CBM_ANALISE_RECURSO
+  2. Para cada idUsuarioSoe em dto.usuariosSoeId:
+       Cria AvalistaRecursoED:
+         analiseRecursoED = análise criada acima
+         idUsuarioSoe = usuarioSoeId do avalista
+         aceite = false [SimNaoBooleanConverter → 'N']
+       → INSERT CBM_AVALISTA_RECURSO
+  3. Marco ENVIO_PARA_COLEGIADO no recurso (BOMBEIROS)
+  4. Marco ENVIO_PARA_COLEGIADO no licenciamento
+
+TABELAS:
+  CBM_ANALISE_RECURSO (INSERT — TP_SITUACAO='AGUARDANDO_AVALIACAO_COLEGIADO')
+  CBM_AVALISTA_RECURSO (INSERT por avalista — NRO_INT_AVALISTA_RECURSO_SEQ,
+                         NRO_INT_ANALISE_RECURSO, NRO_INT_USUARIO_SOE, IND_ACEITE='N')
+  CBM_RECURSO_MARCO (INSERT ENVIO_PARA_COLEGIADO)
+  LICEN_MARCO (INSERT ENVIO_PARA_COLEGIADO)
+
+REMOÇÃO DE AVALISTA (AvalistaRecursoAdmRN.removerAvalista):
+  DELETE /adm/recurso-analise/remover-avalista/{idAvalista}
+  → exclui AvalistaRecursoED + Marco EXCLUSAO_MEMBRO_JUNTA_TECNICA (SISTEMA, "SOLCBM")
+      ]]></documentation>
+      <incoming>SF_GW06_T14B</incoming>
+      <outgoing>SF_T14B_T15B</outgoing>
+    </userTask>
+
+    <userTask id="T15B_VotarColegiado"
+              name="[2ª INST] Avalistaes do colegiado&#10;votam (concordo / não concordo)"
+              camunda:assignee="${avalistasColegiado}"
+              camunda:formKey="recurso-colegiado-votacao">
+      <documentation><![CDATA[
+TAREFA [2ª INSTÂNCIA]: Cada membro do colegiado (até 2 avalistaes) vota.
+
+PERFIL: Avalistaes do colegiado (AvalistaRecursoED.idUsuarioSoe)
+PERMISSÃO: @Permissao(objeto="ANALISERECURSO", acao="ANALISAR")
+
+ENDPOINT — CONCORDO:
+  PUT /adm/recurso-analise/recurso/{recursoId}
+  Classe: RecursoAnaliseRestImpl
+  RN: AvalistaRecursoAdmRN.concordoColegiado(Long recursoId)
+  Passos:
+    1. Busca AvalistaRecursoED do usuário logado na lista de avalistaes
+    2. avalista.setAceite(true) [SimNaoBooleanConverter → 'S']
+    3. avalistaRecursoBD.altera(avalista) → UPDATE CBM_AVALISTA_RECURSO
+    4. Marco ANALISE_RECURSO_COLEGIADO (BOMBEIROS)
+    5. Se TODOS os avalistaes concordaram (aceite=true para todos):
+         Marco FIM_ANALISE_RECURSO_COLEGIADO (SISTEMA, "SOLCBM") → ver T16B
+
+ENDPOINT — NÃO CONCORDO:
+  PUT /adm/recurso-analise/avalista-nao-concordo/{recursoId}
+  Body: AvalistaRecursoDTO { justificativaNaoConcordo: String (max 4000) }
+  RN: AvalistaRecursoAdmRN.naoConcordoJuntaTecnica(Long recursoId, AvalistaRecursoDTO dto)
+  Passos:
+    1. avalista.setAceite(false) [SimNaoBooleanConverter → 'N']
+    2. avalista.setJustificativaNaoConcordo(dto.getJustificativaNaoConcordo())
+    3. avalistaRecursoBD.altera(avalista)
+    4. Marco ANALISE_RECURSO_COLEGIADO (BOMBEIROS)
+
+ENTIDADE: AvalistaRecursoED
+  Tabela: CBM_AVALISTA_RECURSO
+  IND_ACEITE: 'N'=false(não votou/discordou), 'S'=true(concordou)
+  TXT_JUSTIFICATIVA: texto da discordância (max 4000, @Size)
+
+LOOP: Esta tarefa se repete para cada avalista até todos votarem.
+      ]]></documentation>
+      <incoming>SF_T14B_T15B</incoming>
+      <incoming>SF_GW07_T15B</incoming>
+      <outgoing>SF_T15B_GW07</outgoing>
+    </userTask>
+
+    <exclusiveGateway id="GW07_TodosVotaram"
+                      name="Todos os avalistaes&#10;do colegiado votaram?">
+      <documentation><![CDATA[
+GATEWAY DE DECISÃO: Todos os avalistaes do colegiado votaram (concordaram ou discordaram)?
+
+CONDIÇÃO: Para cada AvalistaRecursoED da AnaliseRecursoED:
+  aceite != null → já votou (true=concordou, false=discordou)
+  aceite == null → ainda não votou
+
+SE NEM TODOS VOTARAM: → loop back para T15B_VotarColegiado
+  (cada avalista vota individualmente via PUT /adm/recurso-analise/recurso/{recursoId}
+   ou PUT /adm/recurso-analise/avalista-nao-concordo/{recursoId})
+
+SE TODOS VOTARAM: → T16B_MarcoFimColegiado
+
+NOTA: O AvalistaRecursoED.aceite usa SimNaoBooleanConverter:
+  null → não votou
+  false ('N') → discordou
+  true ('S') → concordou
+      ]]></documentation>
+      <incoming>SF_T15B_GW07</incoming>
+      <outgoing>SF_GW07_T15B</outgoing>
+      <outgoing>SF_GW07_T16B</outgoing>
+    </exclusiveGateway>
+
+    <serviceTask id="T16B_MarcoFimColegiado"
+                 name="[2ª INST] Registrar marco&#10;FIM_ANALISE_RECURSO_COLEGIADO"
+                 camunda:class="com.procergs.solcbm.avalistaanaliserecurso.AvalistaRecursoAdmRN">
+      <documentation><![CDATA[
+TAREFA SISTEMA [2ª INSTÂNCIA]: Registra o marco de conclusão do colegiado.
+
+CLASSE: AvalistaRecursoAdmRN.concordoColegiado(Long recursoId)
+  (parte do fluxo — executado quando o último avalista confirma)
+
+AÇÃO:
+  Quando todos os avalistaes votaram (condição verificada em GW07):
+    RecursoMarcoED marcoFim = RecursoMarcoED.builder()
+      .recursoED(analiseRecursoED.getRecursoED())
+      .dthMarco(Calendar.getInstance())
+      .tipoResponsavel(TipoResponsavelMarco.SISTEMA)
+      .usuarioSoeNome("SOLCBM")  // NOME_RESPONSAVEL_SISTEMA
+      .visibilidade(TipoVisibilidadeMarco.PUBLICO)
+      .build()
+    recursoMarcoRN.inclui(TipoMarco.FIM_ANALISE_RECURSO_COLEGIADO, marcoFim)
+
+TABELAS:
+  CBM_RECURSO_MARCO (INSERT FIM_ANALISE_RECURSO_COLEGIADO, tipoResponsavel=SISTEMA)
+
+APÓS: Coordenador/Analista redige despacho final da 2ª instância → T17B
+      ]]></documentation>
+      <incoming>SF_GW07_T16B</incoming>
+      <outgoing>SF_T16B_T17B</outgoing>
+    </serviceTask>
+
+    <userTask id="T17B_RedigirDespacho2"
+              name="[2ª INST] Redigir despacho&#10;e decisão final da 2ª instância"
+              camunda:assignee="${analistaCBMRS}"
+              camunda:formKey="recurso-analise-2-instancia">
+      <documentation><![CDATA[
+TAREFA [2ª INSTÂNCIA]: Analista/coordenador redige o despacho final levando em conta
+os votos do colegiado e emite a decisão da 2ª instância.
+
+PERFIL: Analista/Coordenador CBM-RS
+PERMISSÃO: @Permissao(objeto="ANALISERECURSO", acao="ANALISAR")
+
+DADOS DISPONÍVEIS:
+  - Histórico de votos do colegiado (AvalistaRecursoED[])
+  - Justificativas de discordância (TXT_JUSTIFICATIVA de cada avalista)
+  - CIA/CIV original e documentos do cidadão
+
+DADOS COLETADOS (AnaliseRecursoDTO):
+  recursoId  Long          — ID do RecursoED
+  despacho   String        — texto do parecer (HTML via editor rico)
+  decisao    StatusRecurso — DEFERIDO_TOTAL | DEFERIDO_PARCIAL | INDEFERIDO
+
+OBSERVAÇÃO:
+  O despacho pode conter HTML (editor rich text no Angular frontend).
+  unescapeHTML() é aplicado no backend antes de inserir no relatório JasperReports.
+      ]]></documentation>
+      <incoming>SF_T16B_T17B</incoming>
+      <outgoing>SF_T17B_T18B</outgoing>
+    </userTask>
+
+    <serviceTask id="T18B_ConcluirAnalise2"
+                 name="[2ª INST] Concluir análise 2ª instância&#10;(AnaliseRecursoAdmRN.analisarSegundaInstancia)"
+                 camunda:class="com.procergs.solcbm.analiserecurso.AnaliseRecursoAdmRN">
+      <documentation><![CDATA[
+TAREFA SISTEMA [2ª INSTÂNCIA]: Persiste a análise da 2ª instância.
+
+CLASSE: AnaliseRecursoAdmRN (@Stateless, @AppInterceptor)
+MÉTODO: analisarSegundaInstancia(AnaliseRecursoDTO dto)
+REST:   POST /adm/recurso-analise/segunda-instancia
+PERMISSÃO: @Permissao(objeto="ANALISERECURSO", acao="ANALISAR")
+
+DIFERENÇAS DA 1ª INSTÂNCIA:
+  - Usa AnaliseRecursoED já existente (criado em T14B com AGUARDANDO_AVALIACAO_COLEGIADO)
+  - Atualiza: despacho, status, situacao, dataConclusaoAnalise
+  - Executa deferimentoTotal2Instancia() (mesma lógica do 1ª)
+  - Marco: RESPOSTA_RECURSO_2 (não RESPOSTA_RECURSO)
+
+PASSOS:
+  1. Busca RecursoED por dto.recursoId
+  2. Busca AnaliseRecursoED existente (AGUARDANDO_AVALIACAO_COLEGIADO)
+  3. deferimentoTotal2Instancia(recursoED, dto) — mesma lógica do T15
+  4. analiseRecurso.setSituacao(ANALISE_CONCLUIDA) [STRING]
+  5. analiseRecurso.setDataConclusaoAnalise(dataAtualHelper.getDataAtual())
+  6. analiseRecurso.setDespacho(dto.getDespacho())
+  7. analiseRecurso.setStatus(dto.getDecisao())
+  8. altera(analiseRecursoED) → UPDATE CBM_ANALISE_RECURSO
+  9. recursoED.setSituacao(SituacaoRecurso.ANALISE_CONCLUIDA)
+  10. recursoRN.altera(recursoED) → UPDATE CBM_RECURSO
+  11. Marco RESPOSTA_RECURSO_2 no recurso (BOMBEIROS)
+  12. Marco RESPOSTA_RECURSO_2 no licenciamento
+  13. geraRelatorioAnalise(analiseRecursoED) → ver T19
+
+TABELAS:
+  CBM_ANALISE_RECURSO (UPDATE — despacho, status, situacao, dataConclusaoAnalise)
+  CBM_RECURSO (UPDATE TP_SITUACAO=2 [ANALISE_CONCLUIDA])
+  CBM_RECURSO_MARCO (INSERT RESPOSTA_RECURSO_2)
+  LICEN_MARCO (INSERT RESPOSTA_RECURSO_2)
+      ]]></documentation>
+      <incoming>SF_T17B_T18B</incoming>
+      <outgoing>SF_T18B_GW08</outgoing>
+    </serviceTask>
+
+    <!-- JOIN após análise 1ª ou 2ª instância -->
+    <exclusiveGateway id="GW08_JoinAnalise"
+                      name="Análise concluída&#10;(1ª ou 2ª instância)">
+      <documentation><![CDATA[
+GATEWAY DE CONVERGÊNCIA: Une os caminhos da 1ª instância (T15) e 2ª instância (T18B).
+Em ambos os casos, o AnaliseRecursoED está com situacao=ANALISE_CONCLUIDA
+e o próximo passo é gerar o relatório PDF.
+      ]]></documentation>
+      <incoming>SF_T15_GW08</incoming>
+      <incoming>SF_T18B_GW08</incoming>
+      <outgoing>SF_GW08_T19</outgoing>
+    </exclusiveGateway>
+
+    <!-- ==============================================================
+         FASE 6 — GERAÇÃO DE RELATÓRIO E ATUALIZAÇÃO DE ESTADO
+         ============================================================== -->
+
+    <serviceTask id="T19_GerarRelatorio"
+                 name="Gerar relatório PDF da análise&#10;(JasperReports + Alfresco)"
+                 camunda:class="com.procergs.solcbm.analiserecurso.AnaliseRecursoAdmRN">
+      <documentation><![CDATA[
+TAREFA SISTEMA: Gera o PDF do relatório de análise e persiste no Alfresco.
+
+CLASSE: AnaliseRecursoAdmRN.geraRelatorioAnalise(AnaliseRecursoED ed)
+        Chamado internamente pelo método analisarRecurso/analisarSegundaInstancia
+        após a persistência da análise.
+
+PASSOS DETALHADOS:
+  1. String numeroAutenticacao = arquivoRN.gerarNumeroAutenticacao()
+     → gera código único de autenticidade para o documento
+
+  2. InputStream relatorio = documentoRelatorioAnaliseRecursoRN.gera(
+         AnaliseRecursoRelatorioDTO.builder()
+           .tipoSolicitacao(...)                // INTEGRAL | PARCIAL
+           .tipoDecisao("Deferido Total" | "Deferido Parcial" | "Indeferido")
+           .numeroPPCI(licenciamento.getNumeroPPCI())
+           .envolvidos(rts, rus, proprietarios)
+           .fundamentacaoLegal(unescapeHTML(recurso.getFundamentacaoLegal()))
+           .docsAnexados(recurso.getArquivosRecurso())
+           .despacho(unescapeHTML(ed.getDespacho()))   // HTML do editor rico
+           .instancia(recurso.getInstancia().toString())
+           .tipo("Correção de CIA" | "Correção de CIV")
+           .numeroAutenticacao(numeroAutenticacao)
+           .logoCBM(reportPathHelper.getLogoCBM())     // logo CBM-RS
+           .logoRS(reportPathHelper.getLogoRS())       // logo RS
+           .dataAtual(...)
+           .dataHoraAssinatura(...)
+           .build())
+     → JasperReports gera InputStream do PDF
+
+  3. ArquivoED arquivoED = BuilderArquivoED.of()
+       .inputStream(relatorio)
+       .nomeArquivo("ca_analise_recurso_" + instancia + "_instancia.pdf")
+       .codigoAutenticacao(numeroAutenticacao)
+       .tipo(TipoArquivo.EDIFICACAO)
+       .instance()
+
+  4. ArquivoED arquivoSalvo = arquivoRN.incluirArquivo(arquivoED)
+     → Upload para Alfresco → retorna nodeRef
+     → Persiste ArquivoED (INSERT ARQUIVO com identificadorAlfresco = nodeRef)
+
+  5. ed.setArquivo(arquivoSalvo)
+     altera(ed) → UPDATE CBM_ANALISE_RECURSO SET NRO_INT_ARQUIVO=arquivoSalvo.getId()
+
+OBSERVAÇÃO unescapeHTML:
+  Converte HTML rico do frontend:
+    &amp;lt;strong&amp;gt; → &amp;lt;b&amp;gt;
+    &amp;amp; → &amp;
+  Necessário porque o JasperReports não processa HTML completo — apenas tags básicas.
+
+DOWNLOAD DO RELATÓRIO:
+  GET /recurso-arquivos/download-analise/{idRecurso}
+  → RecursoArquivoRest.downloadAnalise(Long idRecurso)
+  → ArquivoRN.toInputStream(arquivoED) → stream do Alfresco → download
+
+TABELAS:
+  ARQUIVO (INSERT — identificadorAlfresco, nomeArquivo, codigoAutenticacao, tipo)
+  CBM_ANALISE_RECURSO (UPDATE NRO_INT_ARQUIVO)
+      ]]></documentation>
+      <incoming>SF_GW08_T19</incoming>
+      <outgoing>SF_T19_T20</outgoing>
+    </serviceTask>
+
+    <serviceTask id="T20_AtualizarEstado"
+                 name="Atualizar estado do licenciamento&#10;conforme decisão do recurso"
+                 camunda:class="com.procergs.solcbm.analiserecurso.AnaliseRecursoAdmRN">
+      <documentation><![CDATA[
+TAREFA SISTEMA: Executa as transições de estado do licenciamento conforme a decisão.
+
+CONTEXTO: As transições de estado do licenciamento JÁ são executadas dentro de
+  T15_ConcluirAnalise1 ou T18B_ConcluirAnalise2 (método deferimentoTotal1Instancia/2).
+  Esta tarefa representa a consolidação e registro dos estados finais.
+
+TRANSIÇÕES RESULTANTES (de deferimentoTotal1Instancia):
+
+  DEFERIDO_TOTAL + INTEGRAL + CORRECAO_DE_VISTORIA:
+    - Cria nova VistoriaED (status=EM_VISTORIA, numeroVistoria=atual+1)
+    - SituacaoLicenciamento:
+        → AGUARDANDO_DISTRIBUICAO_RENOV (renovação)
+        → AGUARDA_DISTRIBUICAO_VISTORIA (definitiva)
+    - Marco DOCUMENTO_CIA_CIV_CANCELADO (SISTEMA)
+    - CIA/CIV NÃO é cancelado
+
+  DEFERIDO_TOTAL + INTEGRAL + CORRECAO_DE_ANALISE:
+    - Cancela AnaliseLicenciamentoTecnicaED (status=CANCELADA)
+      ou AnaliseLicInviabilidadeED (status=CANCELADO)
+    - SituacaoLicenciamento: AGUARDANDO_DISTRIBUICAO
+    - Marco DOCUMENTO_CIA_CIV_CANCELADO
+
+  DEFERIDO_TOTAL + PARCIAL (ou DEFERIDO_PARCIAL, INDEFERIDO):
+    - atualizarSituacaoLicenciamento(recursoED):
+        CORRECAO_DE_ANALISE → SituacaoLicenciamento.NCA
+        CORRECAO_DE_VISTORIA → SituacaoLicenciamento.CIV
+    - Licenciamento retorna para fila de análise/vistoria
+
+OBSERVAÇÃO:
+  RecursoED.situacao = ANALISE_CONCLUIDA em todos os casos.
+  AnaliseRecursoED.ciencia = false → aguardando ciência do cidadão.
+      ]]></documentation>
+      <incoming>SF_T19_T20</incoming>
+      <outgoing>SF_T20_T21</outgoing>
+    </serviceTask>
+
+    <!-- ==============================================================
+         FASE 7 — CIÊNCIA DA RESPOSTA DO RECURSO
+         ============================================================== -->
+
+    <userTask id="T21_AguardarCienciaResposta"
+              name="Tomar ciência da resposta&#10;do recurso (despacho + PDF)"
+              camunda:assignee="${cidadaoRT_RU_Proprietario}"
+              camunda:formKey="recurso-ciencia-resposta">
+      <documentation><![CDATA[
+TAREFA: Cidadão toma ciência do despacho e da decisão do recurso.
+
+PERFIL: RT, RU ou Proprietário vinculado ao licenciamento
+PRAZO: 30 dias após dataConclusaoAnalise (AnaliseRecursoED)
+       Após 30 dias → Tmr_30DiasCienciaResp dispara → T22B (ciência automática)
+
+ACESSO À RESPOSTA:
+  GET /adm/recurso-analise/consulta-analise/{recursoId}
+  → AnaliseRecursoResponseDTO { despacho, decisao, recursoDTO, colegiado[] }
+  GET /recurso-arquivos/download-analise/{idRecurso}
+  → Download do PDF do relatório de análise (JasperReports + Alfresco)
+
+AÇÃO DO CIDADÃO:
+  Visualizar despacho, baixar PDF, clicar em "Confirmar ciência da resposta".
+
+ENDPOINT PARA CIÊNCIA MANUAL:
+  Chamado internamente via AnaliseRecursoRN.alterar(AnaliseRecursoED)
+
+FLUXO INTERNO (AnaliseRecursoRN.alterar):
+  @Permissao(desabilitada=true)
+  1. analiseRecursoED.setDthCienciaAtec(Calendar.getInstance())  [DTH_CIENCIA_ATEC]
+  2. analiseRecursoED.setIdUsuarioCiencia(usuarioRN.getUsuarioLogado().getId()) [NRO_INT_USUARIO_CIENCIA]
+  3. analiseRecursoED.setCiencia(true)  [SimNaoBooleanConverter → 'S']
+  4. altera(analiseRecursoED) → UPDATE CBM_ANALISE_RECURSO
+  5. Cria RecursoMarcoED (tipoResponsavel=CIDADAO):
+       usuarioED = usuarioRN.getUsuarioLogado()
+       tituloArquivo = analiseRecursoED.getArquivo().getNomeArquivo()
+       visibilidade = PUBLICO
+  6. recursoMarcoRN.inclui(TipoMarco.CIENCIA_RECURSO, marco) → INSERT CBM_RECURSO_MARCO
+  7. licenciamentoMarcoCidadaoRN.inclui(TipoMarco.CIENCIA_RECURSO, licenciamentoED)
+     → INSERT LICEN_MARCO (CIDADAO)
+
+TIMER (30 dias):
+  Se cidadão não tomar ciência → Tmr_30DiasCienciaResp dispara
+  → T22B_CienciaAutomaticaResp (RecursoCienciaAutomaticaRN)
+      ]]></documentation>
+      <incoming>SF_T20_T21</incoming>
+      <outgoing>SF_T21_T22</outgoing>
+    </userTask>
+
+    <!-- Timer boundary: 30 dias sem ciência da resposta -->
+    <boundaryEvent id="Tmr_30DiasCienciaResp"
+                   name="30 dias sem ciência&#10;da resposta"
+                   attachedToRef="T21_AguardarCienciaResposta"
+                   cancelActivity="true">
+      <documentation><![CDATA[
+TIMER — 30 DIAS SEM CIÊNCIA DA RESPOSTA DO RECURSO
+
+GATILHO: Decorridos 30 dias sem ciência manual da resposta do recurso.
+
+IMPLEMENTAÇÃO REAL:
+  Classe: LicenciamentoCienciaBatchRN.efetuaCienciaAutomatica()
+  @Schedule(hour="12/12", persistent=false)
+  → chama: recursoCienciaAutomaticaRN.efetuaCienciaAutomatica(dataLimite)
+
+  RecursoCienciaAutomaticaRN.listagemPendentes:
+    AnaliseRecursoBD.listarPendentesDeCiencia(dataLimite):
+      SELECT ar FROM AnaliseRecursoED ar
+      WHERE ar.ciencia = false ('N')
+        AND ar.situacao = 'ANALISE_CONCLUIDA'
+        AND ar.dataConclusaoAnalise &lt;= :dataLimite
+
+DIAS: DIAS_PERIODO_VERIFICACAO = -30 (LicenciamentoCienciaBatchRN)
+      ]]></documentation>
+      <outgoing>SF_Tmr2_T22B</outgoing>
+      <timerEventDefinition id="TimerDef_CienciaResp">
+        <timeDuration xsi:type="tFormalExpression">P30D</timeDuration>
+      </timerEventDefinition>
+    </boundaryEvent>
+
+    <serviceTask id="T22_RegistrarCienciaManualResp"
+                 name="Registrar ciência manual&#10;da resposta (AnaliseRecursoRN.alterar)"
+                 camunda:class="com.procergs.solcbm.analiserecurso.AnaliseRecursoRN">
+      <documentation><![CDATA[
+TAREFA SISTEMA: Persiste a ciência manual da resposta do recurso.
+
+CLASSE: AnaliseRecursoRN (@Stateless)
+MÉTODO: alterar(AnaliseRecursoED analiseRecursoED)
+@Permissao(desabilitada=true)
+
+AÇÕES:
+  analiseRecursoED.setDthCienciaAtec(Calendar.getInstance())
+  analiseRecursoED.setIdUsuarioCiencia(usuarioRN.getUsuarioLogado().getId())
+  analiseRecursoED.setCiencia(true) [→ 'S' via SimNaoBooleanConverter]
+  altera(analiseRecursoED) → UPDATE CBM_ANALISE_RECURSO (IND_CIENCIA='S', DTH_CIENCIA_ATEC)
+
+  Marco no recurso (CIDADAO):
+    RecursoMarcoED { recursoED, dthMarco=now(), tipoResponsavel=CIDADAO,
+                     usuarioED=logado, tituloArquivo=arquivo.getNomeArquivo(),
+                     visibilidade=PUBLICO }
+    → INSERT CBM_RECURSO_MARCO (CIENCIA_RECURSO)
+
+  Marco no licenciamento (CIDADAO):
+    licenciamentoMarcoCidadaoRN.inclui(CIENCIA_RECURSO, licenciamentoED)
+    → INSERT LICEN_MARCO (CIENCIA_RECURSO)
+      ]]></documentation>
+      <incoming>SF_T21_T22</incoming>
+      <outgoing>SF_T22_GW09</outgoing>
+    </serviceTask>
+
+    <serviceTask id="T22B_CienciaAutomaticaResp"
+                 name="Registrar ciência automática&#10;da resposta (RecursoCienciaAutomaticaRN)"
+                 camunda:class="com.procergs.solcbm.recurso.RecursoCienciaAutomaticaRN">
+      <documentation><![CDATA[
+TAREFA SISTEMA: Registra ciência automática da resposta do recurso (job batch).
+
+CLASSE: RecursoCienciaAutomaticaRN
+MÉTODO: efetuarCiencia(AnaliseRecursoED analiseRecursoED)
+        Invocado por: LicenciamentoCienciaBatchRN.efetuaCienciaAutomatica()
+
+CONSTANTE: NOME_RESPONSAVEL_SISTEMA = "SOLCBM"
+
+PASSOS:
+  1. analiseRecursoED.setCiencia(true) [→ 'S']
+  2. analiseRecursoED.setDthCienciaAtec(dataAtualHelper.getDataAtual())
+  3. analiseRecursoBD.altera(analiseRecursoED) → UPDATE CBM_ANALISE_RECURSO
+
+  4. Marco no recurso (SISTEMA):
+     RecursoMarcoED.builder()
+       .recursoED(analiseRecursoED.getRecursoED())
+       .dthMarco(Calendar.getInstance())
+       .tipoResponsavel(TipoResponsavelMarco.SISTEMA)
+       .usuarioSoeNome("SOLCBM")
+       .tituloArquivo(analiseRecursoED.getArquivo().getNomeArquivo())
+       .visibilidade(TipoVisibilidadeMarco.PUBLICO)
+       .build()
+     recursoMarcoRN.inclui(TipoMarco.CIENCIA_RECURSO, marco) → INSERT CBM_RECURSO_MARCO
+
+  5. Marco no licenciamento (SISTEMA):
+     licenciamentoMarcoSistemaRN.inclui(CIENCIA_RECURSO,
+       analiseRecursoED.getRecursoED().getLicenciamentoED())
+     → @LicenciamentoMarcoQualifier(tipoResponsavel=SISTEMA)
+     → INSERT LICEN_MARCO
+
+TABELAS:
+  CBM_ANALISE_RECURSO (UPDATE IND_CIENCIA='S', DTH_CIENCIA_ATEC)
+  CBM_RECURSO_MARCO (INSERT CIENCIA_RECURSO, tipoResponsavel=SISTEMA)
+  LICEN_MARCO (INSERT CIENCIA_RECURSO)
+      ]]></documentation>
+      <incoming>SF_Tmr2_T22B</incoming>
+      <outgoing>SF_T22B_GW09</outgoing>
+    </serviceTask>
+
+    <exclusiveGateway id="GW09_JoinCienciaResp"
+                      name="Ciência da resposta&#10;registrada">
+      <documentation><![CDATA[
+GATEWAY DE CONVERGÊNCIA: Une ciência manual (T22) e ciência automática (T22B).
+Em ambos os casos AnaliseRecursoED.ciencia=true, dthCienciaAtec preenchida.
+      ]]></documentation>
+      <incoming>SF_T22_GW09</incoming>
+      <incoming>SF_T22B_GW09</incoming>
+      <outgoing>SF_GW09_GW10</outgoing>
+    </exclusiveGateway>
+
+    <!-- ==============================================================
+         FASE 8 — RESULTADO FINAL E POSSÍVEL 2ª INSTÂNCIA
+         ============================================================== -->
+
+    <exclusiveGateway id="GW10_Resultado"
+                      name="Resultado da análise&#10;do recurso?">
+      <documentation><![CDATA[
+GATEWAY DE DECISÃO: Qual foi o resultado da análise do recurso?
+
+DECISÃO (StatusRecurso, persistido como @Enumerated ordinal em TP_STATUS):
+  DEFERIDO_TOTAL   (ordinal 0, "T") → GW11_TipoDeferimento (analisa tipo e solicitação)
+  DEFERIDO_PARCIAL (ordinal 1, "P") → GW12_FoiSegInstancia (possível 2ª instância)
+  INDEFERIDO       (ordinal 2, "I") → GW12_FoiSegInstancia (possível 2ª instância)
+
+RN-P05-R05: 2ª instância cabe SOMENTE se 1ª foi INDEFERIDO ou DEFERIDO_PARCIAL.
+RN-P05-G04: AnaliseRecursoED.ciencia já foi registrada (true) neste ponto.
+      ]]></documentation>
+      <incoming>SF_GW09_GW10</incoming>
+      <outgoing>SF_GW10_GW11</outgoing>
+      <outgoing>SF_GW10_GW12</outgoing>
+    </exclusiveGateway>
+
+    <!-- Branch DEFERIDO_TOTAL -->
+    <exclusiveGateway id="GW11_TipoDeferimento"
+                      name="Tipo de deferimento total?&#10;(tipoRecurso + tipoSolicitacao)">
+      <documentation><![CDATA[
+GATEWAY DE DECISÃO [DEFERIDO_TOTAL]: Analisa o tipo de recurso e a solicitação.
+
+CONDIÇÃO 1: tipoSolicitacao == INTEGRAL e tipoRecurso == CORRECAO_DE_VISTORIA
+  → T23_CriarNovaVistoria
+  Regra RN-P05-G01: nova vistoria é criada; CIA/CIV NÃO é cancelado
+
+CONDIÇÃO 2: tipoSolicitacao == INTEGRAL e tipoRecurso == CORRECAO_DE_ANALISE
+  → T24_CancelarCIACIV
+  Regra RN-P05-G02: CIA/CIV é cancelado; licenciamento volta para distribuição
+
+CONDIÇÃO 3: tipoSolicitacao == PARCIAL (independente de tipoRecurso)
+  ou outros casos de DEFERIDO_TOTAL
+  → End_DeferidoTotal
+  Regra RN-P05-G03: licenciamento retorna para NCA (análise) ou CIV (vistoria)
+      ]]></documentation>
+      <incoming>SF_GW10_GW11</incoming>
+      <outgoing>SF_GW11_T23</outgoing>
+      <outgoing>SF_GW11_T24</outgoing>
+      <outgoing>SF_GW11_EndDefer</outgoing>
+    </exclusiveGateway>
+
+    <serviceTask id="T23_CriarNovaVistoria"
+                 name="Criar nova vistoria&#10;(DEFERIDO_TOTAL + INTEGRAL + CIV)"
+                 camunda:class="com.procergs.solcbm.analiserecurso.AnaliseRecursoAdmRN">
+      <documentation><![CDATA[
+TAREFA SISTEMA: Cria nova vistoria após deferimento total de recurso contra CIV.
+
+CHAMADO EM: AnaliseRecursoAdmRN.deferimentoTotal1Instancia (ou deferimentoTotal2Instancia)
+CONDIÇÃO: tipoSolicitacao == INTEGRAL && decisao == DEFERIDO_TOTAL && tipoRecurso == CORRECAO_DE_VISTORIA
+
+PASSOS:
+  1. Cria nova VistoriaED:
+       status = StatusVistoria.EM_VISTORIA
+       numeroVistoria = vistoriaAnterior.getNumeroVistoria() + 1
+       licenciamentoED = recursoED.getLicenciamentoED()
+  2. Persiste via VistoriaRN.inclui(vistoriaED) → INSERT CBM_VISTORIA
+  3. Atualiza licenciamento:
+       Se VISTORIA_RENOVACAO: → SituacaoLicenciamento.AGUARDANDO_DISTRIBUICAO_RENOV
+       Se VISTORIA_DEFINITIVA: → SituacaoLicenciamento.AGUARDA_DISTRIBUICAO_VISTORIA
+  4. Marco DOCUMENTO_CIA_CIV_CANCELADO (SISTEMA) no recurso e no licenciamento
+
+OBSERVAÇÃO:
+  O CIV NÃO é cancelado fisicamente — apenas o marco sinaliza que foi "anulado" pela decisão.
+  O processo segue para nova vistoria (iniciando P_Vistoria).
+
+TABELAS:
+  CBM_VISTORIA (INSERT nova vistoria)
+  LICENCIAMENTO (UPDATE situacao)
+      ]]></documentation>
+      <incoming>SF_GW11_T23</incoming>
+      <outgoing>SF_T23_End</outgoing>
+    </serviceTask>
+
+    <endEvent id="End_NovaVistoria"
+              name="Nova vistoria criada&#10;→ AGUARDANDO_DISTRIBUICAO_VISTORIA">
+      <documentation><![CDATA[
+FIM: Nova vistoria criada. Licenciamento aguarda redistribuição para nova vistoria.
+Recurso: SituacaoRecurso.ANALISE_CONCLUIDA.
+Processo P05 encerrado. Inicia processo de Vistoria.
+      ]]></documentation>
+      <incoming>SF_T23_End</incoming>
+    </endEvent>
+
+    <serviceTask id="T24_CancelarCIACIV"
+                 name="Cancelar CIA/CIV e reabrir&#10;para nova distribuição de análise"
+                 camunda:class="com.procergs.solcbm.analiserecurso.AnaliseRecursoAdmRN">
+      <documentation><![CDATA[
+TAREFA SISTEMA: Cancela o CIA/CIV e redistribui o licenciamento para análise.
+
+CHAMADO EM: AnaliseRecursoAdmRN.deferimentoTotal1Instancia (ou deferimentoTotal2Instancia)
+CONDIÇÃO: tipoSolicitacao == INTEGRAL && decisao == DEFERIDO_TOTAL && tipoRecurso == CORRECAO_DE_ANALISE
+
+PASSOS:
+  1. Cancela a análise:
+       AnaliseLicenciamentoTecnicaED: setStatus(StatusAnaliseLicenciamentoTecnica.CANCELADA)
+       ou AnaliseLicInviabilidadeED:  setStatus(StatusAnaliseLicenciamentoInviabilidade.CANCELADO)
+       → UPDATE na tabela correspondente
+  2. Atualiza licenciamento:
+       SituacaoLicenciamento: AGUARDANDO_DISTRIBUICAO
+       → Licenciamento volta para fila de distribuição (P04)
+  3. Marco DOCUMENTO_CIA_CIV_CANCELADO (SISTEMA) no recurso e no licenciamento
+
+NOTA: O CIA/CIV foi produzido pela análise cancelada. Com o cancelamento da análise,
+      o CIA/CIV perde validade e o licenciamento é redistribuído para nova análise.
+
+TABELAS:
+  ANAL_LIC_TECNICA ou ANAL_LIC_INVIABILIDADE (UPDATE status=CANCELADA/CANCELADO)
+  LICENCIAMENTO (UPDATE situacao=AGUARDANDO_DISTRIBUICAO)
+  CBM_RECURSO_MARCO (INSERT DOCUMENTO_CIA_CIV_CANCELADO)
+  LICEN_MARCO (INSERT DOCUMENTO_CIA_CIV_CANCELADO)
+      ]]></documentation>
+      <incoming>SF_GW11_T24</incoming>
+      <outgoing>SF_T24_End</outgoing>
+    </serviceTask>
+
+    <endEvent id="End_VoltaDistribuicao"
+              name="CIA/CIV cancelado&#10;→ AGUARDANDO_DISTRIBUICAO (P04)">
+      <documentation><![CDATA[
+FIM: CIA/CIV cancelado. Licenciamento retorna para AGUARDANDO_DISTRIBUICAO.
+Inicia novo ciclo P04 (Análise Técnica) com nova distribuição.
+      ]]></documentation>
+      <incoming>SF_T24_End</incoming>
+    </endEvent>
+
+    <endEvent id="End_DeferidoTotal"
+              name="Deferido total parcial&#10;→ NCA ou CIV">
+      <documentation><![CDATA[
+FIM: DEFERIDO_TOTAL + PARCIAL ou outros casos.
+Licenciamento: NCA (análise) ou CIV (vistoria), conforme tipoRecurso.
+Recurso: SituacaoRecurso.ANALISE_CONCLUIDA.
+Não cabe 2ª instância após DEFERIDO_TOTAL.
+      ]]></documentation>
+      <incoming>SF_GW11_EndDefer</incoming>
+    </endEvent>
+
+    <!-- Branch DEFERIDO_PARCIAL / INDEFERIDO → possível 2ª instância -->
+    <exclusiveGateway id="GW12_FoiSegInstancia"
+                      name="Recurso foi de&#10;2ª instância?">
+      <documentation><![CDATA[
+GATEWAY DE DECISÃO: O recurso que acabou de ser analisado era de 2ª instância?
+
+CONDIÇÃO:
+  RecursoED.instancia == 2 → "Sim, foi 2ª instância" → End_P05 (sem mais recursos)
+  RecursoED.instancia == 1 → "Não, foi 1ª instância" → GW13 (possível 2ª instância)
+
+RN-P05-R05: 2ª instância cabe SOMENTE se 1ª foi INDEFERIDO ou DEFERIDO_PARCIAL.
+  Se resultado 1ª = DEFERIDO_TOTAL: este gateway não é atingido (vai para GW11).
+      ]]></documentation>
+      <incoming>SF_GW10_GW12</incoming>
+      <outgoing>SF_GW12_End</outgoing>
+      <outgoing>SF_GW12_GW13</outgoing>
+    </exclusiveGateway>
+
+    <endEvent id="End_P05"
+              name="Processo encerrado&#10;após 2ª instância">
+      <documentation><![CDATA[
+FIM: Recurso de 2ª instância analisado e ciência registrada. Não há mais instâncias recursais.
+SituacaoRecurso.ANALISE_CONCLUIDA.
+Licenciamento: NCA ou CIV (conforme tipo e decisão).
+      ]]></documentation>
+      <incoming>SF_GW12_End</incoming>
+    </endEvent>
+
+    <exclusiveGateway id="GW13_OptaSegInstancia"
+                      name="Cidadão opta por&#10;2ª instância? (prazo 15 dias)">
+      <documentation><![CDATA[
+GATEWAY DE DECISÃO: Após ciência da resposta da 1ª instância
+(resultado: INDEFERIDO ou DEFERIDO_PARCIAL), cidadão opta por 2ª instância?
+
+PRAZO: 15 dias após ciência da resposta da 1ª instância
+       PRAZO_SOLICITAR_RECURSO_2_INSTANCIA = 15 (LicenciamentoCidadaoRN)
+
+PATH "NÃO INTERPÕE 2ª": → End_SemSegInstancia
+PATH "INTERPÕE 2ª": → GW04_OptaRecurso → T05_PreencherRecurso (instancia=2)
+  O ciclo recomeça com novo RecursoDTO (instancia=2).
+  Análise da 2ª instância será via colegiado (GW06 → T14B).
+
+OBSERVAÇÃO:
+  Na 2ª instância, tipoRecurso deve ser o mesmo que na 1ª instância.
+  O idArquivoCiaCiv deve referenciar o mesmo CIA/CIV original.
+      ]]></documentation>
+      <incoming>SF_GW12_GW13</incoming>
+      <outgoing>SF_GW13_EndSem</outgoing>
+      <outgoing>SF_GW13_T05</outgoing>
+    </exclusiveGateway>
+
+    <endEvent id="End_SemSegInstancia"
+              name="Processo encerrado&#10;sem 2ª instância">
+      <documentation><![CDATA[
+FIM: Cidadão não interpôs 2ª instância ou prazo de 15 dias expirou.
+Licenciamento: NCA (análise) ou CIV (vistoria).
+SituacaoRecurso.ANALISE_CONCLUIDA.
+      ]]></documentation>
+      <incoming>SF_GW13_EndSem</incoming>
+    </endEvent>
+
+    <!-- ==============================================================
+         SEQUENCE FLOWS
+         ============================================================== -->
+
+    <!-- FASE 1 — CIÊNCIA -->
+    <sequenceFlow id="SF_Start_T01" sourceRef="Start_P05" targetRef="T01_AcessarDocumento"/>
+    <sequenceFlow id="SF_T01_T02" sourceRef="T01_AcessarDocumento" targetRef="T02_AguardarCiencia"/>
+    <sequenceFlow id="SF_T02_T03A" sourceRef="T02_AguardarCiencia" targetRef="T03A_RegistrarCienciaManual">
+      <conditionExpression xsi:type="tFormalExpression">cidadão confirmou ciência manualmente</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="SF_Tmr_T03B" sourceRef="Tmr_30DiasCiencia" targetRef="T03B_RegistrarCienciaAutomatica"/>
+    <sequenceFlow id="SF_T03A_GW01" sourceRef="T03A_RegistrarCienciaManual" targetRef="GW01_JoinCiencia"/>
+    <sequenceFlow id="SF_T03B_GW01" sourceRef="T03B_RegistrarCienciaAutomatica" targetRef="GW01_JoinCiencia"/>
+    <sequenceFlow id="SF_GW01_T04" sourceRef="GW01_JoinCiencia" targetRef="T04_AtualizarLicenciamento"/>
+    <sequenceFlow id="SF_T04_GW02" sourceRef="T04_AtualizarLicenciamento" targetRef="GW02_Aprovado"/>
+    <sequenceFlow id="SF_GW02_GW03" name="Aprovado" sourceRef="GW02_Aprovado" targetRef="GW03_TipoDoc">
+      <conditionExpression xsi:type="tFormalExpression">isLicenciamentoCienciaAprovado() == true</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="SF_GW02_GW04" name="Reprovado" sourceRef="GW02_Aprovado" targetRef="GW04_OptaRecurso">
+      <conditionExpression xsi:type="tFormalExpression">isLicenciamentoCienciaAprovado() == false</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="SF_GW03_EndAppci" name="APPCI / APPCI_RENOV" sourceRef="GW03_TipoDoc" targetRef="End_AlvaraVigente">
+      <conditionExpression xsi:type="tFormalExpression">tipoLicenciamentoCiencia == APPCI || APPCI_RENOV</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="SF_GW03_EndCA" name="ATEC / INVIAB / CIV aprovado" sourceRef="GW03_TipoDoc" targetRef="End_AprovadoCA">
+      <conditionExpression xsi:type="tFormalExpression">tipoLicenciamentoCiencia == ATEC || INVIABILIDADE || CIV (aprovado)</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="SF_GW04_EndSem" name="Não interpõe recurso" sourceRef="GW04_OptaRecurso" targetRef="End_SemRecurso">
+      <conditionExpression xsi:type="tFormalExpression">cidadão não opta por recurso OR prazo expirado</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="SF_GW04_T05" name="Interpõe recurso" sourceRef="GW04_OptaRecurso" targetRef="T05_PreencherRecurso">
+      <conditionExpression xsi:type="tFormalExpression">cidadão opta por recurso E dentro do prazo</conditionExpression>
+    </sequenceFlow>
+
+    <!-- FASE 2 — REGISTRO -->
+    <sequenceFlow id="SF_T05_T06B" sourceRef="T05_PreencherRecurso" targetRef="T06B_AnexarDocumentos"/>
+    <sequenceFlow id="SF_T06B_T06" sourceRef="T06B_AnexarDocumentos" targetRef="T06_ValidarRegistrar"/>
+    <sequenceFlow id="SF_T06_T07" sourceRef="T06_ValidarRegistrar" targetRef="T07_AceitesEnvolvidos"/>
+
+    <!-- FASE 3 — ACEITES -->
+    <sequenceFlow id="SF_T07_GW05" sourceRef="T07_AceitesEnvolvidos" targetRef="GW05_TodosAceitaram"/>
+    <sequenceFlow id="SF_GW05_T08" name="Ao menos um recusou" sourceRef="GW05_TodosAceitaram" targetRef="T08_CancelarRecurso">
+      <conditionExpression xsi:type="tFormalExpression">RecursoRN.recusar() acionado</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="SF_T08_EndCancel" sourceRef="T08_CancelarRecurso" targetRef="End_RecursoCancelado"/>
+    <sequenceFlow id="SF_GW05_T09" name="Todos aceitaram" sourceRef="GW05_TodosAceitaram" targetRef="T09_ConcluirAceites">
+      <conditionExpression xsi:type="tFormalExpression">todos os envolvidos com aceite confirmado</conditionExpression>
+    </sequenceFlow>
+
+    <!-- FASE 4 — DISTRIBUIÇÃO -->
+    <sequenceFlow id="SF_T09_T10" sourceRef="T09_ConcluirAceites" targetRef="T10_ConsultarDistribuicao"/>
+    <sequenceFlow id="SF_T10_T11" sourceRef="T10_ConsultarDistribuicao" targetRef="T11_SelecionarAnalista"/>
+    <sequenceFlow id="SF_T11_GW_Canc" sourceRef="T11_SelecionarAnalista" targetRef="GW_CancDistrib"/>
+    <sequenceFlow id="SF_GW_Canc_T12C" name="Cancelar distribuição" sourceRef="GW_CancDistrib" targetRef="T12C_CancelarDistribuicao">
+      <conditionExpression xsi:type="tFormalExpression">coordenador cancela a distribuição</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="SF_T12C_T10" sourceRef="T12C_CancelarDistribuicao" targetRef="T10_ConsultarDistribuicao"/>
+    <sequenceFlow id="SF_GW_Canc_T12" name="Confirmar distribuição" sourceRef="GW_CancDistrib" targetRef="T12_ExecutarDistribuicao">
+      <conditionExpression xsi:type="tFormalExpression">coordenador confirma a distribuição</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="SF_T12_T13" sourceRef="T12_ExecutarDistribuicao" targetRef="T13_AcessarRecurso"/>
+
+    <!-- FASE 5 — ANÁLISE -->
+    <sequenceFlow id="SF_T13_GW06" sourceRef="T13_AcessarRecurso" targetRef="GW06_Instancia"/>
+    <sequenceFlow id="SF_GW06_T14" name="1ª instância" sourceRef="GW06_Instancia" targetRef="T14_AnalisarIndividual">
+      <conditionExpression xsi:type="tFormalExpression">RecursoED.instancia == 1</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="SF_GW06_T14B" name="2ª instância" sourceRef="GW06_Instancia" targetRef="T14B_CriarColegiado">
+      <conditionExpression xsi:type="tFormalExpression">RecursoED.instancia == 2</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="SF_T14_T15" sourceRef="T14_AnalisarIndividual" targetRef="T15_ConcluirAnalise1"/>
+    <sequenceFlow id="SF_T15_GW08" sourceRef="T15_ConcluirAnalise1" targetRef="GW08_JoinAnalise"/>
+    <sequenceFlow id="SF_T14B_T15B" sourceRef="T14B_CriarColegiado" targetRef="T15B_VotarColegiado"/>
+    <sequenceFlow id="SF_T15B_GW07" sourceRef="T15B_VotarColegiado" targetRef="GW07_TodosVotaram"/>
+    <sequenceFlow id="SF_GW07_T15B" name="Nem todos votaram (loop)" sourceRef="GW07_TodosVotaram" targetRef="T15B_VotarColegiado">
+      <conditionExpression xsi:type="tFormalExpression">AvalistaRecursoED com aceite == null ainda existem</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="SF_GW07_T16B" name="Todos votaram" sourceRef="GW07_TodosVotaram" targetRef="T16B_MarcoFimColegiado">
+      <conditionExpression xsi:type="tFormalExpression">todos os AvalistaRecursoED com aceite != null</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="SF_T16B_T17B" sourceRef="T16B_MarcoFimColegiado" targetRef="T17B_RedigirDespacho2"/>
+    <sequenceFlow id="SF_T17B_T18B" sourceRef="T17B_RedigirDespacho2" targetRef="T18B_ConcluirAnalise2"/>
+    <sequenceFlow id="SF_T18B_GW08" sourceRef="T18B_ConcluirAnalise2" targetRef="GW08_JoinAnalise"/>
+
+    <!-- FASE 6 — RELATÓRIO -->
+    <sequenceFlow id="SF_GW08_T19" sourceRef="GW08_JoinAnalise" targetRef="T19_GerarRelatorio"/>
+    <sequenceFlow id="SF_T19_T20" sourceRef="T19_GerarRelatorio" targetRef="T20_AtualizarEstado"/>
+
+    <!-- FASE 7 — CIÊNCIA DA RESPOSTA -->
+    <sequenceFlow id="SF_T20_T21" sourceRef="T20_AtualizarEstado" targetRef="T21_AguardarCienciaResposta"/>
+    <sequenceFlow id="SF_T21_T22" sourceRef="T21_AguardarCienciaResposta" targetRef="T22_RegistrarCienciaManualResp"/>
+    <sequenceFlow id="SF_Tmr2_T22B" sourceRef="Tmr_30DiasCienciaResp" targetRef="T22B_CienciaAutomaticaResp"/>
+    <sequenceFlow id="SF_T22_GW09" sourceRef="T22_RegistrarCienciaManualResp" targetRef="GW09_JoinCienciaResp"/>
+    <sequenceFlow id="SF_T22B_GW09" sourceRef="T22B_CienciaAutomaticaResp" targetRef="GW09_JoinCienciaResp"/>
+
+    <!-- FASE 8 — RESULTADO -->
+    <sequenceFlow id="SF_GW09_GW10" sourceRef="GW09_JoinCienciaResp" targetRef="GW10_Resultado"/>
+    <sequenceFlow id="SF_GW10_GW11" name="DEFERIDO_TOTAL" sourceRef="GW10_Resultado" targetRef="GW11_TipoDeferimento">
+      <conditionExpression xsi:type="tFormalExpression">AnaliseRecursoED.status == StatusRecurso.DEFERIDO_TOTAL</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="SF_GW10_GW12" name="DEFERIDO_PARCIAL ou INDEFERIDO" sourceRef="GW10_Resultado" targetRef="GW12_FoiSegInstancia">
+      <conditionExpression xsi:type="tFormalExpression">AnaliseRecursoED.status == DEFERIDO_PARCIAL OR INDEFERIDO</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="SF_GW11_T23" name="INTEGRAL + CIV" sourceRef="GW11_TipoDeferimento" targetRef="T23_CriarNovaVistoria">
+      <conditionExpression xsi:type="tFormalExpression">tipoSolicitacao==INTEGRAL AND tipoRecurso==CORRECAO_DE_VISTORIA</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="SF_GW11_T24" name="INTEGRAL + ANÁLISE" sourceRef="GW11_TipoDeferimento" targetRef="T24_CancelarCIACIV">
+      <conditionExpression xsi:type="tFormalExpression">tipoSolicitacao==INTEGRAL AND tipoRecurso==CORRECAO_DE_ANALISE</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="SF_GW11_EndDefer" name="Outros (PARCIAL)" sourceRef="GW11_TipoDeferimento" targetRef="End_DeferidoTotal">
+      <conditionExpression xsi:type="tFormalExpression">tipoSolicitacao==PARCIAL OR demais</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="SF_T23_End" sourceRef="T23_CriarNovaVistoria" targetRef="End_NovaVistoria"/>
+    <sequenceFlow id="SF_T24_End" sourceRef="T24_CancelarCIACIV" targetRef="End_VoltaDistribuicao"/>
+    <sequenceFlow id="SF_GW12_End" name="Foi 2ª instância" sourceRef="GW12_FoiSegInstancia" targetRef="End_P05">
+      <conditionExpression xsi:type="tFormalExpression">RecursoED.instancia == 2</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="SF_GW12_GW13" name="Foi 1ª instância" sourceRef="GW12_FoiSegInstancia" targetRef="GW13_OptaSegInstancia">
+      <conditionExpression xsi:type="tFormalExpression">RecursoED.instancia == 1</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="SF_GW13_EndSem" name="Não interpõe 2ª" sourceRef="GW13_OptaSegInstancia" targetRef="End_SemSegInstancia">
+      <conditionExpression xsi:type="tFormalExpression">cidadão não opta OU prazo 15d expirado</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="SF_GW13_T05" name="Interpõe 2ª instância (15 dias)" sourceRef="GW13_OptaSegInstancia" targetRef="GW04_OptaRecurso">
+      <conditionExpression xsi:type="tFormalExpression">cidadão opta por 2ª instância E dentro do prazo de 15 dias</conditionExpression>
+    </sequenceFlow>
+
+  </process>
+
+  <!-- ================================================================
+       DI — DIAGRAM INTERCHANGE
+       Pool: x=160, y=0, w=7100, h=1110
+       Lanes (x=190, w=7070):
+         Cidadao:     y=0,   h=260  cy=130
+         Coordenador: y=260, h=200  cy=360
+         Analista:    y=460, h=260  cy=590  (upper=510, lower=660)
+         Sistema:     y=720, h=390  cy=915  (upper=800, middle=920, lower=1040)
+       ================================================================ -->
+  <bpmndi:BPMNDiagram id="BPMNDiagram_P05">
+    <bpmndi:BPMNPlane id="BPMNPlane_P05" bpmnElement="Collaboration_P05">
+
+      <!-- Pool -->
+      <bpmndi:BPMNShape id="Pool_P05_di" bpmnElement="Pool_P05" isHorizontal="true">
+        <dc:Bounds x="160" y="0" width="7100" height="1110"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- Lanes -->
+      <bpmndi:BPMNShape id="Lane_Cidadao_di" bpmnElement="Lane_Cidadao" isHorizontal="true">
+        <dc:Bounds x="190" y="0" width="7070" height="260"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Coordenador_di" bpmnElement="Lane_Coordenador" isHorizontal="true">
+        <dc:Bounds x="190" y="260" width="7070" height="200"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Analista_di" bpmnElement="Lane_Analista" isHorizontal="true">
+        <dc:Bounds x="190" y="460" width="7070" height="260"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Sistema_di" bpmnElement="Lane_Sistema" isHorizontal="true">
+        <dc:Bounds x="190" y="720" width="7070" height="390"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- ============ FASE 1: CIÊNCIA ============ -->
+
+      <!-- Start_P05 cx=255 cy=130 -->
+      <bpmndi:BPMNShape id="Start_P05_di" bpmnElement="Start_P05">
+        <dc:Bounds x="237" y="112" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="215" y="155" width="80" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- T01_AcessarDocumento cx=420 cy=130 -->
+      <bpmndi:BPMNShape id="T01_di" bpmnElement="T01_AcessarDocumento">
+        <dc:Bounds x="355" y="90" width="130" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- T02_AguardarCiencia cx=620 cy=130 -->
+      <bpmndi:BPMNShape id="T02_di" bpmnElement="T02_AguardarCiencia">
+        <dc:Bounds x="555" y="90" width="130" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- Tmr_30DiasCiencia boundary on T02 (bottom center) -->
+      <bpmndi:BPMNShape id="Tmr_30DiasCiencia_di" bpmnElement="Tmr_30DiasCiencia">
+        <dc:Bounds x="602" y="152" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="576" y="194" width="88" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- T03A_RegistrarCienciaManual cx=830 cy=800 (Sistema upper) -->
+      <bpmndi:BPMNShape id="T03A_di" bpmnElement="T03A_RegistrarCienciaManual">
+        <dc:Bounds x="765" y="760" width="130" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- T03B_RegistrarCienciaAutomatica cx=830 cy=950 (Sistema lower) -->
+      <bpmndi:BPMNShape id="T03B_di" bpmnElement="T03B_RegistrarCienciaAutomatica">
+        <dc:Bounds x="765" y="910" width="130" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- GW01_JoinCiencia cx=1040 cy=875 -->
+      <bpmndi:BPMNShape id="GW01_di" bpmnElement="GW01_JoinCiencia" isMarkerVisible="true">
+        <dc:Bounds x="1015" y="850" width="50" height="50"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="990" y="907" width="100" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- T04_AtualizarLicenciamento cx=1170 cy=875 -->
+      <bpmndi:BPMNShape id="T04_di" bpmnElement="T04_AtualizarLicenciamento">
+        <dc:Bounds x="1105" y="835" width="130" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- GW02_Aprovado cx=1320 cy=875 -->
+      <bpmndi:BPMNShape id="GW02_di" bpmnElement="GW02_Aprovado" isMarkerVisible="true">
+        <dc:Bounds x="1295" y="850" width="50" height="50"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1275" y="907" width="90" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- GW03_TipoDoc cx=1480 cy=800 (Sistema upper) -->
+      <bpmndi:BPMNShape id="GW03_di" bpmnElement="GW03_TipoDoc" isMarkerVisible="true">
+        <dc:Bounds x="1455" y="775" width="50" height="50"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1430" y="832" width="100" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- End_AlvaraVigente cx=1660 cy=800 -->
+      <bpmndi:BPMNShape id="End_AlvaraVigente_di" bpmnElement="End_AlvaraVigente">
+        <dc:Bounds x="1642" y="782" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1618" y="825" width="84" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- GW04_OptaRecurso cx=1480 cy=130 (Cidadao) -->
+      <bpmndi:BPMNShape id="GW04_di" bpmnElement="GW04_OptaRecurso" isMarkerVisible="true">
+        <dc:Bounds x="1455" y="105" width="50" height="50"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1428" y="162" width="104" height="40"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- End_SemRecurso cx=1660 cy=60 (Cidadao upper) -->
+      <bpmndi:BPMNShape id="End_SemRecurso_di" bpmnElement="End_SemRecurso">
+        <dc:Bounds x="1642" y="42" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1620" y="85" width="80" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- End_AprovadoCA cx=1660 cy=180 (Cidadao lower) -->
+      <bpmndi:BPMNShape id="End_AprovadoCA_di" bpmnElement="End_AprovadoCA">
+        <dc:Bounds x="1642" y="162" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1618" y="205" width="84" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- ============ FASE 2: REGISTRO DO RECURSO ============ -->
+
+      <!-- T05_PreencherRecurso cx=1870 cy=130 -->
+      <bpmndi:BPMNShape id="T05_di" bpmnElement="T05_PreencherRecurso">
+        <dc:Bounds x="1805" y="90" width="130" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- T06B_AnexarDocumentos cx=2060 cy=130 -->
+      <bpmndi:BPMNShape id="T06B_di" bpmnElement="T06B_AnexarDocumentos">
+        <dc:Bounds x="1995" y="90" width="130" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- T06_ValidarRegistrar cx=2250 cy=875 (Sistema) -->
+      <bpmndi:BPMNShape id="T06_di" bpmnElement="T06_ValidarRegistrar">
+        <dc:Bounds x="2185" y="835" width="130" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- ============ FASE 3: ACEITES ============ -->
+
+      <!-- T07_AceitesEnvolvidos cx=2440 cy=130 -->
+      <bpmndi:BPMNShape id="T07_di" bpmnElement="T07_AceitesEnvolvidos">
+        <dc:Bounds x="2375" y="90" width="130" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- GW05_TodosAceitaram cx=2620 cy=875 -->
+      <bpmndi:BPMNShape id="GW05_di" bpmnElement="GW05_TodosAceitaram" isMarkerVisible="true">
+        <dc:Bounds x="2595" y="850" width="50" height="50"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2568" y="907" width="104" height="40"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- T08_CancelarRecurso cx=2800 cy=800 (Sistema upper) -->
+      <bpmndi:BPMNShape id="T08_di" bpmnElement="T08_CancelarRecurso">
+        <dc:Bounds x="2735" y="760" width="130" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- End_RecursoCancelado cx=2980 cy=800 -->
+      <bpmndi:BPMNShape id="End_RecursoCancelado_di" bpmnElement="End_RecursoCancelado">
+        <dc:Bounds x="2962" y="782" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2938" y="825" width="84" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- T09_ConcluirAceites cx=2800 cy=960 (Sistema lower) -->
+      <bpmndi:BPMNShape id="T09_di" bpmnElement="T09_ConcluirAceites">
+        <dc:Bounds x="2735" y="920" width="130" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- ============ FASE 4: DISTRIBUIÇÃO ============ -->
+
+      <!-- T10_ConsultarDistribuicao cx=2980 cy=360 (Coordenador) -->
+      <bpmndi:BPMNShape id="T10_di" bpmnElement="T10_ConsultarDistribuicao">
+        <dc:Bounds x="2915" y="320" width="130" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- T11_SelecionarAnalista cx=3170 cy=360 -->
+      <bpmndi:BPMNShape id="T11_di" bpmnElement="T11_SelecionarAnalista">
+        <dc:Bounds x="3105" y="320" width="130" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- GW_CancDistrib cx=3360 cy=360 -->
+      <bpmndi:BPMNShape id="GW_CancDistrib_di" bpmnElement="GW_CancDistrib" isMarkerVisible="true">
+        <dc:Bounds x="3335" y="335" width="50" height="50"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3305" y="392" width="110" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- T12C_CancelarDistribuicao cx=3360 cy=875 (Sistema) -->
+      <bpmndi:BPMNShape id="T12C_di" bpmnElement="T12C_CancelarDistribuicao">
+        <dc:Bounds x="3295" y="835" width="130" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- T12_ExecutarDistribuicao cx=3550 cy=875 -->
+      <bpmndi:BPMNShape id="T12_di" bpmnElement="T12_ExecutarDistribuicao">
+        <dc:Bounds x="3485" y="835" width="130" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- ============ FASE 5: ANÁLISE ============ -->
+
+      <!-- T13_AcessarRecurso cx=3550 cy=590 (Analista) -->
+      <bpmndi:BPMNShape id="T13_di" bpmnElement="T13_AcessarRecurso">
+        <dc:Bounds x="3485" y="550" width="130" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- GW06_Instancia cx=3740 cy=590 -->
+      <bpmndi:BPMNShape id="GW06_di" bpmnElement="GW06_Instancia" isMarkerVisible="true">
+        <dc:Bounds x="3715" y="565" width="50" height="50"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3697" y="622" width="86" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- T14_AnalisarIndividual cx=3920 cy=510 (Analista upper - 1ª inst) -->
+      <bpmndi:BPMNShape id="T14_di" bpmnElement="T14_AnalisarIndividual">
+        <dc:Bounds x="3855" y="470" width="130" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- T14B_CriarColegiado cx=3920 cy=670 (Analista lower - 2ª inst) -->
+      <bpmndi:BPMNShape id="T14B_di" bpmnElement="T14B_CriarColegiado">
+        <dc:Bounds x="3855" y="630" width="130" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- T15_ConcluirAnalise1 cx=4110 cy=800 (Sistema upper - 1ª inst) -->
+      <bpmndi:BPMNShape id="T15_di" bpmnElement="T15_ConcluirAnalise1">
+        <dc:Bounds x="4045" y="760" width="130" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- T15B_VotarColegiado cx=4110 cy=670 (Analista lower - 2ª inst) -->
+      <bpmndi:BPMNShape id="T15B_di" bpmnElement="T15B_VotarColegiado">
+        <dc:Bounds x="4045" y="630" width="130" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- GW07_TodosVotaram cx=4300 cy=875 (Sistema) -->
+      <bpmndi:BPMNShape id="GW07_di" bpmnElement="GW07_TodosVotaram" isMarkerVisible="true">
+        <dc:Bounds x="4275" y="850" width="50" height="50"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="4248" y="907" width="104" height="40"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- T16B_MarcoFimColegiado cx=4490 cy=875 (Sistema) -->
+      <bpmndi:BPMNShape id="T16B_di" bpmnElement="T16B_MarcoFimColegiado">
+        <dc:Bounds x="4425" y="835" width="130" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- T17B_RedigirDespacho2 cx=4680 cy=670 (Analista lower - 2ª inst) -->
+      <bpmndi:BPMNShape id="T17B_di" bpmnElement="T17B_RedigirDespacho2">
+        <dc:Bounds x="4615" y="630" width="130" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- T18B_ConcluirAnalise2 cx=4880 cy=875 (Sistema) -->
+      <bpmndi:BPMNShape id="T18B_di" bpmnElement="T18B_ConcluirAnalise2">
+        <dc:Bounds x="4815" y="835" width="130" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- GW08_JoinAnalise cx=5070 cy=875 -->
+      <bpmndi:BPMNShape id="GW08_di" bpmnElement="GW08_JoinAnalise" isMarkerVisible="true">
+        <dc:Bounds x="5045" y="850" width="50" height="50"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="5018" y="907" width="104" height="40"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- ============ FASE 6: RELATÓRIO ============ -->
+
+      <!-- T19_GerarRelatorio cx=5250 cy=875 -->
+      <bpmndi:BPMNShape id="T19_di" bpmnElement="T19_GerarRelatorio">
+        <dc:Bounds x="5185" y="835" width="130" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- T20_AtualizarEstado cx=5440 cy=875 -->
+      <bpmndi:BPMNShape id="T20_di" bpmnElement="T20_AtualizarEstado">
+        <dc:Bounds x="5375" y="835" width="130" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- ============ FASE 7: CIÊNCIA DA RESPOSTA ============ -->
+
+      <!-- T21_AguardarCienciaResposta cx=5630 cy=130 (Cidadao) -->
+      <bpmndi:BPMNShape id="T21_di" bpmnElement="T21_AguardarCienciaResposta">
+        <dc:Bounds x="5565" y="90" width="130" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- Tmr_30DiasCienciaResp boundary on T21 (bottom center) -->
+      <bpmndi:BPMNShape id="Tmr_30DiasCienciaResp_di" bpmnElement="Tmr_30DiasCienciaResp">
+        <dc:Bounds x="5612" y="152" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="5588" y="194" width="84" height="40"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- T22_RegistrarCienciaManualResp cx=5820 cy=800 (Sistema upper) -->
+      <bpmndi:BPMNShape id="T22_di" bpmnElement="T22_RegistrarCienciaManualResp">
+        <dc:Bounds x="5755" y="760" width="130" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- T22B_CienciaAutomaticaResp cx=5820 cy=960 (Sistema lower) -->
+      <bpmndi:BPMNShape id="T22B_di" bpmnElement="T22B_CienciaAutomaticaResp">
+        <dc:Bounds x="5755" y="920" width="130" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- GW09_JoinCienciaResp cx=6010 cy=875 -->
+      <bpmndi:BPMNShape id="GW09_di" bpmnElement="GW09_JoinCienciaResp" isMarkerVisible="true">
+        <dc:Bounds x="5985" y="850" width="50" height="50"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="5958" y="907" width="104" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- ============ FASE 8: RESULTADO ============ -->
+
+      <!-- GW10_Resultado cx=6190 cy=875 -->
+      <bpmndi:BPMNShape id="GW10_di" bpmnElement="GW10_Resultado" isMarkerVisible="true">
+        <dc:Bounds x="6165" y="850" width="50" height="50"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="6138" y="907" width="104" height="40"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- GW11_TipoDeferimento cx=6380 cy=800 (Sistema upper) -->
+      <bpmndi:BPMNShape id="GW11_di" bpmnElement="GW11_TipoDeferimento" isMarkerVisible="true">
+        <dc:Bounds x="6355" y="775" width="50" height="50"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="6328" y="832" width="104" height="40"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- T23_CriarNovaVistoria cx=6560 cy=760 (Sistema upper) -->
+      <bpmndi:BPMNShape id="T23_di" bpmnElement="T23_CriarNovaVistoria">
+        <dc:Bounds x="6495" y="720" width="130" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- End_NovaVistoria cx=6750 cy=760 -->
+      <bpmndi:BPMNShape id="End_NovaVistoria_di" bpmnElement="End_NovaVistoria">
+        <dc:Bounds x="6732" y="742" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="6706" y="785" width="88" height="40"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- T24_CancelarCIACIV cx=6560 cy=880 (Sistema middle) -->
+      <bpmndi:BPMNShape id="T24_di" bpmnElement="T24_CancelarCIACIV">
+        <dc:Bounds x="6495" y="840" width="130" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- End_VoltaDistribuicao cx=6750 cy=880 -->
+      <bpmndi:BPMNShape id="End_VoltaDistribuicao_di" bpmnElement="End_VoltaDistribuicao">
+        <dc:Bounds x="6732" y="862" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="6706" y="905" width="88" height="40"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- End_DeferidoTotal cx=6750 cy=960 (Sistema lower) -->
+      <bpmndi:BPMNShape id="End_DeferidoTotal_di" bpmnElement="End_DeferidoTotal">
+        <dc:Bounds x="6732" y="942" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="6706" y="985" width="88" height="40"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- GW12_FoiSegInstancia cx=6380 cy=960 (Sistema lower) -->
+      <bpmndi:BPMNShape id="GW12_di" bpmnElement="GW12_FoiSegInstancia" isMarkerVisible="true">
+        <dc:Bounds x="6355" y="935" width="50" height="50"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="6328" y="992" width="104" height="40"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- End_P05 cx=6560 cy=1040 (Sistema lower) -->
+      <bpmndi:BPMNShape id="End_P05_di" bpmnElement="End_P05">
+        <dc:Bounds x="6542" y="1022" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="6516" y="1065" width="88" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- GW13_OptaSegInstancia cx=6560 cy=130 (Cidadao) -->
+      <bpmndi:BPMNShape id="GW13_di" bpmnElement="GW13_OptaSegInstancia" isMarkerVisible="true">
+        <dc:Bounds x="6535" y="105" width="50" height="50"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="6508" y="162" width="104" height="40"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- End_SemSegInstancia cx=6750 cy=130 (Cidadao) -->
+      <bpmndi:BPMNShape id="End_SemSegInstancia_di" bpmnElement="End_SemSegInstancia">
+        <dc:Bounds x="6732" y="112" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="6706" y="155" width="88" height="40"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- ============ SEQUENCE FLOW EDGES ============ -->
+
+      <bpmndi:BPMNEdge id="SF_Start_T01_di" bpmnElement="SF_Start_T01">
+        <di:waypoint x="273" y="130"/>
+        <di:waypoint x="355" y="130"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="SF_T01_T02_di" bpmnElement="SF_T01_T02">
+        <di:waypoint x="485" y="130"/>
+        <di:waypoint x="555" y="130"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- T02 → T03A (manual: goes down to Sistema lane) -->
+      <bpmndi:BPMNEdge id="SF_T02_T03A_di" bpmnElement="SF_T02_T03A">
+        <di:waypoint x="685" y="130"/>
+        <di:waypoint x="720" y="130"/>
+        <di:waypoint x="720" y="800"/>
+        <di:waypoint x="765" y="800"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="692" y="460" width="60" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- Timer → T03B -->
+      <bpmndi:BPMNEdge id="SF_Tmr_T03B_di" bpmnElement="SF_Tmr_T03B">
+        <di:waypoint x="620" y="188"/>
+        <di:waypoint x="620" y="950"/>
+        <di:waypoint x="765" y="950"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="625" y="560" width="80" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="SF_T03A_GW01_di" bpmnElement="SF_T03A_GW01">
+        <di:waypoint x="895" y="800"/>
+        <di:waypoint x="1040" y="875"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="SF_T03B_GW01_di" bpmnElement="SF_T03B_GW01">
+        <di:waypoint x="895" y="950"/>
+        <di:waypoint x="1040" y="875"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="SF_GW01_T04_di" bpmnElement="SF_GW01_T04">
+        <di:waypoint x="1065" y="875"/>
+        <di:waypoint x="1105" y="875"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="SF_T04_GW02_di" bpmnElement="SF_T04_GW02">
+        <di:waypoint x="1235" y="875"/>
+        <di:waypoint x="1295" y="875"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW02 → GW03 (approved - upward to Sistema upper) -->
+      <bpmndi:BPMNEdge id="SF_GW02_GW03_di" bpmnElement="SF_GW02_GW03">
+        <di:waypoint x="1320" y="850"/>
+        <di:waypoint x="1320" y="800"/>
+        <di:waypoint x="1455" y="800"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1333" y="820" width="55" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW02 → GW04 (reprovado - up to Cidadao lane) -->
+      <bpmndi:BPMNEdge id="SF_GW02_GW04_di" bpmnElement="SF_GW02_GW04">
+        <di:waypoint x="1320" y="850"/>
+        <di:waypoint x="1320" y="130"/>
+        <di:waypoint x="1455" y="130"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1333" y="490" width="60" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW03 → End_AlvaraVigente -->
+      <bpmndi:BPMNEdge id="SF_GW03_EndAppci_di" bpmnElement="SF_GW03_EndAppci">
+        <di:waypoint x="1505" y="800"/>
+        <di:waypoint x="1642" y="800"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1520" y="782" width="80" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW03 → End_AprovadoCA (up to Cidadao) -->
+      <bpmndi:BPMNEdge id="SF_GW03_EndCA_di" bpmnElement="SF_GW03_EndCA">
+        <di:waypoint x="1480" y="775"/>
+        <di:waypoint x="1480" y="180"/>
+        <di:waypoint x="1642" y="180"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1487" y="475" width="80" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW04 → End_SemRecurso -->
+      <bpmndi:BPMNEdge id="SF_GW04_EndSem_di" bpmnElement="SF_GW04_EndSem">
+        <di:waypoint x="1480" y="105"/>
+        <di:waypoint x="1480" y="60"/>
+        <di:waypoint x="1642" y="60"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1487" y="68" width="80" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW04 → T05 -->
+      <bpmndi:BPMNEdge id="SF_GW04_T05_di" bpmnElement="SF_GW04_T05">
+        <di:waypoint x="1505" y="130"/>
+        <di:waypoint x="1805" y="130"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1590" y="112" width="80" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="SF_T05_T06B_di" bpmnElement="SF_T05_T06B">
+        <di:waypoint x="1935" y="130"/>
+        <di:waypoint x="1995" y="130"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- T06B → T06 (down to Sistema) -->
+      <bpmndi:BPMNEdge id="SF_T06B_T06_di" bpmnElement="SF_T06B_T06">
+        <di:waypoint x="2060" y="170"/>
+        <di:waypoint x="2060" y="875"/>
+        <di:waypoint x="2185" y="875"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- T06 → T07 (up to Cidadao) -->
+      <bpmndi:BPMNEdge id="SF_T06_T07_di" bpmnElement="SF_T06_T07">
+        <di:waypoint x="2250" y="835"/>
+        <di:waypoint x="2440" y="835"/>
+        <di:waypoint x="2440" y="170"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- T07 → GW05 (down to Sistema) -->
+      <bpmndi:BPMNEdge id="SF_T07_GW05_di" bpmnElement="SF_T07_GW05">
+        <di:waypoint x="2505" y="130"/>
+        <di:waypoint x="2620" y="130"/>
+        <di:waypoint x="2620" y="850"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW05 → T08 -->
+      <bpmndi:BPMNEdge id="SF_GW05_T08_di" bpmnElement="SF_GW05_T08">
+        <di:waypoint x="2620" y="850"/>
+        <di:waypoint x="2620" y="800"/>
+        <di:waypoint x="2735" y="800"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2628" y="820" width="72" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="SF_T08_EndCancel_di" bpmnElement="SF_T08_EndCancel">
+        <di:waypoint x="2865" y="800"/>
+        <di:waypoint x="2962" y="800"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW05 → T09 -->
+      <bpmndi:BPMNEdge id="SF_GW05_T09_di" bpmnElement="SF_GW05_T09">
+        <di:waypoint x="2620" y="900"/>
+        <di:waypoint x="2620" y="960"/>
+        <di:waypoint x="2735" y="960"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2628" y="925" width="72" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- T09 → T10 (up to Coordenador) -->
+      <bpmndi:BPMNEdge id="SF_T09_T10_di" bpmnElement="SF_T09_T10">
+        <di:waypoint x="2865" y="960"/>
+        <di:waypoint x="2980" y="960"/>
+        <di:waypoint x="2980" y="400"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="SF_T10_T11_di" bpmnElement="SF_T10_T11">
+        <di:waypoint x="3045" y="360"/>
+        <di:waypoint x="3105" y="360"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="SF_T11_GW_Canc_di" bpmnElement="SF_T11_GW_Canc">
+        <di:waypoint x="3235" y="360"/>
+        <di:waypoint x="3335" y="360"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW_CancDistrib → T12C (down to Sistema) -->
+      <bpmndi:BPMNEdge id="SF_GW_Canc_T12C_di" bpmnElement="SF_GW_Canc_T12C">
+        <di:waypoint x="3360" y="385"/>
+        <di:waypoint x="3360" y="835"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3366" y="600" width="72" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- T12C → T10 (loop back - up to Coordenador) -->
+      <bpmndi:BPMNEdge id="SF_T12C_T10_di" bpmnElement="SF_T12C_T10">
+        <di:waypoint x="3295" y="875"/>
+        <di:waypoint x="2980" y="875"/>
+        <di:waypoint x="2980" y="400"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW_CancDistrib → T12 -->
+      <bpmndi:BPMNEdge id="SF_GW_Canc_T12_di" bpmnElement="SF_GW_Canc_T12">
+        <di:waypoint x="3385" y="360"/>
+        <di:waypoint x="3440" y="360"/>
+        <di:waypoint x="3440" y="875"/>
+        <di:waypoint x="3485" y="875"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3392" y="340" width="80" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- T12 → T13 (up to Analista) -->
+      <bpmndi:BPMNEdge id="SF_T12_T13_di" bpmnElement="SF_T12_T13">
+        <di:waypoint x="3550" y="835"/>
+        <di:waypoint x="3550" y="630"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="SF_T13_GW06_di" bpmnElement="SF_T13_GW06">
+        <di:waypoint x="3615" y="590"/>
+        <di:waypoint x="3715" y="590"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW06 → T14 (1ª inst - upper Analista) -->
+      <bpmndi:BPMNEdge id="SF_GW06_T14_di" bpmnElement="SF_GW06_T14">
+        <di:waypoint x="3740" y="565"/>
+        <di:waypoint x="3740" y="510"/>
+        <di:waypoint x="3855" y="510"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3750" y="530" width="72" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW06 → T14B (2ª inst - lower Analista) -->
+      <bpmndi:BPMNEdge id="SF_GW06_T14B_di" bpmnElement="SF_GW06_T14B">
+        <di:waypoint x="3740" y="615"/>
+        <di:waypoint x="3740" y="670"/>
+        <di:waypoint x="3855" y="670"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3750" y="638" width="72" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- T14 → T15 (down to Sistema) -->
+      <bpmndi:BPMNEdge id="SF_T14_T15_di" bpmnElement="SF_T14_T15">
+        <di:waypoint x="3985" y="510"/>
+        <di:waypoint x="4110" y="510"/>
+        <di:waypoint x="4110" y="800"/>
+        <di:waypoint x="4045" y="800"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- T15 → GW08 (long forward edge) -->
+      <bpmndi:BPMNEdge id="SF_T15_GW08_di" bpmnElement="SF_T15_GW08">
+        <di:waypoint x="4175" y="800"/>
+        <di:waypoint x="5070" y="875"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="SF_T14B_T15B_di" bpmnElement="SF_T14B_T15B">
+        <di:waypoint x="3985" y="670"/>
+        <di:waypoint x="4045" y="670"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- T15B → GW07 (down to Sistema) -->
+      <bpmndi:BPMNEdge id="SF_T15B_GW07_di" bpmnElement="SF_T15B_GW07">
+        <di:waypoint x="4175" y="670"/>
+        <di:waypoint x="4300" y="670"/>
+        <di:waypoint x="4300" y="850"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW07 → T15B (loop back) -->
+      <bpmndi:BPMNEdge id="SF_GW07_T15B_di" bpmnElement="SF_GW07_T15B">
+        <di:waypoint x="4300" y="850"/>
+        <di:waypoint x="4300" y="720"/>
+        <di:waypoint x="4110" y="720"/>
+        <di:waypoint x="4110" y="670"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="4160" y="726" width="96" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW07 → T16B -->
+      <bpmndi:BPMNEdge id="SF_GW07_T16B_di" bpmnElement="SF_GW07_T16B">
+        <di:waypoint x="4325" y="875"/>
+        <di:waypoint x="4425" y="875"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="4333" y="855" width="72" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- T16B → T17B (up to Analista lower) -->
+      <bpmndi:BPMNEdge id="SF_T16B_T17B_di" bpmnElement="SF_T16B_T17B">
+        <di:waypoint x="4555" y="875"/>
+        <di:waypoint x="4680" y="875"/>
+        <di:waypoint x="4680" y="670"/>
+        <di:waypoint x="4615" y="670"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- T17B → T18B (down to Sistema) -->
+      <bpmndi:BPMNEdge id="SF_T17B_T18B_di" bpmnElement="SF_T17B_T18B">
+        <di:waypoint x="4745" y="670"/>
+        <di:waypoint x="4880" y="670"/>
+        <di:waypoint x="4880" y="835"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="SF_T18B_GW08_di" bpmnElement="SF_T18B_GW08">
+        <di:waypoint x="4945" y="875"/>
+        <di:waypoint x="5045" y="875"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="SF_GW08_T19_di" bpmnElement="SF_GW08_T19">
+        <di:waypoint x="5095" y="875"/>
+        <di:waypoint x="5185" y="875"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="SF_T19_T20_di" bpmnElement="SF_T19_T20">
+        <di:waypoint x="5315" y="875"/>
+        <di:waypoint x="5375" y="875"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- T20 → T21 (up to Cidadao) -->
+      <bpmndi:BPMNEdge id="SF_T20_T21_di" bpmnElement="SF_T20_T21">
+        <di:waypoint x="5505" y="875"/>
+        <di:waypoint x="5630" y="875"/>
+        <di:waypoint x="5630" y="170"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- T21 → T22 (down to Sistema) -->
+      <bpmndi:BPMNEdge id="SF_T21_T22_di" bpmnElement="SF_T21_T22">
+        <di:waypoint x="5695" y="130"/>
+        <di:waypoint x="5820" y="130"/>
+        <di:waypoint x="5820" y="760"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="5730" y="112" width="80" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- Timer2 → T22B -->
+      <bpmndi:BPMNEdge id="SF_Tmr2_T22B_di" bpmnElement="SF_Tmr2_T22B">
+        <di:waypoint x="5630" y="188"/>
+        <di:waypoint x="5630" y="960"/>
+        <di:waypoint x="5755" y="960"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="5636" y="570" width="80" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="SF_T22_GW09_di" bpmnElement="SF_T22_GW09">
+        <di:waypoint x="5885" y="800"/>
+        <di:waypoint x="6010" y="875"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="SF_T22B_GW09_di" bpmnElement="SF_T22B_GW09">
+        <di:waypoint x="5885" y="960"/>
+        <di:waypoint x="6010" y="875"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="SF_GW09_GW10_di" bpmnElement="SF_GW09_GW10">
+        <di:waypoint x="6035" y="875"/>
+        <di:waypoint x="6165" y="875"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW10 → GW11 (upper - DEFERIDO_TOTAL) -->
+      <bpmndi:BPMNEdge id="SF_GW10_GW11_di" bpmnElement="SF_GW10_GW11">
+        <di:waypoint x="6190" y="850"/>
+        <di:waypoint x="6190" y="800"/>
+        <di:waypoint x="6355" y="800"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="6198" y="820" width="96" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW10 → GW12 (lower - DEFERIDO_PARCIAL/INDEFERIDO) -->
+      <bpmndi:BPMNEdge id="SF_GW10_GW12_di" bpmnElement="SF_GW10_GW12">
+        <di:waypoint x="6190" y="900"/>
+        <di:waypoint x="6190" y="960"/>
+        <di:waypoint x="6355" y="960"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="6198" y="930" width="96" height="40"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW11 → T23 -->
+      <bpmndi:BPMNEdge id="SF_GW11_T23_di" bpmnElement="SF_GW11_T23">
+        <di:waypoint x="6405" y="800"/>
+        <di:waypoint x="6430" y="800"/>
+        <di:waypoint x="6430" y="760"/>
+        <di:waypoint x="6495" y="760"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="6412" y="776" width="72" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="SF_T23_End_di" bpmnElement="SF_T23_End">
+        <di:waypoint x="6625" y="760"/>
+        <di:waypoint x="6732" y="760"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW11 → T24 -->
+      <bpmndi:BPMNEdge id="SF_GW11_T24_di" bpmnElement="SF_GW11_T24">
+        <di:waypoint x="6405" y="800"/>
+        <di:waypoint x="6430" y="800"/>
+        <di:waypoint x="6430" y="880"/>
+        <di:waypoint x="6495" y="880"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="6412" y="835" width="72" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="SF_T24_End_di" bpmnElement="SF_T24_End">
+        <di:waypoint x="6625" y="880"/>
+        <di:waypoint x="6732" y="880"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW11 → End_DeferidoTotal -->
+      <bpmndi:BPMNEdge id="SF_GW11_EndDefer_di" bpmnElement="SF_GW11_EndDefer">
+        <di:waypoint x="6380" y="825"/>
+        <di:waypoint x="6380" y="960"/>
+        <di:waypoint x="6732" y="960"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="6387" y="890" width="72" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW12 → End_P05 (foi 2ª) -->
+      <bpmndi:BPMNEdge id="SF_GW12_End_di" bpmnElement="SF_GW12_End">
+        <di:waypoint x="6405" y="960"/>
+        <di:waypoint x="6430" y="960"/>
+        <di:waypoint x="6430" y="1040"/>
+        <di:waypoint x="6542" y="1040"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="6412" y="995" width="72" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW12 → GW13 (foi 1ª - up to Cidadao) -->
+      <bpmndi:BPMNEdge id="SF_GW12_GW13_di" bpmnElement="SF_GW12_GW13">
+        <di:waypoint x="6380" y="935"/>
+        <di:waypoint x="6380" y="130"/>
+        <di:waypoint x="6535" y="130"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="6387" y="530" width="72" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW13 → End_SemSegInstancia -->
+      <bpmndi:BPMNEdge id="SF_GW13_EndSem_di" bpmnElement="SF_GW13_EndSem">
+        <di:waypoint x="6585" y="130"/>
+        <di:waypoint x="6732" y="130"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="6597" y="112" width="72" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW13 → GW04 (loop back - 2ª instância) -->
+      <bpmndi:BPMNEdge id="SF_GW13_T05_di" bpmnElement="SF_GW13_T05">
+        <di:waypoint x="6560" y="105"/>
+        <di:waypoint x="6560" y="40"/>
+        <di:waypoint x="1480" y="40"/>
+        <di:waypoint x="1480" y="105"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3920" y="20" width="120" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</definitions>

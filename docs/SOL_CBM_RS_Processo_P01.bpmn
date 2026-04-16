@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI"
+             xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+             targetNamespace="http://solcbm.procergs.rs.gov.br/bpmn"
+             id="definitions_P01">
+
+  <!-- ============================================================ -->
+  <!-- PROCESSO 01 – AUTENTICAÇÃO E CONTROLE DE ACESSO              -->
+  <!-- Três perfis: Cidadão (CPF+senha), ADM (matrícula+senha)      -->
+  <!-- e Consulta Pública (sem autenticação).                       -->
+  <!-- Token JWT gerado via integração SSO/OIDC (GovRS / Procergs). -->
+  <!-- ============================================================ -->
+  <process id="Proc_01" name="01 - Autenticação e Controle de Acesso" isExecutable="false">
+
+    <startEvent id="P01_Start" name="Acesso ao&#10;Sistema SOL">
+      <outgoing>P01_sf01</outgoing>
+    </startEvent>
+
+    <exclusiveGateway id="P01_GW01" name="Perfil de&#10;Acesso?">
+      <incoming>P01_sf01</incoming>
+      <outgoing>P01_sf02</outgoing>
+      <outgoing>P01_sf03</outgoing>
+      <outgoing>P01_sf04</outgoing>
+    </exclusiveGateway>
+
+    <userTask id="P01_T01" name="Login Cidadão&#10;(CPF + Senha / SSO)">
+      <incoming>P01_sf02</incoming>
+      <outgoing>P01_sf05</outgoing>
+    </userTask>
+
+    <userTask id="P01_T02" name="Login ADM&#10;(Matrícula + Senha)">
+      <incoming>P01_sf03</incoming>
+      <outgoing>P01_sf06</outgoing>
+    </userTask>
+
+    <userTask id="P01_T03" name="Acesso Público&#10;(Sem Autenticação)">
+      <incoming>P01_sf04</incoming>
+      <outgoing>P01_sf07</outgoing>
+    </userTask>
+
+    <exclusiveGateway id="P01_GW02" name="Merge">
+      <incoming>P01_sf05</incoming>
+      <incoming>P01_sf06</incoming>
+      <incoming>P01_sf07</incoming>
+      <outgoing>P01_sf08</outgoing>
+    </exclusiveGateway>
+
+    <serviceTask id="P01_T04" name="Validar Credenciais&#10;e Gerar Token JWT">
+      <incoming>P01_sf08</incoming>
+      <outgoing>P01_sf09</outgoing>
+    </serviceTask>
+
+    <exclusiveGateway id="P01_GW03" name="Autenticação&#10;Bem-sucedida?">
+      <incoming>P01_sf09</incoming>
+      <outgoing>P01_sf10</outgoing>
+      <outgoing>P01_sf11</outgoing>
+    </exclusiveGateway>
+
+    <serviceTask id="P01_T05" name="Carregar Perfil,&#10;Permissões e Menu">
+      <incoming>P01_sf10</incoming>
+      <outgoing>P01_sf12</outgoing>
+    </serviceTask>
+
+    <endEvent id="P01_EndErr" name="Erro:&#10;Acesso Negado">
+      <incoming>P01_sf11</incoming>
+      <errorEventDefinition id="P01_ErrDef"/>
+    </endEvent>
+
+    <endEvent id="P01_End" name="Usuário&#10;Autenticado com Sucesso">
+      <incoming>P01_sf12</incoming>
+    </endEvent>
+
+    <sequenceFlow id="P01_sf01" sourceRef="P01_Start"  targetRef="P01_GW01"/>
+    <sequenceFlow id="P01_sf02" name="Cidadão"         sourceRef="P01_GW01" targetRef="P01_T01"/>
+    <sequenceFlow id="P01_sf03" name="ADM"             sourceRef="P01_GW01" targetRef="P01_T02"/>
+    <sequenceFlow id="P01_sf04" name="Consulta Pública" sourceRef="P01_GW01" targetRef="P01_T03"/>
+    <sequenceFlow id="P01_sf05" sourceRef="P01_T01"    targetRef="P01_GW02"/>
+    <sequenceFlow id="P01_sf06" sourceRef="P01_T02"    targetRef="P01_GW02"/>
+    <sequenceFlow id="P01_sf07" sourceRef="P01_T03"    targetRef="P01_GW02"/>
+    <sequenceFlow id="P01_sf08" sourceRef="P01_GW02"   targetRef="P01_T04"/>
+    <sequenceFlow id="P01_sf09" sourceRef="P01_T04"    targetRef="P01_GW03"/>
+    <sequenceFlow id="P01_sf10" name="Sim"             sourceRef="P01_GW03" targetRef="P01_T05"/>
+    <sequenceFlow id="P01_sf11" name="Não"             sourceRef="P01_GW03" targetRef="P01_EndErr"/>
+    <sequenceFlow id="P01_sf12" sourceRef="P01_T05"    targetRef="P01_End"/>
+  </process>
+
+  <bpmndi:BPMNDiagram id="diagram_P01">
+    <bpmndi:BPMNPlane id="plane_P01" bpmnElement="Proc_01">
+      <bpmndi:BPMNShape id="shape_P01_Start" bpmnElement="P01_Start">
+        <omgdc:Bounds x="102" y="242" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P01_GW01" bpmnElement="P01_GW01" isMarkerVisible="true">
+        <omgdc:Bounds x="205" y="235" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P01_T01" bpmnElement="P01_T01">
+        <omgdc:Bounds x="310" y="100" width="150" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P01_T02" bpmnElement="P01_T02">
+        <omgdc:Bounds x="310" y="220" width="150" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P01_T03" bpmnElement="P01_T03">
+        <omgdc:Bounds x="310" y="340" width="150" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P01_GW02" bpmnElement="P01_GW02" isMarkerVisible="true">
+        <omgdc:Bounds x="520" y="235" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P01_T04" bpmnElement="P01_T04">
+        <omgdc:Bounds x="630" y="220" width="150" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P01_GW03" bpmnElement="P01_GW03" isMarkerVisible="true">
+        <omgdc:Bounds x="840" y="235" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P01_T05" bpmnElement="P01_T05">
+        <omgdc:Bounds x="950" y="220" width="150" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P01_EndErr" bpmnElement="P01_EndErr" isMarkerVisible="true">
+        <omgdc:Bounds x="847" y="102" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P01_End" bpmnElement="P01_End">
+        <omgdc:Bounds x="1162" y="242" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNEdge id="edge_P01_sf01" bpmnElement="P01_sf01">
+        <omgdi:waypoint x="138" y="260"/>
+        <omgdi:waypoint x="205" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P01_sf02" bpmnElement="P01_sf02">
+        <omgdi:waypoint x="230" y="235"/>
+        <omgdi:waypoint x="230" y="140"/>
+        <omgdi:waypoint x="310" y="140"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P01_sf03" bpmnElement="P01_sf03">
+        <omgdi:waypoint x="255" y="260"/>
+        <omgdi:waypoint x="310" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P01_sf04" bpmnElement="P01_sf04">
+        <omgdi:waypoint x="230" y="285"/>
+        <omgdi:waypoint x="230" y="380"/>
+        <omgdi:waypoint x="310" y="380"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P01_sf05" bpmnElement="P01_sf05">
+        <omgdi:waypoint x="460" y="140"/>
+        <omgdi:waypoint x="545" y="140"/>
+        <omgdi:waypoint x="545" y="235"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P01_sf06" bpmnElement="P01_sf06">
+        <omgdi:waypoint x="460" y="260"/>
+        <omgdi:waypoint x="520" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P01_sf07" bpmnElement="P01_sf07">
+        <omgdi:waypoint x="460" y="380"/>
+        <omgdi:waypoint x="545" y="380"/>
+        <omgdi:waypoint x="545" y="285"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P01_sf08" bpmnElement="P01_sf08">
+        <omgdi:waypoint x="570" y="260"/>
+        <omgdi:waypoint x="630" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P01_sf09" bpmnElement="P01_sf09">
+        <omgdi:waypoint x="780" y="260"/>
+        <omgdi:waypoint x="840" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P01_sf10" bpmnElement="P01_sf10">
+        <omgdi:waypoint x="890" y="260"/>
+        <omgdi:waypoint x="950" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P01_sf11" bpmnElement="P01_sf11">
+        <omgdi:waypoint x="865" y="235"/>
+        <omgdi:waypoint x="865" y="138"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P01_sf12" bpmnElement="P01_sf12">
+        <omgdi:waypoint x="1100" y="260"/>
+        <omgdi:waypoint x="1162" y="260"/>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</definitions>

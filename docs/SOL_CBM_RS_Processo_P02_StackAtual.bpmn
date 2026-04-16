@@ -1,0 +1,1680 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+             xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+             id="Definitions_P02"
+             targetNamespace="http://bpmn.io/schema/bpmn"
+             exporter="Camunda Modeler"
+             exporterVersion="5.27.0">
+
+  <collaboration id="Collab_P02">
+    <participant id="Participant_P02"
+      name="SOL/CBM-RS — P02: Cadastro de Usuário / Responsável Técnico (Stack Atual: Java EE 7 · WildFly · arqjava4)"
+      processRef="Process_P02"/>
+  </collaboration>
+
+  <process id="Process_P02" isExecutable="false">
+
+    <!-- ============================================================ -->
+    <!-- LANE SET — 4 raias                                           -->
+    <!-- Lane_RT  : y=0..380    Responsável Técnico (J1)             -->
+    <!-- Lane_IDP : y=380..570  IdP Estadual PROCERGS                -->
+    <!-- Lane_BE  : y=570..900  Backend Java EE                      -->
+    <!-- Lane_AN  : y=900..1300 Analista CBM (J2)                    -->
+    <!-- ============================================================ -->
+    <laneSet id="LaneSet_P02">
+
+      <lane id="Lane_RT" name="Responsável Técnico — Frontend Angular (Jornada J1)">
+        <flowNodeRef>SE_J1</flowNodeRef>
+        <flowNodeRef>T_RT_001</flowNodeRef>
+        <flowNodeRef>T_RT_002</flowNodeRef>
+        <flowNodeRef>GW_RT_001</flowNodeRef>
+        <flowNodeRef>T_RT_003</flowNodeRef>
+        <flowNodeRef>T_RT_004</flowNodeRef>
+        <flowNodeRef>GW_RT_002</flowNodeRef>
+        <flowNodeRef>T_RT_005</flowNodeRef>
+        <flowNodeRef>T_RT_006</flowNodeRef>
+        <flowNodeRef>T_RT_007</flowNodeRef>
+        <flowNodeRef>T_RT_008</flowNodeRef>
+        <flowNodeRef>T_RT_009</flowNodeRef>
+        <flowNodeRef>GW_RT_003</flowNodeRef>
+        <flowNodeRef>T_RT_010</flowNodeRef>
+        <flowNodeRef>T_RT_011</flowNodeRef>
+        <flowNodeRef>EE_J1</flowNodeRef>
+      </lane>
+
+      <lane id="Lane_IDP" name="IdP Estadual — PROCERGS / SOE (meu.rs.gov.br)">
+        <flowNodeRef>T_IDP_001</flowNodeRef>
+        <flowNodeRef>T_IDP_002</flowNodeRef>
+      </lane>
+
+      <lane id="Lane_BE" name="Backend Java EE — WildFly · JAX-RS RESTEasy · EJB @Stateless · JPA Hibernate · arqjava4">
+        <flowNodeRef>T_BE_002</flowNodeRef>
+        <flowNodeRef>T_BE_003</flowNodeRef>
+        <flowNodeRef>T_BE_004</flowNodeRef>
+        <flowNodeRef>T_BE_005</flowNodeRef>
+        <flowNodeRef>T_BE_006</flowNodeRef>
+        <flowNodeRef>T_BE_007</flowNodeRef>
+        <flowNodeRef>T_BE_008</flowNodeRef>
+        <flowNodeRef>T_BE_009</flowNodeRef>
+        <flowNodeRef>T_BE_010</flowNodeRef>
+        <flowNodeRef>T_BE_011</flowNodeRef>
+      </lane>
+
+      <lane id="Lane_AN" name="Analista CBM — Frontend Angular (Jornada J2)">
+        <flowNodeRef>SE_J2</flowNodeRef>
+        <flowNodeRef>T_AN_001</flowNodeRef>
+        <flowNodeRef>T_AN_002</flowNodeRef>
+        <flowNodeRef>T_AN_003</flowNodeRef>
+        <flowNodeRef>T_AN_004</flowNodeRef>
+        <flowNodeRef>GW_AN_001</flowNodeRef>
+        <flowNodeRef>T_AN_005</flowNodeRef>
+        <flowNodeRef>T_AN_006</flowNodeRef>
+        <flowNodeRef>T_AN_007</flowNodeRef>
+        <flowNodeRef>GW_AN_002</flowNodeRef>
+        <flowNodeRef>T_AN_008</flowNodeRef>
+        <flowNodeRef>GW_AN_003</flowNodeRef>
+        <flowNodeRef>T_AN_009</flowNodeRef>
+        <flowNodeRef>EE_J2</flowNodeRef>
+      </lane>
+
+    </laneSet>
+
+    <!-- ============================================================ -->
+    <!-- J1 — JORNADA DO RESPONSÁVEL TÉCNICO (Autoatendimento)       -->
+    <!-- ============================================================ -->
+
+    <startEvent id="SE_J1" name="Início J1:&#10;Cidadão acessa&#10;o sistema SOL">
+      <documentation>
+        Gatilho: cidadão navega para o URL do sistema SOL/CBM-RS no navegador.
+        Pré-condição: nenhuma — qualquer pessoa pode iniciar o cadastro.
+        Estado inicial de CBM_USUARIO: registro ainda não existe para este CPF
+        (caso novo) ou já existe com status INCOMPLETO/REPROVADO (caso retorno).
+      </documentation>
+      <outgoing>SF_001</outgoing>
+    </startEvent>
+
+    <userTask id="T_RT_001"
+      name="Acessar frontend Angular&#10;e iniciar autenticação SOE"
+      camunda:assignee="${cidadaoExterno}"
+      camunda:formKey="sol:login-soe">
+      <documentation>
+        Ator: Cidadão (RT) no navegador.
+        O Angular carrega a SPA. Se não há sessão OIDC ativa (localStorage[appToken] nulo
+        ou expirado), OAuthService detecta ausência de token e redireciona o browser
+        para o endpoint de autorização do IdP: meu.rs.gov.br/oauth2/authorize?
+          response_type=token&amp;client_id=SOLCBM&amp;redirect_uri=...&amp;scope=openid+profile.
+        Implementação Angular: AppComponent.configureAuth() → OAuthService.initImplicitFlow().
+        O backend valida cada requisição via @SOEAuthRest (arqjava4) que internamente
+        chama o IdP para introspectar o token Bearer recebido.
+      </documentation>
+      <incoming>SF_001</incoming>
+      <outgoing>SF_002</outgoing>
+    </userTask>
+
+    <serviceTask id="T_IDP_001"
+      name="Validar credenciais SOE&#10;(usuário/senha ou sessão ativa)"
+      camunda:class="com.procergs.soe.idp.CredentialValidator">
+      <documentation>
+        Sistema externo: PROCERGS SOE / meu.rs.gov.br.
+        O IdP recebe as credenciais do cidadão (login/senha) e verifica:
+          - Usuário ativo no cadastro estadual;
+          - Senha correta (hash comparado internamente);
+          - Conta não bloqueada ou expirada.
+        Se a sessão SSO já existe (cookie de sessão válido), este passo é
+        transparente — o IdP redireciona imediatamente sem exibir tela de login.
+        Em caso de falha: o IdP retorna para a tela de login com mensagem de erro.
+        Este passo ocorre inteiramente no servidor do IdP; o SOL/CBM-RS não tem acesso
+        às credenciais — recebe apenas o resultado via redirect OAuth2.
+      </documentation>
+      <incoming>SF_002</incoming>
+      <outgoing>SF_003</outgoing>
+    </serviceTask>
+
+    <serviceTask id="T_IDP_002"
+      name="Emitir access_token e claims&#10;→ redirecionar para SPA"
+      camunda:class="com.procergs.soe.idp.TokenIssuer">
+      <documentation>
+        O IdP gera o access_token (JWT Bearer) com claims:
+          sub  = ID único SOE do usuário
+          name = nome completo
+          cpf  = CPF (claim customizado PROCERGS)
+          email = e-mail cadastrado no IdP
+          roles = perfis associados (ex: RT, ANALISTA_CBM, CENTRALADM)
+        O token é retornado via redirect para o redirect_uri da SPA com o fragment:
+          #access_token=&lt;jwt&gt;&amp;token_type=bearer&amp;expires_in=3600
+        O Angular (OAuthService + AuthStorageService) extrai o token do fragment e
+        persiste em localStorage[appToken] como JSON serializado.
+        O backend: @SOEAuthRest intercepta cada requisição REST e popula SessionMB /
+        CidadaoSessionMB com os dados do token (CPF, nome, permissões).
+      </documentation>
+      <incoming>SF_003</incoming>
+      <outgoing>SF_004</outgoing>
+    </serviceTask>
+
+    <userTask id="T_RT_002"
+      name="Consultar cadastro por CPF&#10;GET /usuarios/{cpf}"
+      camunda:assignee="${cidadaoAutenticado}"
+      camunda:formKey="sol:verificar-cpf">
+      <documentation>
+        Após autenticação, o Angular extrai o CPF do token OIDC e dispara
+        automaticamente: GET /usuarios/{cpf}  ou  GET /usuarios?cpf={cpf}
+        Header enviado: Authorization: Bearer {access_token}  (via HttpAuthorizationInterceptor).
+        Resposta esperada:
+          200 OK + Usuario DTO  → CPF já tem cadastro no sistema
+          204 No Content        → CPF não tem cadastro (novo usuário)
+        O DTO Usuario completo inclui: id, nome, cpf, rg, estadoEmissor, dtNascimento,
+        nomeMae, email, telefone1, telefone2, arquivoRG, graduacoes, especializacoes,
+        enderecos, status (StatusCadastro), mensagemStatus, ctrDthInc, ctrDthAtu.
+        O ctrDthAtu é armazenado no frontend para controle de concorrência (RN-P02-01).
+      </documentation>
+      <incoming>SF_004</incoming>
+      <outgoing>SF_005</outgoing>
+    </userTask>
+
+    <serviceTask id="T_BE_002"
+      name="UsuarioRN.consultaPorCpf(cpf)&#10;@TransactionAttribute(SUPPORTS)&#10;Consulta completa com coleções (enderecos, graduacoes...)"
+      camunda:class="com.procergs.solcbm.usuario.UsuarioRN#consultaPorCpf">
+      <documentation>
+        Endpoint: GET /usuarios/{cpf}  ou  GET /usuarios?cpf={cpf}
+        Classe: UsuarioRestImpl → UsuarioRN.consultaPorCpf(String cpf)
+        Transação: @TransactionAttribute(SUPPORTS) — leitura pura, sem necessidade de tx nova.
+        Autenticação: @SOEAuthRest valida Bearer token antes de chegar aqui.
+
+        Lógica:
+          1. UsuarioBD.listar(filtro_por_cpf) → List&lt;UsuarioED&gt;
+          2. Se vazio → retorna null → REST retorna 204 No Content
+          3. Se encontrado: UsuarioED ed = lista.get(0)
+          4. dtNascimento.set(Calendar.HOUR, 12) — workaround timezone UTC/BRT
+          5. enderecoUsuarioRN.listarEnderecosUsuario(ed) → preenche enderecos
+          6. graduacaoUsuarioRN.listarGraduacoesUsuario(ed) → preenche graduacoes
+          7. especializacaoUsuarioRN.listarEspecializacoesUsuario(ed) → preenche especializacoes
+          8. arquivoRG: se ed.getArquivoRG() != null → preenche Arquivo DTO (id, nomeArquivo)
+          9. InstrutorRN.consulta(cpf): se existir, preenche diasParaVencerCredenciamento,
+             alertaVencimento, dataVencimentoCredenciamento (dd/MM/yyyy)
+          10. Retorna Usuario DTO completo → HTTP 200 OK
+
+        Tabela: CBM_USUARIO (join fetch CBM_ARQUIVO via NRO_INT_ARQUIVO_RG)
+        Named Query: UsuarioED.consulta (select u from UsuarioED u left join fetch u.arquivoRG where u.id = :id)
+      </documentation>
+      <incoming>SF_005</incoming>
+      <outgoing>SF_006</outgoing>
+    </serviceTask>
+
+    <exclusiveGateway id="GW_RT_001" name="CPF já&#10;cadastrado?">
+      <documentation>
+        Decisão com base na resposta HTTP de GET /usuarios/{cpf}:
+          204 No Content  → caminho "Não" → T_RT_003 (formulário novo, POST)
+          200 OK + DTO    → caminho "Sim" → T_RT_004 (pré-preenche formulário, PUT)
+        O CPF é único por constraint de banco (RN-P02-02): nunca há dois usuários
+        com o mesmo CPF, então a resposta é sempre binária.
+      </documentation>
+      <incoming>SF_006</incoming>
+      <outgoing>SF_007</outgoing>
+      <outgoing>SF_008</outgoing>
+    </exclusiveGateway>
+
+    <userTask id="T_RT_003"
+      name="Preencher formulário&#10;de novo cadastro"
+      camunda:assignee="${cidadaoAutenticado}"
+      camunda:formKey="sol:formulario-novo-cadastro">
+      <documentation>
+        Branch: CPF não encontrado (204) → novo cadastro via POST /usuarios.
+        O Angular exibe o formulário em branco pré-preenchido apenas com nome e e-mail
+        obtidos do token OIDC (claims do IdP).
+        Campos obrigatórios (validação HTML5 + JPA @NotNull):
+          nome, cpf, dtNascimento, nomeMae, email, telefone1
+        Campos opcionais:
+          rg, estadoEmissor, telefone2, graduacoes, especializacoes, enderecos
+        Ao submeter: Angular monta Usuario DTO e envia para POST /usuarios.
+        O status NÃO é enviado pelo frontend — o backend sempre força INCOMPLETO (RF-U-01).
+      </documentation>
+      <incoming>SF_007</incoming>
+      <outgoing>SF_009</outgoing>
+    </userTask>
+
+    <userTask id="T_RT_004"
+      name="Visualizar e editar dados&#10;do cadastro existente"
+      camunda:assignee="${cidadaoAutenticado}"
+      camunda:formKey="sol:formulario-editar-cadastro">
+      <documentation>
+        Branch: CPF encontrado (200 + DTO) → edição via PUT /usuarios/{id}.
+        O Angular pré-preenche TODOS os campos com dados do Usuario DTO recebido,
+        incluindo: graduacoes (com arquivos já vinculados), especializacoes, enderecos.
+        O ctrDthAtu do DTO é armazenado internamente para controle de concorrência
+        (será enviado no próximo PUT para verificação — RN-P02-01).
+        Situações de uso:
+          - Primeiro acesso após cadastro parcial anterior (status=INCOMPLETO)
+          - Retorno após reprovação para corrigir dados (status=REPROVADO)
+          - Atualização cadastral pelo RT já aprovado
+      </documentation>
+      <incoming>SF_008</incoming>
+      <outgoing>SF_010</outgoing>
+    </userTask>
+
+    <exclusiveGateway id="GW_RT_002" name="">
+      <documentation>
+        Gateway de merge (convergência): reúne os dois caminhos (novo cadastro e
+        edição de cadastro existente) antes do salvamento dos dados pessoais.
+        A partir deste ponto o fluxo é idêntico independente do caminho anterior.
+        Padrão BPMN: Split exclusivo (GW_RT_001) sempre acompanhado de Merge exclusivo.
+      </documentation>
+      <incoming>SF_009</incoming>
+      <incoming>SF_010</incoming>
+      <outgoing>SF_011</outgoing>
+    </exclusiveGateway>
+
+    <userTask id="T_RT_005"
+      name="Salvar dados pessoais&#10;POST /usuarios ou&#10;PUT /usuarios/{id}"
+      camunda:assignee="${cidadaoAutenticado}"
+      camunda:formKey="sol:salvar-dados-pessoais">
+      <documentation>
+        Ação do usuário: clica em "Salvar" no formulário de dados pessoais.
+        Angular envia Usuario DTO via:
+          POST /usuarios              → novo cadastro (id ausente)
+          PUT  /usuarios/{id}         → edição (id presente + ctrDthAtu obrigatório)
+        Header: Authorization: Bearer {token}  (HttpAuthorizationInterceptor)
+        Content-Type: application/json
+
+        Caso POST: resposta esperada 201 Created + Usuario DTO com id gerado.
+        Caso PUT:  resposta esperada 200 OK + Usuario DTO atualizado.
+        Erro 409 CONFLICT: ctrDthAtu divergente (RN-P02-01) — exibe mensagem de conflito.
+        Erro 400 BAD REQUEST: CPF já cadastrado (RN-P02-02) — exibe mensagem específica.
+      </documentation>
+      <incoming>SF_011</incoming>
+      <outgoing>SF_012</outgoing>
+    </userTask>
+
+    <serviceTask id="T_BE_003"
+      name="UsuarioRN.incluir() | alterar()&#10;POST /usuarios | PUT /usuarios/{id}&#10;CBM_USUARIO · diff graduações · endereços"
+      camunda:class="com.procergs.solcbm.usuario.UsuarioRN#incluir|alterar">
+      <documentation>
+        Endpoint POST: UsuarioRestImpl → UsuarioRN.incluir(Usuario)
+          @TransactionAttribute(REQUIRED)
+          1. usuario.setStatus(StatusCadastro.INCOMPLETO) — força status inicial
+          2. BuilderUsuarioED.build(usuario) → UsuarioED
+          3. usuarioBD.inclui(usuarioED) → INSERT INTO CBM_USUARIO (seq: CBM_ID_USUARIO_SEQ)
+          4. graduacaoUsuarioRN.incluirGraduacoesUsuario(ed, usuario.getGraduacoes())
+             → filtra graduacao.id == null (RN-P02-13)
+             → INSERT INTO CBM_GRADUACAO_USUARIO
+          5. especializacaoUsuarioRN.incluirEspecializacoesUsuario(...)
+             → INSERT INTO CBM_ESPECIALIZACAO_USUARIO
+          6. enderecoUsuarioRN.incluirEnderecosUsuario(...)
+             → INSERT INTO CBM_ENDERECO_USUARIO (IND_USAR_RESIDENCIAL via SimNaoBooleanConverter)
+          7. Retorna Usuario DTO → HTTP 201
+
+        ERRO CPF duplicado (RN-P02-02):
+          PersistenceException → ConstraintViolationException:
+          → HTTP 400 + bundle.getMessage(USUARIO_CPF_JA_CADASTRADO, cpfFormatado, email)
+
+        Endpoint PUT: UsuarioRN.alterar(Long id, Usuario)
+          @TransactionAttribute(REQUIRED)
+          1. usuarioBD.consulta(id) → UsuarioED
+          2. RN-P02-01: if status != INCOMPLETO AND ctrDthAtu divergente → HTTP 409
+          3. Atualiza campos: nome, cpf, rg, estadoEmissor, dtNascimento, nomeMae,
+             email, telefone1, telefone2, status
+          4. graduacaoUsuarioRN.alterarGraduacoesUsuario(ed, usuario.getGraduacoes())
+             → algoritmo de diff: compara por idGraduacaoUsuario OU graduacao.id
+             → se encontrado e alterado: atualiza; se não encontrado: exclui + arquivo
+             → itens novos: insere (RN-P02-12)
+          5. especializacaoUsuarioRN.alterarEspecializacoesUsuario(...)
+          6. enderecoUsuarioRN.alterarEnderecosUsuario(...)
+          7. usuarioBD.altera(ed) → UPDATE CBM_USUARIO SET ctrDthAtu = now()
+          8. usuario.setMensagemStatus("Alterações realizadas com sucesso.")
+          9. Retorna Usuario DTO → HTTP 200
+      </documentation>
+      <incoming>SF_012</incoming>
+      <outgoing>SF_013</outgoing>
+    </serviceTask>
+
+    <userTask id="T_RT_006"
+      name="Upload / Substituição&#10;do Documento RG&#10;(POST ou PUT arquivo-rg)"
+      camunda:assignee="${cidadaoAutenticado}"
+      camunda:formKey="sol:upload-documento-rg">
+      <documentation>
+        Ator: Cidadão seleciona arquivo de identidade (RG, CNH ou doc equivalente).
+        Endpoint POST (novo): POST /usuarios/{idUsuario}/arquivo-rg
+          Content-Type: multipart/form-data
+          Body: arquivo binário + nomeArquivo
+          Resposta: 201 Created + Arquivo DTO {id, nomeArquivo}
+        Endpoint PUT (substituição): PUT /usuarios/{idUsuario}/arquivo-rg
+          Resposta: 200 OK + Arquivo DTO atualizado
+
+        ATENÇÃO: Este documento é OBRIGATÓRIO para a submissão do cadastro.
+        Se arquivoRG == null quando PATCH /usuarios/{id} for chamado,
+        concluirCadastro() retornará StatusCadastro.INCOMPLETO (RN-P02-03).
+
+        Este passo também é o DESTINO do loop-back de T_RT_010 (documentos faltando):
+        quando o status retorna INCOMPLETO, o usuário é redirecionado para cá.
+      </documentation>
+      <incoming>SF_013</incoming>
+      <incoming>SF_024</incoming>
+      <outgoing>SF_014</outgoing>
+    </userTask>
+
+    <serviceTask id="T_BE_004"
+      name="UsuarioRN.incluirArquivoRG() | alterarArquivoRG()&#10;POST|PUT /usuarios/{id}/arquivo-rg&#10;MultipartFormDataInput → CBM_ARQUIVO"
+      camunda:class="com.procergs.solcbm.usuario.UsuarioRN#incluirArquivoRG|alterarArquivoRG">
+      <documentation>
+        Endpoint POST: UsuarioRN.incluirArquivoRG(long idUsuario, InputStream, String nomeArquivo)
+          @Consumes(MULTIPART_FORM_DATA)
+          @TransactionAttribute(REQUIRED)
+          1. usuarioBD.consulta(idUsuario) → UsuarioED
+          2. RN-P02-04: if usuarioED.getArquivoRG() != null
+             → throw WebApplicationRNException(400, bundle.getMessage(USUARIO_ARQUIVO_ERRO_DUPLICADO))
+          3. arquivoRN.incluirArquivo(inputStream, nomeArquivo, TipoArquivo.USUARIO)
+             → persiste binário em CBM_ARQUIVO (seq: CBM_ID_ARQUIVO_SEQ)
+          4. usuarioED.setArquivoRG(arquivoED)
+          5. usuarioBD.altera(usuarioED) → UPDATE CBM_USUARIO SET NRO_INT_ARQUIVO_RG = ?
+          6. Retorna Arquivo DTO {id, nomeArquivo} → HTTP 201
+
+        Endpoint PUT: UsuarioRN.alterarArquivoRG(long idUsuario, InputStream, String nomeArquivo)
+          1. usuarioBD.consulta(idUsuario) → UsuarioED
+          2. arquivoRG = usuarioED.getArquivoRG()
+          3. arquivoRG.setNomeArquivo(nomeArquivo)
+          4. arquivoRN.alterarArquivo(arquivoRG) com novo inputStream
+             → UPDATE CBM_ARQUIVO + regravar binário
+          5. Retorna Arquivo DTO → HTTP 200
+
+        Upload via: MultipartFormDataInput (RESTEasy multipart provider — WildFly builtin)
+        Armazenamento: binário persistido em coluna BLOB/CLOB ou sistema de arquivos
+        via ArquivoRN (implementação interna PROCERGS).
+      </documentation>
+      <incoming>SF_014</incoming>
+      <outgoing>SF_015</outgoing>
+    </serviceTask>
+
+    <userTask id="T_RT_007"
+      name="Gerenciar graduações&#10;e upload de comprovante&#10;profissional"
+      camunda:assignee="${cidadaoAutenticado}"
+      camunda:formKey="sol:gerenciar-graduacoes">
+      <documentation>
+        Ator: Cidadão preenche dados de graduações profissionais.
+        Para cada graduação:
+          - Seleciona tipo de graduação (ex: CREA, CRM, OAB, CAU) da lista CBM_GRADUACAO
+          - Informa idProfissional (número do registro profissional)
+          - Informa estadoEmissor (UF de emissão do registro)
+          - Faz upload do comprovante (PDF/imagem) via:
+              POST /usuarios/{id}/graduacoes/{idGraduacao}/arquivo  (novo)
+              PUT  /usuarios/{id}/graduacoes/{idGraduacao}/arquivo  (substituição)
+          - Dados textuais salvos junto via PUT /usuarios/{id}
+
+        CRÍTICO (RN-P02-03): cada GraduacaoUsuarioED SEM arquivoIdProfissional impedirá
+        a submissão do cadastro para análise — retornará INCOMPLETO.
+        Observação: especializações NÃO bloqueiam a submissão.
+
+        Algoritmo de diff ativado no backend ao salvar (RN-P02-12):
+          - Mantém, atualiza ou exclui graduações existentes com base na comparação
+          - Itens novos são inseridos; itens removidos têm seus arquivos excluídos também
+      </documentation>
+      <incoming>SF_015</incoming>
+      <outgoing>SF_016</outgoing>
+    </userTask>
+
+    <serviceTask id="T_BE_005"
+      name="UsuarioRN.incluirArquivoDocProfissional()&#10;POST|PUT /usuarios/{id}/graduacoes/{g}/arquivo&#10;GraduacaoUsuarioRN.alterarGraduacoesUsuario() · diff"
+      camunda:class="com.procergs.solcbm.usuario.UsuarioRN#incluirArquivoDocProfissional|alterarArquivoDocProfissional">
+      <documentation>
+        Endpoints de arquivo de graduação:
+          POST /usuarios/{idUsuario}/graduacoes/{idGraduacao}/arquivo
+            → UsuarioRN.incluirArquivoDocProfissional(idUsuario, idGraduacao, InputStream, nome)
+            1. GraduacaoUsuarioRN.consulta(idUsuario, idGraduacao) → GraduacaoUsuarioED
+            2. RN-P02-04: if getArquivoIdProfissional() != null → HTTP 400 (duplicado)
+            3. arquivoRN.incluirArquivo(..., TipoArquivo.USUARIO) → CBM_ARQUIVO
+            4. graduacaoUsuarioED.setArquivoIdProfissional(arquivoED)
+            5. graduacaoUsuarioRN.altera(ed) → UPDATE CBM_GRADUACAO_USUARIO
+            6. Retorna Arquivo DTO → HTTP 201
+
+          PUT /usuarios/{idUsuario}/graduacoes/{idGraduacao}/arquivo
+            → UsuarioRN.alterarArquivoDocProfissional(...)
+            → Atualiza ArquivoED com novo inputStream e nomeArquivo
+
+        Algoritmo de diff (GraduacaoUsuarioRN.alterarGraduacoesUsuario — RN-P02-12):
+          Para cada GraduacaoUsuarioED existente no banco:
+            Busca correspondente na lista enviada por idGraduacaoUsuario OU graduacao.id:
+            - Encontrado e sem mudança: mantém
+            - Encontrado com mudança (estadoEmissor|idProfissional|graduacao.id):
+                → compararGraduacoes() → cria novo GraduacaoUsuarioED com mesmo ID
+                → se idGraduacaoUsuario diferiu: exclui arquivo antigo (excluirArquivoGraduacao)
+            - Não encontrado: exclui registro + arquivoIdProfissional (RN-P02-12)
+          Itens novos na lista (não achados no banco):
+            → incluirGraduacoesUsuario() filtrando graduacao.id == null (RN-P02-13)
+
+        Named Queries:
+          GraduacaoUsuarioED.consulta: select gu from GraduacaoUsuarioED gu
+            join fetch gu.graduacao join fetch gu.usuario
+            left join fetch gu.arquivoIdProfissional where gu.id = :id
+        Tabela: CBM_GRADUACAO_USUARIO (seq: CBM_ID_GRAD_USUARIO_SEQ)
+      </documentation>
+      <incoming>SF_016</incoming>
+      <outgoing>SF_017</outgoing>
+    </serviceTask>
+
+    <userTask id="T_RT_008"
+      name="Gerenciar especializações&#10;e endereços&#10;(PUT /usuarios/{id})"
+      camunda:assignee="${cidadaoAutenticado}"
+      camunda:formKey="sol:gerenciar-especializacoes-enderecos">
+      <documentation>
+        Ator: Cidadão preenche especializações (pós-graduações, cursos técnicos)
+        e ao menos um endereço.
+        Endpoints:
+          PUT /usuarios/{id} — dados textuais de especializacoes + enderecos
+          POST /usuarios/{id}/especializacoes/{idEspecializacao}/arquivo  (upload comprovante)
+          PUT  /usuarios/{id}/especializacoes/{idEspecializacao}/arquivo  (substituição)
+
+        Endereços incluem: tpEndereco (TipoEndereco enum), usarResidencial (S/N).
+        O campo IND_USAR_RESIDENCIAL é armazenado como CHAR(1) 'S'/'N' via
+        SimNaoBooleanConverter (JPA AttributeConverter).
+
+        IMPORTANTE: Especializações NÃO são verificadas por concluirCadastro() (RN-P02-03).
+        Apenas graduações bloqueiam a submissão. Especializações são complementares.
+      </documentation>
+      <incoming>SF_017</incoming>
+      <outgoing>SF_018</outgoing>
+    </userTask>
+
+    <serviceTask id="T_BE_006"
+      name="EspecializacaoUsuarioRN.alterar()&#10;PUT /usuarios/{id} · upload especializações&#10;EnderecoUsuarioRN.alterar() · SimNaoBooleanConverter"
+      camunda:class="com.procergs.solcbm.especializacaousuario.EspecializacaoUsuarioRN|com.procergs.solcbm.enderecousuario.EnderecoUsuarioRN">
+      <documentation>
+        Especializações: EspecializacaoUsuarioRN.alterarEspecializacoesUsuario(ed, lista)
+          → lógica similar ao diff de graduações
+          → CBM_ESPECIALIZACAO_USUARIO (seq: CBM_ID_ESPEC_USUARIO_SEQ)
+          Named Query: EspecializacaoUsuarioED.consulta:
+            select eu from EspecializacaoUsuarioED eu join fetch eu.especializacao
+            join fetch eu.usuario left join fetch eu.arquivo where eu.id = :id
+
+        Upload comprovante de especialização:
+          POST /usuarios/{id}/especializacoes/{idEsp}/arquivo
+            → UsuarioRN.incluirArquivoEspecializacao(idUsuario, idEspecializacao, stream, nome)
+            → Idêntico ao de graduação mas opera sobre EspecializacaoUsuarioED.arquivo
+          PUT equivalente: UsuarioRN.alterarArquivoEspecializacao(...)
+
+        Endereços: EnderecoUsuarioRN.alterarEnderecosUsuario(ed, lista)
+          → CBM_ENDERECO_USUARIO (seq: CBM_ID_ENDERECO_USUARIO_SEQ)
+          → IND_USAR_RESIDENCIAL: Boolean ↔ 'S'/'N' via SimNaoBooleanConverter
+          Named Query: EnderecoUsuarioED.consulta:
+            select e from EnderecoUsuarioED e join fetch e.endereco
+            join fetch e.usuario where e.id = :id
+          → e.endereco aponta para tabela CBM_ENDERECO (CEP, logradouro, etc.)
+
+        Ambos os EJBs: @Stateless + @TransactionAttribute(REQUIRED)
+        Ambos herdam de AppRN que conecta ao AppBD via @PostConstruct initBD()
+      </documentation>
+      <incoming>SF_018</incoming>
+      <outgoing>SF_019</outgoing>
+    </serviceTask>
+
+    <userTask id="T_RT_009"
+      name="Concluir cadastro e&#10;solicitar análise&#10;PATCH /usuarios/{id}"
+      camunda:assignee="${cidadaoAutenticado}"
+      camunda:formKey="sol:concluir-cadastro">
+      <documentation>
+        Ação: Cidadão clica em "Enviar para análise" quando considera o cadastro completo.
+        Método HTTP: PATCH (não PUT) — muda apenas o estado do recurso, não substitui.
+        Endpoint: PATCH /usuarios/{id}
+        Body: vazio (apenas o path param {id} é necessário)
+        Header: Authorization: Bearer {token}
+        Resposta esperada: 200 OK + Status DTO
+          {statusCadastro, ctrDthAtu, mensagem}
+        O frontend atualiza seu ctrDthAtu interno com o valor retornado para sincronizar
+        o controle de concorrência sem nova chamada GET.
+        Permissão: @Permissao(desabilitada=true) — qualquer usuário autenticado pode executar.
+      </documentation>
+      <incoming>SF_019</incoming>
+      <outgoing>SF_020</outgoing>
+    </userTask>
+
+    <serviceTask id="T_BE_007"
+      name="UsuarioConclusaoCadastroRN.concluirCadastro()&#10;PATCH /usuarios/{id}&#10;Checa arquivoRG + arquivo de cada graduação"
+      camunda:class="com.procergs.solcbm.usuario.UsuarioConclusaoCadastroRN#concluirCadastro">
+      <documentation>
+        Endpoint: PATCH /usuarios/{id}
+        Classe: UsuarioConclusaoCadastroRN.concluirCadastro(Long idUsuario)
+        Transação: @TransactionAttribute(REQUIRED)
+        Permissão: @Permissao(desabilitada = true)
+
+        Algoritmo de completude (RN-P02-03):
+          1. statusCadastro = StatusCadastro.ANALISE_PENDENTE  (início otimista)
+          2. usuarioBD.consulta(idUsuario) → UsuarioED (com join fetch arquivoRG)
+          3. VERIFICAÇÃO RG: if usuarioED.getArquivoRG() == null
+             → statusCadastro = INCOMPLETO
+          4. VERIFICAÇÃO GRADUAÇÕES: graduacaoUsuarioRN.listarGraduacoesUsuario(ed)
+             → para cada GraduacaoUsuarioED:
+               if getArquivoIdProfissional() == null → statusCadastro = INCOMPLETO
+             (Especializações NÃO são verificadas aqui — apenas graduações)
+          5. usuarioED.setStatus(statusCadastro)
+          6. usuarioED.setMensagemStatus(null)  ← limpa reprovação anterior
+          7. usuarioBD.altera(usuarioED) → UPDATE CBM_USUARIO
+          8. notificacaoRN.notificar(usuarioED, statusMessage, ContextoNotificacaoEnum.CADASTRO)
+             → SEM envio de e-mail neste momento
+          9. Se statusCadastro == ANALISE_PENDENTE:
+             → instrutorBD.consultaPorCpf(cpf) → se status APROVADO ou VENCIDO:
+               instrutorHistoricoRN.incluirEdicao(instrutor) → registra histórico
+
+        Retorno: Status DTO {statusCadastro, ctrDthAtu, mensagem}
+          mensagem = bundle.getMessage("usuario.cadastro.status." + statusCadastro)
+          ex: "Seu cadastro foi enviado para análise." (ANALISE_PENDENTE)
+               "Cadastro incompleto" (INCOMPLETO)
+
+        StatusCadastro após este passo:
+          ANALISE_PENDENTE(1) → todos docs presentes
+          INCOMPLETO(0)       → falta arquivoRG ou arquivo de alguma graduação
+
+        RN-P02-04: POST arquivo-rg quando já existe → HTTP 400 (use PUT para substituir).
+      </documentation>
+      <incoming>SF_020</incoming>
+      <outgoing>SF_021</outgoing>
+    </serviceTask>
+
+    <exclusiveGateway id="GW_RT_003" name="Status&#10;retornado?">
+      <documentation>
+        Decisão com base em Status DTO.statusCadastro retornado pelo PATCH:
+          INCOMPLETO(0)       → T_RT_010 (exibe pendências + loop-back para uploads)
+          ANALISE_PENDENTE(1) → T_RT_011 (confirmação de sucesso → EE_J1)
+        Esta é a decisão de negócio mais crítica da Jornada J1:
+        o servidor decide, não o frontend (segurança — cliente não pode forçar status).
+      </documentation>
+      <incoming>SF_021</incoming>
+      <outgoing>SF_022</outgoing>
+      <outgoing>SF_023</outgoing>
+    </exclusiveGateway>
+
+    <userTask id="T_RT_010"
+      name="Exibir pendências:&#10;documentos faltando&#10;(status = INCOMPLETO)"
+      camunda:assignee="${cidadaoAutenticado}"
+      camunda:formKey="sol:exibir-pendencias">
+      <documentation>
+        Branch: statusCadastro == INCOMPLETO.
+        O Angular exibe mensagem indicando o que está faltando:
+          - "Documento de identidade (RG) não enviado." (se arquivoRG == null)
+          - "Comprovante da graduação [X] não enviado." (para cada graduação sem arquivo)
+        O fluxo de retorno (SF_024) vai DIRETAMENTE para T_RT_006 (upload do RG),
+        representado como seta retrógrada percorrendo o topo do diagrama (y=20).
+        Isso evita que o usuário precise redigitar dados — apenas completa os arquivos.
+      </documentation>
+      <incoming>SF_022</incoming>
+      <outgoing>SF_024</outgoing>
+    </userTask>
+
+    <userTask id="T_RT_011"
+      name="Exibir confirmação:&#10;cadastro enviado para análise&#10;(ANALISE_PENDENTE)"
+      camunda:assignee="${cidadaoAutenticado}"
+      camunda:formKey="sol:confirmacao-analise-pendente">
+      <documentation>
+        Branch: statusCadastro == ANALISE_PENDENTE.
+        O Angular exibe tela de sucesso com a mensagem do bundle:
+          "Seu cadastro foi enviado para análise."
+        Informações exibidas: status atual, prazo estimado de resposta.
+        Neste momento o campo CBM_USUARIO.status = ANALISE_PENDENTE(1).
+        O cadastro aparecerá na fila do analista quando ele listar cadastros em análise.
+        O cidadão aguarda notificação por e-mail / sistema quando a análise for concluída.
+      </documentation>
+      <incoming>SF_023</incoming>
+      <outgoing>SF_025</outgoing>
+    </userTask>
+
+    <endEvent id="EE_J1" name="Fim J1:&#10;Aguardando análise&#10;(ANALISE_PENDENTE)">
+      <documentation>
+        Estado final da Jornada J1: CBM_USUARIO.status = ANALISE_PENDENTE(1).
+        O cidadão não precisa tomar nenhuma ação adicional.
+        O cadastro aguarda que um analista do CBM o selecione e assuma a análise (J2).
+        A transição para J2 ocorre via banco de dados (sem evento direto):
+        quando o analista listar cadastros em análise, este registro aparecerá.
+      </documentation>
+      <incoming>SF_025</incoming>
+    </endEvent>
+
+    <!-- ============================================================ -->
+    <!-- J2 — JORNADA DO ANALISTA CBM (Back-office)                  -->
+    <!-- Transição J1→J2: desacoplada via banco de dados.            -->
+    <!-- J1 termina com CBM_USUARIO.status = ANALISE_PENDENTE.       -->
+    <!-- J2 iniciada independentemente pelo analista ao acessar o    -->
+    <!-- módulo administrativo — sem evento direto entre jornadas.   -->
+    <!-- RN-P02-14: isUsuarioRtValido() → APROVADO + graduacoes != ∅ -->
+    <!-- ============================================================ -->
+
+    <startEvent id="SE_J2" name="Início J2:&#10;Analista acessa&#10;módulo administrativo">
+      <documentation>
+        Gatilho: Analista do CBM-RS acessa o sistema SOL com perfil administrativo.
+        Autenticação SOE idêntica à J1 (não repetida no diagrama por clareza).
+        Pré-condição: usuário deve ter permissão VERIFICARCADASTRO/LISTAR no IdP/SOE.
+        A transição de J1 para J2 é desacoplada: J2 é iniciado independentemente
+        pelo analista ao acessar o módulo — não há evento direto de J1 para J2.
+        O gatilho real é o analista acessar a URL do módulo administrativo de análises.
+      </documentation>
+      <outgoing>SF_030</outgoing>
+    </startEvent>
+
+    <userTask id="T_AN_001"
+      name="Listar cadastros em análise&#10;GET /adm/analise-cadastros/em-analise"
+      camunda:assignee="${analistaCBM}"
+      camunda:formKey="sol:listar-cadastros-analise">
+      <documentation>
+        Ator: Analista CBM no módulo administrativo do Angular.
+        Endpoint: GET /adm/analise-cadastros/em-analise
+        Header: Authorization: Bearer {token}
+        Permissão: @Permissao(objeto="VERIFICARCADASTRO", acao="LISTAR")
+        Resposta: 200 OK + List&lt;Cadastro&gt;
+        Cada Cadastro DTO contém: id, nome, cpf, email, ctrDthInc, ctrDthAtu,
+          possuiGraduacao, status (StatusCadastro), idAnalise.
+        O filtro é aplicado AUTOMATICAMENTE pelo backend (não configurável pelo analista):
+          idUsuarioSoe = SessionMB.getUser().getId()  → apenas SUA fila
+          StatusAnalise = EM_ANALISE                   → apenas análises abertas
+        Este é também o destino do loop-back de GW_AN_003 quando análise é cancelada.
+      </documentation>
+      <incoming>SF_030</incoming>
+      <incoming>SF_046</incoming>
+      <outgoing>SF_031</outgoing>
+    </userTask>
+
+    <serviceTask id="T_BE_008"
+      name="AnaliseCadastroRN.listarCadastrosEmAnalise()&#10;GET /adm/analise-cadastros/em-analise&#10;@Permissao(VERIFICARCADASTRO/LISTAR)"
+      camunda:class="com.procergs.solcbm.analisecadastro.AnaliseCadastroRN#listarCadastrosEmAnalise">
+      <documentation>
+        Endpoint: GET /adm/analise-cadastros/em-analise
+        Classe: AnaliseCadastroRestImpl → AnaliseCadastroRN.listarCadastrosEmAnalise(filtro)
+        Transação: @TransactionAttribute(SUPPORTS)
+        Permissão: @Permissao(objeto="VERIFICARCADASTRO", acao="LISTAR")
+        Autenticação: @SOEAuthRest (valida Bearer token)
+
+        Filtro construído no REST:
+          AnaliseCadastroED filtro = new AnaliseCadastroED();
+          filtro.setIdUsuarioSoe(Long.parseLong(sessionMB.getUser().getId()));
+          filtro.setStatus(StatusAnalise.EM_ANALISE);
+
+        AnaliseCadastroBD.listar(filtro) → DetachedCriteria:
+          dc.add(Restrictions.eq("idUsuarioSoe", filtro.getIdUsuarioSoe()))
+          dc.add(Restrictions.eq("status", filtro.getStatus()))
+          Retorna List&lt;AnaliseCadastroED&gt;
+
+        Conversão: cada ED → Cadastro DTO (id, nome, cpf, email, ctrDthInc, ctrDthAtu,
+          possuiGraduacao, status, idAnalise)
+        Tabela: CBM_ANALISE_CADASTRO (join CBM_USUARIO)
+        Retorno: 200 OK + List&lt;Cadastro&gt;
+      </documentation>
+      <incoming>SF_031</incoming>
+      <outgoing>SF_032</outgoing>
+    </serviceTask>
+
+    <userTask id="T_AN_002"
+      name="Selecionar cadastro&#10;para analisar"
+      camunda:assignee="${analistaCBM}"
+      camunda:formKey="sol:selecionar-cadastro">
+      <documentation>
+        Ator: Analista visualiza a lista de cadastros EM_ANALISE e seleciona um.
+        Esta é uma ação puramente de interface — sem chamada ao backend.
+        Dados visíveis na listagem: nome, CPF, e-mail, data de criação, data de
+        última atualização, indicador de graduação vinculada (possuiGraduacao).
+        O analista pode priorizar cadastros mais antigos ou com graduação presente.
+        Após selecionar, clica em "Assumir análise" → T_AN_003.
+      </documentation>
+      <incoming>SF_032</incoming>
+      <outgoing>SF_033</outgoing>
+    </userTask>
+
+    <userTask id="T_AN_003"
+      name="Assumir análise&#10;POST /adm/analise-cadastros"
+      camunda:assignee="${analistaCBM}"
+      camunda:formKey="sol:assumir-analise">
+      <documentation>
+        Ator: Analista clica em "Assumir análise" para um cadastro ANALISE_PENDENTE.
+        Endpoint: POST /adm/analise-cadastros
+        Body: Cadastro DTO {id (usuário), status, ctrDthAtu}
+        Header: Authorization: Bearer {token}
+        Permissão: @Permissao(objeto="VERIFICARCADASTRO", acao="EDITAR")
+        Resposta esperada: 201 Created + Location: /adm/analise-cadastros/{idRetorno}
+        Erro 400: campos obrigatórios faltando (id, status ou ctrDthAtu nulos — RN-P02-05)
+        Erro 409: ctrDthAtu divergente (outro analista assumiu antes — RN-P02-06)
+      </documentation>
+      <incoming>SF_033</incoming>
+      <outgoing>SF_034</outgoing>
+    </userTask>
+
+    <serviceTask id="T_BE_009"
+      name="AnaliseCadastroRN.incluirAnaliseCadastro()&#10;POST /adm/analise-cadastros&#10;Cria AnaliseCadastroED + muda status → EM_ANALISE"
+      camunda:class="com.procergs.solcbm.analisecadastro.AnaliseCadastroRN#incluirAnaliseCadastro">
+      <documentation>
+        Endpoint: POST /adm/analise-cadastros
+        Classe: AnaliseCadastroRN.incluirAnaliseCadastro(Cadastro)
+        Transação: @TransactionAttribute(REQUIRED)
+        Permissão: @Permissao(objeto="VERIFICARCADASTRO", acao="EDITAR")
+
+        Lógica completa:
+          1. RN-P02-05 — Validação de campos:
+             if cadastro.getId() == null OR cadastro.getStatus() == null
+                OR cadastro.getCtrDthAtu() == null
+             → throw WebApplicationRNException(400)
+
+          2. usuarioBD.consulta(cadastro.getId()) → UsuarioED
+
+          3. RN-P02-06 — Controle de concorrência:
+             if ed.getCtrDthAtu().compareTo(cadastro.getCtrDthAtu()) != 0
+             → throw WebApplicationRNException(mensagem_divergente, 409 CONFLICT)
+
+          4. RN-P02-07 — Cria AnaliseCadastroED SOMENTE se status==ANALISE_PENDENTE:
+             if usuarioED.getStatus() == StatusCadastro.ANALISE_PENDENTE:
+               AnaliseCadastroED analiseED = new AnaliseCadastroED()
+               analiseED.setUsuario(usuarioED)
+               analiseED.setStatus(StatusAnalise.EM_ANALISE)
+               // RN-P02-08 — vincula ao analista logado:
+               analiseED.setIdUsuarioSoe(Long.parseLong(sessionMB.getUser().getId()))
+               analiseED.setNomeUsuario(sessionMB.getUser().getNome())
+               analiseCadastroBD.inclui(analiseED) → INSERT CBM_ANALISE_CADASTRO
+               idRetorno = analiseED.getId()
+
+          5. RN-P02-09 — Notificação ao cidadão (SEM e-mail):
+             notificacaoRN.notificar(usuarioED, statusMsg, ContextoNotificacaoEnum.CADASTRO)
+
+          6. if usuarioED.getStatus() != StatusCadastro.EM_ANALISE:
+             usuarioED.setStatus(StatusCadastro.EM_ANALISE)
+             usuarioBD.altera(usuarioED) → UPDATE CBM_USUARIO
+
+          7. Retorno: HTTP 201 + header Location: /adm/analise-cadastros/{idRetorno}
+
+        Tabela: CBM_ANALISE_CADASTRO (seq: CBM_ID_ANALISE_CADASTRO_SEQ)
+        Named Query: AnaliseCadastroED.consulta:
+          select a from AnaliseCadastroED a join fetch a.usuario where a.id = :id
+      </documentation>
+      <incoming>SF_034</incoming>
+      <outgoing>SF_035</outgoing>
+    </serviceTask>
+
+    <userTask id="T_AN_004"
+      name="Consultar e analisar docs&#10;do candidato&#10;GET /adm/analise-cadastros/{id}"
+      camunda:assignee="${analistaCBM}"
+      camunda:formKey="sol:analisar-documentos">
+      <documentation>
+        Ator: Analista visualiza em detalhe o cadastro assumido.
+        Endpoint principal: GET /adm/analise-cadastros/{id}
+          → AnaliseCadastroRN.consultaAnaliseCadastro(Long id)
+          → Permissão: @Permissao(objeto="VERIFICARCADASTRO", acao="CONSULTAR")
+          → Retorna AnaliseCadastro DTO: id, status, justificativa, usuario, nomeAnalista
+        Downloads de documentos:
+          GET /usuarios/{id}/arquivo-rg           → documento de identidade
+          GET /usuarios/{id}/graduacoes/{g}/arquivo → comprovante de graduação
+          GET /usuarios/{id}/especializacoes/{e}/arquivo → comprovante de especialização
+        O analista verifica:
+          - Autenticidade e validade do documento de identidade
+          - Registros profissionais (CREA, CRM, etc.) e comprovantes
+          - Consistência dos dados pessoais com os documentos
+        Esta é uma decisão HUMANA — o sistema SOL não faz análise automática de documentos.
+        Após análise o analista aciona GW_AN_001 (decisão).
+      </documentation>
+      <incoming>SF_035</incoming>
+      <outgoing>SF_036</outgoing>
+    </userTask>
+
+    <exclusiveGateway id="GW_AN_001" name="Decisão do&#10;analista?">
+      <documentation>
+        Exclusive gateway com 3 saídas — reflete exatamente os valores de StatusAnalise:
+          APROVADO  → T_AN_005 (posicionado acima)
+          REPROVADO → T_AN_006 (posicionado ao centro)
+          CANCELAR  → T_AN_007 (posicionado abaixo)
+        Layout: acima=positivo, centro=negativo, baixo=neutro (cancelamento).
+        A decisão é irrevogável depois de confirmada no backend — o analista deve
+        selecionar com cuidado. Para correções existe o fluxo de cancelamento.
+      </documentation>
+      <incoming>SF_036</incoming>
+      <outgoing>SF_037</outgoing>
+      <outgoing>SF_038</outgoing>
+      <outgoing>SF_039</outgoing>
+    </exclusiveGateway>
+
+    <userTask id="T_AN_005"
+      name="Confirmar aprovação&#10;(StatusAnalise = APROVADO)"
+      camunda:assignee="${analistaCBM}"
+      camunda:formKey="sol:aprovar-cadastro">
+      <documentation>
+        Branch: Analista decide aprovar o candidato.
+        O Angular exibe tela de confirmação ("Confirmar aprovação?").
+        Campos necessários: nenhum adicional (justificativa opcional para aprovação).
+        Ao confirmar → GW_AN_002 → T_AN_008.
+        Consequência backend (via T_BE_010):
+          CBM_USUARIO.status → APROVADO(3)
+          CBM_ANALISE_CADASTRO.status → APROVADO(3)
+          Notificação com e-mail enviada ao cidadão.
+          isUsuarioRtValido() → true se possuiGraduacao (RN-P02-14)
+      </documentation>
+      <incoming>SF_037</incoming>
+      <outgoing>SF_040</outgoing>
+    </userTask>
+
+    <userTask id="T_AN_006"
+      name="Reprovar cadastro&#10;(REPROVADO + justificativa obrigatória)"
+      camunda:assignee="${analistaCBM}"
+      camunda:formKey="sol:reprovar-cadastro">
+      <documentation>
+        Branch: Analista decide reprovar o candidato.
+        Campo OBRIGATÓRIO: justificativa (String) — motivo da reprovação.
+        A justificativa será salva em:
+          CBM_ANALISE_CADASTRO.TXT_JUSTIFICATIVA
+          CBM_USUARIO.mensagemStatus (via mudarStatusCadastro)
+        E será exibida ao cidadão no painel de status do seu cadastro.
+        Consequência backend (via T_BE_010):
+          CBM_USUARIO.status → REPROVADO(4)
+          Notificação com e-mail enviada ao cidadão com o motivo.
+        O cidadão poderá corrigir os problemas e resubmeter (volta para J1).
+      </documentation>
+      <incoming>SF_038</incoming>
+      <outgoing>SF_041</outgoing>
+    </userTask>
+
+    <userTask id="T_AN_007"
+      name="Cancelar análise&#10;(CANCELADO → volta fila&#10;ANALISE_PENDENTE)"
+      camunda:assignee="${analistaCBM}"
+      camunda:formKey="sol:cancelar-analise">
+      <documentation>
+        Branch: Analista cancela a análise sem tomar decisão sobre aprovação/reprovação.
+        Casos de uso:
+          - Analista assumiu o cadastro errado
+          - Analista precisa liberar o caso para outro analista
+          - Análise precisa de revisão adicional por outra pessoa
+        Consequência backend (via T_BE_010):
+          CBM_ANALISE_CADASTRO.status → CANCELADO(2)
+          CBM_USUARIO.status → ANALISE_PENDENTE(1) (volta à fila)
+          SEM envio de e-mail ao cidadão
+        Após o cancelamento, o fluxo retorna para T_AN_001 (listar cadastros)
+        via GW_AN_003, permitindo que o analista selecione outro cadastro ou
+        que outro analista assuma este no futuro.
+      </documentation>
+      <incoming>SF_039</incoming>
+      <outgoing>SF_042</outgoing>
+    </userTask>
+
+    <exclusiveGateway id="GW_AN_002" name="">
+      <documentation>
+        Gateway de merge: converge os três caminhos (APROVADO, REPROVADO, CANCELADO)
+        antes do passo de registro formal da decisão no backend.
+        Padrão BPMN: Split (GW_AN_001) + Merge (GW_AN_002) exclusivos.
+      </documentation>
+      <incoming>SF_040</incoming>
+      <incoming>SF_041</incoming>
+      <incoming>SF_042</incoming>
+      <outgoing>SF_043</outgoing>
+    </exclusiveGateway>
+
+    <userTask id="T_AN_008"
+      name="Registrar decisão final&#10;PUT /adm/analise-cadastros/{id}"
+      camunda:assignee="${analistaCBM}"
+      camunda:formKey="sol:registrar-decisao">
+      <documentation>
+        Ator: Analista confirma a decisão (clica em "Confirmar").
+        Endpoint: PUT /adm/analise-cadastros/{id}
+        Body: AnaliseCadastro DTO {status: StatusAnalise, justificativa: String}
+        Header: Authorization: Bearer {token}
+        Permissão: @Permissao(objeto="VERIFICARCADASTRO", acao="EDITAR")
+        Resposta: 200 OK (sem body)
+        Erro 403 FORBIDDEN: usuário não é o analista responsável nem CENTRALADM (RN-P02-10)
+      </documentation>
+      <incoming>SF_043</incoming>
+      <outgoing>SF_044</outgoing>
+    </userTask>
+
+    <serviceTask id="T_BE_010"
+      name="AnaliseCadastroRN.alterarStatusAnaliseCadastro()&#10;PUT /adm/analise-cadastros/{id}&#10;mudarStatusCadastro() + notificacaoRN.notificar()"
+      camunda:class="com.procergs.solcbm.analisecadastro.AnaliseCadastroRN#alterarStatusAnaliseCadastro">
+      <documentation>
+        Endpoint: PUT /adm/analise-cadastros/{id}
+        Classe: AnaliseCadastroRN.alterarStatusAnaliseCadastro(Long id, AnaliseCadastro)
+        Transação: @TransactionAttribute(REQUIRED)
+        Permissão: @Permissao(objeto="VERIFICARCADASTRO", acao="EDITAR")
+
+        Lógica:
+          1. analiseCadastroBD.consulta(id) → AnaliseCadastroED
+          2. RN-P02-10 — Verificação de autorização:
+             boolean isAnalista = analiseED.getIdUsuarioSoe().toString()
+                                    .equals(sessionMB.getUser().getId());
+             boolean isSupervisor = sessionMB.hasPermission("CENTRALADM", "EDITAR");
+             if (!isAnalista &amp;&amp; !isSupervisor)
+               → throw WebApplicationRNException(403 FORBIDDEN)
+          3. analiseED.setStatus(body.getStatus())
+          4. analiseED.setJustificativa(body.getJustificativa())
+          5. analiseCadastroBD.altera(analiseED) → UPDATE CBM_ANALISE_CADASTRO
+          6. mudarStatusCadastro(usuario.id, analiseCadastro):
+
+        mudarStatusCadastro() — RN-P02-11:
+          Mapeamento StatusAnalise → StatusCadastro + e-mail:
+            CANCELADO  → ANALISE_PENDENTE(1), enviarEmail=false
+            APROVADO   → APROVADO(3),          enviarEmail=true
+            REPROVADO  → REPROVADO(4),          enviarEmail=true
+            EM_ANALISE → EM_ANALISE(2),         enviarEmail=false
+          usuario.mensagemStatus = analiseCadastro.getJustificativa()
+          usuarioBD.altera(usuario) → UPDATE CBM_USUARIO SET status=?, mensagemStatus=?
+          notificacaoRN.notificar(usuario, msg, CADASTRO, enviarEmail, statusCadastro.name())
+
+        Retorno: HTTP 200 OK (sem body)
+      </documentation>
+      <incoming>SF_044</incoming>
+      <outgoing>SF_045</outgoing>
+    </serviceTask>
+
+    <exclusiveGateway id="GW_AN_003" name="Análise&#10;cancelada?">
+      <documentation>
+        Decisão pós-registro:
+          Sim (StatusAnalise == CANCELADO) → T_AN_001 (loop-back: analista volta à fila)
+          Não (APROVADO ou REPROVADO)      → T_AN_009 (exibe resultado + notifica)
+        O loop-back (SF_046) é o único fluxo retrógrado da J2, roteado acima dos
+        elementos pelo topo da Lane_AN (y=910) de direita para esquerda.
+        Cancelamento é a única decisão que não encerra a responsabilidade do analista
+        para aquele cadastro específico.
+      </documentation>
+      <incoming>SF_045</incoming>
+      <outgoing>SF_046</outgoing>
+      <outgoing>SF_047</outgoing>
+    </exclusiveGateway>
+
+    <userTask id="T_AN_009"
+      name="Exibir resultado ao analista&#10;+ notificação ao cidadão"
+      camunda:assignee="${analistaCBM}"
+      camunda:formKey="sol:exibir-resultado-analise">
+      <documentation>
+        Branch: decisão final (APROVADO ou REPROVADO).
+        O Angular exibe para o analista: "Cadastro aprovado." ou "Cadastro reprovado."
+        Simultaneamente o backend (T_BE_011) envia notificação ao cidadão:
+          APROVADO  → notificação interna + e-mail de aprovação
+          REPROVADO → notificação interna + e-mail com justificativa
+        O cidadão poderá ver o resultado ao acessar novamente o sistema.
+        Em caso de APROVADO: o RT poderá agora utilizar o sistema como Responsável
+        Técnico (isUsuarioRtValido() retornará true se tiver graduação).
+      </documentation>
+      <incoming>SF_047</incoming>
+      <outgoing>SF_048</outgoing>
+    </userTask>
+
+    <serviceTask id="T_BE_011"
+      name="NotificacaoRN.notificar()&#10;E-mail via SMTP PROCERGS (APROVADO|REPROVADO)&#10;+ notificação interna CBM_NOTIFICACAO"
+      camunda:class="com.procergs.solcbm.notificacao.NotificacaoRN#notificar">
+      <documentation>
+        Chamado dentro de mudarStatusCadastro() (já acionado por T_BE_010).
+        Modelado aqui separadamente para tornar explícita a notificação ao cidadão.
+
+        notificacaoRN.notificar(usuario, mensagem, CADASTRO, enviarEmail, statusCadastro.name())
+          Parâmetros:
+            usuario       = UsuarioED do cidadão
+            mensagem      = texto do bundle correspondente ao status
+            contexto      = ContextoNotificacaoEnum.CADASTRO
+            enviarEmail   = true (APROVADO/REPROVADO) | false (CANCELADO)
+            statusNome    = "APROVADO" | "REPROVADO"
+
+        Se enviarEmail == true:
+          Envia e-mail via servidor de mensagens (SMTP PROCERGS):
+            Para: usuario.email
+            Assunto: "SOL/CBM-RS — Resultado do cadastro de Responsável Técnico"
+            Body: mensagem + justificativa (se REPROVADO)
+
+        Cria também notificação interna no sistema (tabela CBM_NOTIFICACAO):
+          visível no painel do cidadão quando ele acessar o sistema.
+
+        Estado final em CBM_USUARIO:
+          status = APROVADO(3)  ou  REPROVADO(4)
+          mensagemStatus = justificativa (nula se aprovado)
+      </documentation>
+      <incoming>SF_048</incoming>
+      <outgoing>SF_049</outgoing>
+    </serviceTask>
+
+    <endEvent id="EE_J2" name="Fim J2:&#10;Análise concluída&#10;(APROVADO ou REPROVADO)">
+      <documentation>
+        Estado final da Jornada J2:
+          CBM_USUARIO.status = APROVADO(3) ou REPROVADO(4)
+          CBM_ANALISE_CADASTRO.status = APROVADO(3) ou REPROVADO(4)
+          Cidadão notificado por e-mail e notificação interna.
+        Se APROVADO: RT pode acessar o módulo de Responsável Técnico e
+          iniciar processo P03 (Wizard de Solicitação de Licenciamento).
+          Condição: isUsuarioRtValido() → status==APROVADO &amp;&amp; !graduacoes.isEmpty() (RN-P02-14)
+        Se REPROVADO: cidadão pode corrigir dados e resubmeter (volta para J1).
+      </documentation>
+      <incoming>SF_049</incoming>
+    </endEvent>
+
+    <!-- ============================================================ -->
+    <!-- SEQUENCE FLOWS — J1                                          -->
+    <!-- ============================================================ -->
+    <sequenceFlow id="SF_001" sourceRef="SE_J1" targetRef="T_RT_001"/>
+    <sequenceFlow id="SF_002" sourceRef="T_RT_001" targetRef="T_IDP_001"/>
+    <sequenceFlow id="SF_003" sourceRef="T_IDP_001" targetRef="T_IDP_002"/>
+    <sequenceFlow id="SF_004" sourceRef="T_IDP_002" targetRef="T_RT_002"/>
+    <sequenceFlow id="SF_005" sourceRef="T_RT_002" targetRef="T_BE_002"/>
+    <sequenceFlow id="SF_006" sourceRef="T_BE_002" targetRef="GW_RT_001"/>
+    <sequenceFlow id="SF_007" name="Não&#10;(204 No Content)" sourceRef="GW_RT_001" targetRef="T_RT_003"/>
+    <sequenceFlow id="SF_008" name="Sim&#10;(200 OK + DTO)" sourceRef="GW_RT_001" targetRef="T_RT_004"/>
+    <sequenceFlow id="SF_009" sourceRef="T_RT_003" targetRef="GW_RT_002"/>
+    <sequenceFlow id="SF_010" sourceRef="T_RT_004" targetRef="GW_RT_002"/>
+    <sequenceFlow id="SF_011" sourceRef="GW_RT_002" targetRef="T_RT_005"/>
+    <sequenceFlow id="SF_012" sourceRef="T_RT_005" targetRef="T_BE_003"/>
+    <sequenceFlow id="SF_013" sourceRef="T_BE_003" targetRef="T_RT_006"/>
+    <sequenceFlow id="SF_014" sourceRef="T_RT_006" targetRef="T_BE_004"/>
+    <sequenceFlow id="SF_015" sourceRef="T_BE_004" targetRef="T_RT_007"/>
+    <sequenceFlow id="SF_016" sourceRef="T_RT_007" targetRef="T_BE_005"/>
+    <sequenceFlow id="SF_017" sourceRef="T_BE_005" targetRef="T_RT_008"/>
+    <sequenceFlow id="SF_018" sourceRef="T_RT_008" targetRef="T_BE_006"/>
+    <sequenceFlow id="SF_019" sourceRef="T_BE_006" targetRef="T_RT_009"/>
+    <sequenceFlow id="SF_020" sourceRef="T_RT_009" targetRef="T_BE_007"/>
+    <sequenceFlow id="SF_021" sourceRef="T_BE_007" targetRef="GW_RT_003"/>
+    <sequenceFlow id="SF_022" name="INCOMPLETO&#10;(docs faltando)" sourceRef="GW_RT_003" targetRef="T_RT_010"/>
+    <sequenceFlow id="SF_023" name="ANALISE_PENDENTE&#10;(docs completos)" sourceRef="GW_RT_003" targetRef="T_RT_011"/>
+    <sequenceFlow id="SF_024" name="Corrigir&#10;documentos" sourceRef="T_RT_010" targetRef="T_RT_006"/>
+    <sequenceFlow id="SF_025" sourceRef="T_RT_011" targetRef="EE_J1"/>
+
+    <!-- SEQUENCE FLOWS — J2 -->
+    <sequenceFlow id="SF_030" sourceRef="SE_J2" targetRef="T_AN_001"/>
+    <sequenceFlow id="SF_031" sourceRef="T_AN_001" targetRef="T_BE_008"/>
+    <sequenceFlow id="SF_032" sourceRef="T_BE_008" targetRef="T_AN_002"/>
+    <sequenceFlow id="SF_033" sourceRef="T_AN_002" targetRef="T_AN_003"/>
+    <sequenceFlow id="SF_034" sourceRef="T_AN_003" targetRef="T_BE_009"/>
+    <sequenceFlow id="SF_035" sourceRef="T_BE_009" targetRef="T_AN_004"/>
+    <sequenceFlow id="SF_036" sourceRef="T_AN_004" targetRef="GW_AN_001"/>
+    <sequenceFlow id="SF_037" name="APROVADO" sourceRef="GW_AN_001" targetRef="T_AN_005"/>
+    <sequenceFlow id="SF_038" name="REPROVADO" sourceRef="GW_AN_001" targetRef="T_AN_006"/>
+    <sequenceFlow id="SF_039" name="CANCELAR" sourceRef="GW_AN_001" targetRef="T_AN_007"/>
+    <sequenceFlow id="SF_040" sourceRef="T_AN_005" targetRef="GW_AN_002"/>
+    <sequenceFlow id="SF_041" sourceRef="T_AN_006" targetRef="GW_AN_002"/>
+    <sequenceFlow id="SF_042" sourceRef="T_AN_007" targetRef="GW_AN_002"/>
+    <sequenceFlow id="SF_043" sourceRef="GW_AN_002" targetRef="T_AN_008"/>
+    <sequenceFlow id="SF_044" sourceRef="T_AN_008" targetRef="T_BE_010"/>
+    <sequenceFlow id="SF_045" sourceRef="T_BE_010" targetRef="GW_AN_003"/>
+    <sequenceFlow id="SF_046" name="Sim&#10;(volta à fila)" sourceRef="GW_AN_003" targetRef="T_AN_001"/>
+    <sequenceFlow id="SF_047" name="Não&#10;(decisão final)" sourceRef="GW_AN_003" targetRef="T_AN_009"/>
+    <sequenceFlow id="SF_048" sourceRef="T_AN_009" targetRef="T_BE_011"/>
+    <sequenceFlow id="SF_049" sourceRef="T_BE_011" targetRef="EE_J2"/>
+
+  </process>
+
+  <!-- ============================================================ -->
+  <!-- BPMN DI — Diagrama                                           -->
+  <!-- Pool: 2850 × 1300                                            -->
+  <!-- Lane_RT  : y=0..380                                          -->
+  <!-- Lane_IDP : y=380..570                                        -->
+  <!-- Lane_BE  : y=570..900                                        -->
+  <!-- Lane_AN  : y=900..1300                                       -->
+  <!-- ============================================================ -->
+  <bpmndi:BPMNDiagram id="Diagram_P02">
+    <bpmndi:BPMNPlane id="Plane_P02" bpmnElement="Collab_P02">
+
+      <!-- Pool / Participant -->
+      <bpmndi:BPMNShape id="Shape_Participant_P02" bpmnElement="Participant_P02"
+        isHorizontal="true">
+        <dc:Bounds x="0" y="0" width="2850" height="1300"/>
+      </bpmndi:BPMNShape>
+
+      <!-- Lane_RT -->
+      <bpmndi:BPMNShape id="Shape_Lane_RT" bpmnElement="Lane_RT" isHorizontal="true">
+        <dc:Bounds x="30" y="0" width="2820" height="380"/>
+      </bpmndi:BPMNShape>
+
+      <!-- Lane_IDP -->
+      <bpmndi:BPMNShape id="Shape_Lane_IDP" bpmnElement="Lane_IDP" isHorizontal="true">
+        <dc:Bounds x="30" y="380" width="2820" height="190"/>
+      </bpmndi:BPMNShape>
+
+      <!-- Lane_BE -->
+      <bpmndi:BPMNShape id="Shape_Lane_BE" bpmnElement="Lane_BE" isHorizontal="true">
+        <dc:Bounds x="30" y="570" width="2820" height="330"/>
+      </bpmndi:BPMNShape>
+
+      <!-- Lane_AN -->
+      <bpmndi:BPMNShape id="Shape_Lane_AN" bpmnElement="Lane_AN" isHorizontal="true">
+        <dc:Bounds x="30" y="900" width="2820" height="400"/>
+      </bpmndi:BPMNShape>
+
+      <!-- ── J1 ELEMENTS (Lane_RT, Lane_IDP) ── -->
+
+      <!-- SE_J1 -->
+      <bpmndi:BPMNShape id="Shape_SE_J1" bpmnElement="SE_J1">
+        <dc:Bounds x="102" y="172" width="36" height="36"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="78" y="215" width="84" height="40"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- T_RT_001 -->
+      <bpmndi:BPMNShape id="Shape_T_RT_001" bpmnElement="T_RT_001">
+        <dc:Bounds x="190" y="150" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- T_IDP_001 (Lane_IDP) -->
+      <bpmndi:BPMNShape id="Shape_T_IDP_001" bpmnElement="T_IDP_001">
+        <dc:Bounds x="280" y="435" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- T_IDP_002 (Lane_IDP) -->
+      <bpmndi:BPMNShape id="Shape_T_IDP_002" bpmnElement="T_IDP_002">
+        <dc:Bounds x="470" y="435" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- T_RT_002 -->
+      <bpmndi:BPMNShape id="Shape_T_RT_002" bpmnElement="T_RT_002">
+        <dc:Bounds x="630" y="150" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- T_BE_002 (Lane_BE — J1) -->
+      <bpmndi:BPMNShape id="Shape_T_BE_002" bpmnElement="T_BE_002">
+        <dc:Bounds x="640" y="635" width="160" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- GW_RT_001 -->
+      <bpmndi:BPMNShape id="Shape_GW_RT_001" bpmnElement="GW_RT_001" isMarkerVisible="true">
+        <dc:Bounds x="845" y="165" width="50" height="50"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="832" y="222" width="76" height="27"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- T_RT_003 (branch Não — acima) -->
+      <bpmndi:BPMNShape id="Shape_T_RT_003" bpmnElement="T_RT_003">
+        <dc:Bounds x="955" y="60" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- T_RT_004 (branch Sim — abaixo) -->
+      <bpmndi:BPMNShape id="Shape_T_RT_004" bpmnElement="T_RT_004">
+        <dc:Bounds x="955" y="245" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- GW_RT_002 (merge) -->
+      <bpmndi:BPMNShape id="Shape_GW_RT_002" bpmnElement="GW_RT_002" isMarkerVisible="true">
+        <dc:Bounds x="1160" y="165" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+
+      <!-- T_RT_005 -->
+      <bpmndi:BPMNShape id="Shape_T_RT_005" bpmnElement="T_RT_005">
+        <dc:Bounds x="1270" y="150" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- T_BE_003 (Lane_BE — J1) -->
+      <bpmndi:BPMNShape id="Shape_T_BE_003" bpmnElement="T_BE_003">
+        <dc:Bounds x="1270" y="635" width="160" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- T_RT_006 -->
+      <bpmndi:BPMNShape id="Shape_T_RT_006" bpmnElement="T_RT_006">
+        <dc:Bounds x="1490" y="150" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- T_BE_004 (Lane_BE — J1) -->
+      <bpmndi:BPMNShape id="Shape_T_BE_004" bpmnElement="T_BE_004">
+        <dc:Bounds x="1490" y="635" width="160" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- T_RT_007 -->
+      <bpmndi:BPMNShape id="Shape_T_RT_007" bpmnElement="T_RT_007">
+        <dc:Bounds x="1710" y="150" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- T_BE_005 (Lane_BE — J1) -->
+      <bpmndi:BPMNShape id="Shape_T_BE_005" bpmnElement="T_BE_005">
+        <dc:Bounds x="1710" y="635" width="160" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- T_RT_008 -->
+      <bpmndi:BPMNShape id="Shape_T_RT_008" bpmnElement="T_RT_008">
+        <dc:Bounds x="1930" y="150" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- T_BE_006 (Lane_BE — J1) -->
+      <bpmndi:BPMNShape id="Shape_T_BE_006" bpmnElement="T_BE_006">
+        <dc:Bounds x="1930" y="635" width="160" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- T_RT_009 -->
+      <bpmndi:BPMNShape id="Shape_T_RT_009" bpmnElement="T_RT_009">
+        <dc:Bounds x="2150" y="150" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- T_BE_007 (Lane_BE — J1) -->
+      <bpmndi:BPMNShape id="Shape_T_BE_007" bpmnElement="T_BE_007">
+        <dc:Bounds x="2150" y="635" width="160" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- GW_RT_003 -->
+      <bpmndi:BPMNShape id="Shape_GW_RT_003" bpmnElement="GW_RT_003" isMarkerVisible="true">
+        <dc:Bounds x="2370" y="165" width="50" height="50"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="2355" y="222" width="80" height="27"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- T_RT_010 (INCOMPLETO — acima) -->
+      <bpmndi:BPMNShape id="Shape_T_RT_010" bpmnElement="T_RT_010">
+        <dc:Bounds x="2480" y="55" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- T_RT_011 (ANALISE_PENDENTE — abaixo) -->
+      <bpmndi:BPMNShape id="Shape_T_RT_011" bpmnElement="T_RT_011">
+        <dc:Bounds x="2480" y="255" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- EE_J1 -->
+      <bpmndi:BPMNShape id="Shape_EE_J1" bpmnElement="EE_J1">
+        <dc:Bounds x="2672" y="172" width="36" height="36"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="2648" y="215" width="84" height="40"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- ── J2 ELEMENTS (Lane_AN, Lane_BE lower) ── -->
+
+      <!-- SE_J2 -->
+      <bpmndi:BPMNShape id="Shape_SE_J2" bpmnElement="SE_J2">
+        <dc:Bounds x="102" y="1082" width="36" height="36"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="78" y="1125" width="84" height="40"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- T_AN_001 -->
+      <bpmndi:BPMNShape id="Shape_T_AN_001" bpmnElement="T_AN_001">
+        <dc:Bounds x="190" y="1060" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- T_BE_008 (Lane_BE — J2, lower) -->
+      <bpmndi:BPMNShape id="Shape_T_BE_008" bpmnElement="T_BE_008">
+        <dc:Bounds x="190" y="790" width="160" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- T_AN_002 -->
+      <bpmndi:BPMNShape id="Shape_T_AN_002" bpmnElement="T_AN_002">
+        <dc:Bounds x="410" y="1060" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- T_AN_003 -->
+      <bpmndi:BPMNShape id="Shape_T_AN_003" bpmnElement="T_AN_003">
+        <dc:Bounds x="620" y="1060" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- T_BE_009 (Lane_BE — J2) -->
+      <bpmndi:BPMNShape id="Shape_T_BE_009" bpmnElement="T_BE_009">
+        <dc:Bounds x="630" y="790" width="160" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- T_AN_004 -->
+      <bpmndi:BPMNShape id="Shape_T_AN_004" bpmnElement="T_AN_004">
+        <dc:Bounds x="850" y="1060" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- GW_AN_001 -->
+      <bpmndi:BPMNShape id="Shape_GW_AN_001" bpmnElement="GW_AN_001" isMarkerVisible="true">
+        <dc:Bounds x="1055" y="1075" width="50" height="50"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="1038" y="1132" width="84" height="27"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- T_AN_005 (APROVADO — acima) -->
+      <bpmndi:BPMNShape id="Shape_T_AN_005" bpmnElement="T_AN_005">
+        <dc:Bounds x="1165" y="955" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- T_AN_006 (REPROVADO — centro) -->
+      <bpmndi:BPMNShape id="Shape_T_AN_006" bpmnElement="T_AN_006">
+        <dc:Bounds x="1165" y="1060" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- T_AN_007 (CANCELAR — abaixo) -->
+      <bpmndi:BPMNShape id="Shape_T_AN_007" bpmnElement="T_AN_007">
+        <dc:Bounds x="1165" y="1175" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- GW_AN_002 (merge) -->
+      <bpmndi:BPMNShape id="Shape_GW_AN_002" bpmnElement="GW_AN_002" isMarkerVisible="true">
+        <dc:Bounds x="1380" y="1075" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+
+      <!-- T_AN_008 -->
+      <bpmndi:BPMNShape id="Shape_T_AN_008" bpmnElement="T_AN_008">
+        <dc:Bounds x="1490" y="1060" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- T_BE_010 (Lane_BE — J2) -->
+      <bpmndi:BPMNShape id="Shape_T_BE_010" bpmnElement="T_BE_010">
+        <dc:Bounds x="1490" y="790" width="160" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- GW_AN_003 -->
+      <bpmndi:BPMNShape id="Shape_GW_AN_003" bpmnElement="GW_AN_003" isMarkerVisible="true">
+        <dc:Bounds x="1710" y="1075" width="50" height="50"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="1693" y="1132" width="84" height="27"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- T_AN_009 -->
+      <bpmndi:BPMNShape id="Shape_T_AN_009" bpmnElement="T_AN_009">
+        <dc:Bounds x="1820" y="1060" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- T_BE_011 (Lane_BE — J2) -->
+      <bpmndi:BPMNShape id="Shape_T_BE_011" bpmnElement="T_BE_011">
+        <dc:Bounds x="1820" y="790" width="160" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- EE_J2 -->
+      <bpmndi:BPMNShape id="Shape_EE_J2" bpmnElement="EE_J2">
+        <dc:Bounds x="2032" y="1082" width="36" height="36"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="2008" y="1125" width="84" height="40"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- ── SEQUENCE FLOW EDGES — J1 ── -->
+
+      <!-- SF_001: SE_J1 → T_RT_001 -->
+      <bpmndi:BPMNEdge id="Edge_SF_001" bpmnElement="SF_001">
+        <di:waypoint x="138" y="190"/>
+        <di:waypoint x="190" y="190"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_002: T_RT_001 → T_IDP_001 (RT → IDP, down) -->
+      <bpmndi:BPMNEdge id="Edge_SF_002" bpmnElement="SF_002">
+        <di:waypoint x="260" y="230"/>
+        <di:waypoint x="260" y="380"/>
+        <di:waypoint x="350" y="380"/>
+        <di:waypoint x="350" y="435"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_003: T_IDP_001 → T_IDP_002 (same lane) -->
+      <bpmndi:BPMNEdge id="Edge_SF_003" bpmnElement="SF_003">
+        <di:waypoint x="420" y="475"/>
+        <di:waypoint x="470" y="475"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_004: T_IDP_002 → T_RT_002 (IDP → RT, up) -->
+      <bpmndi:BPMNEdge id="Edge_SF_004" bpmnElement="SF_004">
+        <di:waypoint x="610" y="475"/>
+        <di:waypoint x="700" y="475"/>
+        <di:waypoint x="700" y="230"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_005: T_RT_002 → T_BE_002 (RT → BE, down) -->
+      <bpmndi:BPMNEdge id="Edge_SF_005" bpmnElement="SF_005">
+        <di:waypoint x="700" y="230"/>
+        <di:waypoint x="700" y="570"/>
+        <di:waypoint x="720" y="570"/>
+        <di:waypoint x="720" y="635"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_006: T_BE_002 → GW_RT_001 (BE → RT, up) -->
+      <bpmndi:BPMNEdge id="Edge_SF_006" bpmnElement="SF_006">
+        <di:waypoint x="800" y="675"/>
+        <di:waypoint x="870" y="675"/>
+        <di:waypoint x="870" y="215"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_007: GW_RT_001 → T_RT_003 (Não, up) -->
+      <bpmndi:BPMNEdge id="Edge_SF_007" bpmnElement="SF_007">
+        <di:waypoint x="870" y="165"/>
+        <di:waypoint x="870" y="100"/>
+        <di:waypoint x="955" y="100"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="876" y="125" width="72" height="27"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_008: GW_RT_001 → T_RT_004 (Sim, down) -->
+      <bpmndi:BPMNEdge id="Edge_SF_008" bpmnElement="SF_008">
+        <di:waypoint x="870" y="215"/>
+        <di:waypoint x="870" y="285"/>
+        <di:waypoint x="955" y="285"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="876" y="260" width="72" height="27"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_009: T_RT_003 → GW_RT_002 -->
+      <bpmndi:BPMNEdge id="Edge_SF_009" bpmnElement="SF_009">
+        <di:waypoint x="1095" y="100"/>
+        <di:waypoint x="1185" y="100"/>
+        <di:waypoint x="1185" y="165"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_010: T_RT_004 → GW_RT_002 -->
+      <bpmndi:BPMNEdge id="Edge_SF_010" bpmnElement="SF_010">
+        <di:waypoint x="1095" y="285"/>
+        <di:waypoint x="1185" y="285"/>
+        <di:waypoint x="1185" y="215"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_011: GW_RT_002 → T_RT_005 -->
+      <bpmndi:BPMNEdge id="Edge_SF_011" bpmnElement="SF_011">
+        <di:waypoint x="1210" y="190"/>
+        <di:waypoint x="1270" y="190"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_012: T_RT_005 → T_BE_003 (RT → BE) -->
+      <bpmndi:BPMNEdge id="Edge_SF_012" bpmnElement="SF_012">
+        <di:waypoint x="1340" y="230"/>
+        <di:waypoint x="1340" y="570"/>
+        <di:waypoint x="1350" y="570"/>
+        <di:waypoint x="1350" y="635"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_013: T_BE_003 → T_RT_006 (BE → RT) -->
+      <bpmndi:BPMNEdge id="Edge_SF_013" bpmnElement="SF_013">
+        <di:waypoint x="1430" y="675"/>
+        <di:waypoint x="1560" y="675"/>
+        <di:waypoint x="1560" y="230"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_014: T_RT_006 → T_BE_004 (RT → BE) -->
+      <bpmndi:BPMNEdge id="Edge_SF_014" bpmnElement="SF_014">
+        <di:waypoint x="1560" y="230"/>
+        <di:waypoint x="1560" y="570"/>
+        <di:waypoint x="1570" y="570"/>
+        <di:waypoint x="1570" y="635"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_015: T_BE_004 → T_RT_007 (BE → RT) -->
+      <bpmndi:BPMNEdge id="Edge_SF_015" bpmnElement="SF_015">
+        <di:waypoint x="1650" y="675"/>
+        <di:waypoint x="1780" y="675"/>
+        <di:waypoint x="1780" y="230"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_016: T_RT_007 → T_BE_005 (RT → BE) -->
+      <bpmndi:BPMNEdge id="Edge_SF_016" bpmnElement="SF_016">
+        <di:waypoint x="1780" y="230"/>
+        <di:waypoint x="1780" y="570"/>
+        <di:waypoint x="1790" y="570"/>
+        <di:waypoint x="1790" y="635"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_017: T_BE_005 → T_RT_008 (BE → RT) -->
+      <bpmndi:BPMNEdge id="Edge_SF_017" bpmnElement="SF_017">
+        <di:waypoint x="1870" y="675"/>
+        <di:waypoint x="2000" y="675"/>
+        <di:waypoint x="2000" y="230"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_018: T_RT_008 → T_BE_006 (RT → BE) -->
+      <bpmndi:BPMNEdge id="Edge_SF_018" bpmnElement="SF_018">
+        <di:waypoint x="2000" y="230"/>
+        <di:waypoint x="2000" y="570"/>
+        <di:waypoint x="2010" y="570"/>
+        <di:waypoint x="2010" y="635"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_019: T_BE_006 → T_RT_009 (BE → RT) -->
+      <bpmndi:BPMNEdge id="Edge_SF_019" bpmnElement="SF_019">
+        <di:waypoint x="2090" y="675"/>
+        <di:waypoint x="2220" y="675"/>
+        <di:waypoint x="2220" y="230"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_020: T_RT_009 → T_BE_007 (RT → BE) -->
+      <bpmndi:BPMNEdge id="Edge_SF_020" bpmnElement="SF_020">
+        <di:waypoint x="2220" y="230"/>
+        <di:waypoint x="2220" y="570"/>
+        <di:waypoint x="2230" y="570"/>
+        <di:waypoint x="2230" y="635"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_021: T_BE_007 → GW_RT_003 (BE → RT) -->
+      <bpmndi:BPMNEdge id="Edge_SF_021" bpmnElement="SF_021">
+        <di:waypoint x="2310" y="675"/>
+        <di:waypoint x="2395" y="675"/>
+        <di:waypoint x="2395" y="215"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_022: GW_RT_003 → T_RT_010 (INCOMPLETO, up) -->
+      <bpmndi:BPMNEdge id="Edge_SF_022" bpmnElement="SF_022">
+        <di:waypoint x="2395" y="165"/>
+        <di:waypoint x="2395" y="95"/>
+        <di:waypoint x="2480" y="95"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="2405" y="118" width="80" height="40"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_023: GW_RT_003 → T_RT_011 (ANALISE_PENDENTE, down) -->
+      <bpmndi:BPMNEdge id="Edge_SF_023" bpmnElement="SF_023">
+        <di:waypoint x="2395" y="215"/>
+        <di:waypoint x="2395" y="295"/>
+        <di:waypoint x="2480" y="295"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="2405" y="270" width="80" height="40"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_024: T_RT_010 → T_RT_006 (loop-back — acima pelo topo) -->
+      <bpmndi:BPMNEdge id="Edge_SF_024" bpmnElement="SF_024">
+        <di:waypoint x="2550" y="55"/>
+        <di:waypoint x="2550" y="20"/>
+        <di:waypoint x="1560" y="20"/>
+        <di:waypoint x="1560" y="150"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="2010" y="4" width="84" height="27"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_025: T_RT_011 → EE_J1 -->
+      <bpmndi:BPMNEdge id="Edge_SF_025" bpmnElement="SF_025">
+        <di:waypoint x="2620" y="295"/>
+        <di:waypoint x="2690" y="295"/>
+        <di:waypoint x="2690" y="208"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- ── SEQUENCE FLOW EDGES — J2 ── -->
+
+      <!-- SF_030: SE_J2 → T_AN_001 -->
+      <bpmndi:BPMNEdge id="Edge_SF_030" bpmnElement="SF_030">
+        <di:waypoint x="138" y="1100"/>
+        <di:waypoint x="190" y="1100"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_031: T_AN_001 → T_BE_008 (AN → BE, up) -->
+      <bpmndi:BPMNEdge id="Edge_SF_031" bpmnElement="SF_031">
+        <di:waypoint x="260" y="1060"/>
+        <di:waypoint x="260" y="900"/>
+        <di:waypoint x="270" y="900"/>
+        <di:waypoint x="270" y="870"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_032: T_BE_008 → T_AN_002 (BE → AN, down) -->
+      <bpmndi:BPMNEdge id="Edge_SF_032" bpmnElement="SF_032">
+        <di:waypoint x="350" y="830"/>
+        <di:waypoint x="480" y="830"/>
+        <di:waypoint x="480" y="1060"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_033: T_AN_002 → T_AN_003 -->
+      <bpmndi:BPMNEdge id="Edge_SF_033" bpmnElement="SF_033">
+        <di:waypoint x="550" y="1100"/>
+        <di:waypoint x="620" y="1100"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_034: T_AN_003 → T_BE_009 (AN → BE, up) -->
+      <bpmndi:BPMNEdge id="Edge_SF_034" bpmnElement="SF_034">
+        <di:waypoint x="690" y="1060"/>
+        <di:waypoint x="690" y="900"/>
+        <di:waypoint x="710" y="900"/>
+        <di:waypoint x="710" y="870"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_035: T_BE_009 → T_AN_004 (BE → AN, down) -->
+      <bpmndi:BPMNEdge id="Edge_SF_035" bpmnElement="SF_035">
+        <di:waypoint x="790" y="830"/>
+        <di:waypoint x="920" y="830"/>
+        <di:waypoint x="920" y="1060"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_036: T_AN_004 → GW_AN_001 -->
+      <bpmndi:BPMNEdge id="Edge_SF_036" bpmnElement="SF_036">
+        <di:waypoint x="990" y="1100"/>
+        <di:waypoint x="1055" y="1100"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_037: GW_AN_001 → T_AN_005 (APROVADO, up) -->
+      <bpmndi:BPMNEdge id="Edge_SF_037" bpmnElement="SF_037">
+        <di:waypoint x="1080" y="1075"/>
+        <di:waypoint x="1080" y="995"/>
+        <di:waypoint x="1165" y="995"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="1086" y="1022" width="60" height="14"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_038: GW_AN_001 → T_AN_006 (REPROVADO, right) -->
+      <bpmndi:BPMNEdge id="Edge_SF_038" bpmnElement="SF_038">
+        <di:waypoint x="1105" y="1100"/>
+        <di:waypoint x="1165" y="1100"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="1116" y="1082" width="60" height="14"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_039: GW_AN_001 → T_AN_007 (CANCELAR, down) -->
+      <bpmndi:BPMNEdge id="Edge_SF_039" bpmnElement="SF_039">
+        <di:waypoint x="1080" y="1125"/>
+        <di:waypoint x="1080" y="1215"/>
+        <di:waypoint x="1165" y="1215"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="1086" y="1188" width="60" height="14"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_040: T_AN_005 → GW_AN_002 -->
+      <bpmndi:BPMNEdge id="Edge_SF_040" bpmnElement="SF_040">
+        <di:waypoint x="1305" y="995"/>
+        <di:waypoint x="1405" y="995"/>
+        <di:waypoint x="1405" y="1075"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_041: T_AN_006 → GW_AN_002 -->
+      <bpmndi:BPMNEdge id="Edge_SF_041" bpmnElement="SF_041">
+        <di:waypoint x="1305" y="1100"/>
+        <di:waypoint x="1380" y="1100"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_042: T_AN_007 → GW_AN_002 -->
+      <bpmndi:BPMNEdge id="Edge_SF_042" bpmnElement="SF_042">
+        <di:waypoint x="1305" y="1215"/>
+        <di:waypoint x="1405" y="1215"/>
+        <di:waypoint x="1405" y="1125"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_043: GW_AN_002 → T_AN_008 -->
+      <bpmndi:BPMNEdge id="Edge_SF_043" bpmnElement="SF_043">
+        <di:waypoint x="1430" y="1100"/>
+        <di:waypoint x="1490" y="1100"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_044: T_AN_008 → T_BE_010 (AN → BE, up) -->
+      <bpmndi:BPMNEdge id="Edge_SF_044" bpmnElement="SF_044">
+        <di:waypoint x="1560" y="1060"/>
+        <di:waypoint x="1560" y="900"/>
+        <di:waypoint x="1570" y="900"/>
+        <di:waypoint x="1570" y="870"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_045: T_BE_010 → GW_AN_003 (BE → AN, down) -->
+      <bpmndi:BPMNEdge id="Edge_SF_045" bpmnElement="SF_045">
+        <di:waypoint x="1650" y="830"/>
+        <di:waypoint x="1735" y="830"/>
+        <di:waypoint x="1735" y="1075"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_046: GW_AN_003 → T_AN_001 (loop-back — acima pelo topo da lane AN) -->
+      <bpmndi:BPMNEdge id="Edge_SF_046" bpmnElement="SF_046">
+        <di:waypoint x="1735" y="1075"/>
+        <di:waypoint x="1735" y="912"/>
+        <di:waypoint x="260" y="912"/>
+        <di:waypoint x="260" y="1060"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="958" y="895" width="56" height="27"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_047: GW_AN_003 → T_AN_009 -->
+      <bpmndi:BPMNEdge id="Edge_SF_047" bpmnElement="SF_047">
+        <di:waypoint x="1760" y="1100"/>
+        <di:waypoint x="1820" y="1100"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="1770" y="1082" width="40" height="27"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_048: T_AN_009 → T_BE_011 (AN → BE, up) -->
+      <bpmndi:BPMNEdge id="Edge_SF_048" bpmnElement="SF_048">
+        <di:waypoint x="1890" y="1060"/>
+        <di:waypoint x="1890" y="900"/>
+        <di:waypoint x="1900" y="900"/>
+        <di:waypoint x="1900" y="870"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_049: T_BE_011 → EE_J2 (BE → AN, down) -->
+      <bpmndi:BPMNEdge id="Edge_SF_049" bpmnElement="SF_049">
+        <di:waypoint x="1980" y="830"/>
+        <di:waypoint x="2050" y="830"/>
+        <di:waypoint x="2050" y="1082"/>
+      </bpmndi:BPMNEdge>
+
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</definitions>

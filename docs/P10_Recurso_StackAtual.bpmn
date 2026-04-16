@@ -1,0 +1,853 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions
+  xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+  xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+  id="Definitions_P10"
+  targetNamespace="http://bpmn.io/schema/bpmn"
+  exporter="Camunda Modeler"
+  exporterVersion="5.x">
+
+  <bpmn:message id="Msg_RecusaAceite"       name="RecusaAceiteRecurso"/>
+  <bpmn:message id="Msg_CancelamentoRecurso" name="CancelamentoRecurso"/>
+
+  <bpmn:error id="Error_RecursoBloqueado" name="RecursoBloqueado"      errorCode="RECURSO_BLOQUEADO"/>
+  <bpmn:error id="Error_ErroValidacao"    name="ErroValidacaoRecurso"  errorCode="ERRO_VALIDACAO_RECURSO"/>
+
+  <bpmn:collaboration id="Collaboration_P10">
+    <bpmn:participant id="Pool_P10"
+      name="P10 — Recurso Administrativo CIA/CIV (Stack Atual Java EE)"
+      processRef="Process_P10"/>
+  </bpmn:collaboration>
+
+  <bpmn:process id="Process_P10" name="P10 Recurso Administrativo CIA/CIV" isExecutable="false">
+    <bpmn:documentation>
+Processo P10 — Recurso Administrativo CIA/CIV
+Stack: Java EE · JAX-RS · CDI · JPA/Hibernate · EJB @Stateless · SOE PROCERGS · Alfresco ECM · Oracle
+
+Entidade principal : RecursoED       (CBM_RECURSO          / seq CBM_ID_RECURSO_SEQ)
+Entidade analise   : AnaliseRecursoED (CBM_ANALISE_RECURSO  / seq CBM_ID_ANALISE_RECURSO_SEQ)
+Entidade marco     : RecursoMarcoED   (CBM_RECURSO_MARCO    / seq CBM_ID_RECURSO_MARCO_SEQ)
+Entidade arquivo   : RecursoArquivoED (CBM_RECURSO_ARQUIVO  / seq CBM_ID_RECURSO_ARQUIVO_SEQ)
+
+Enums:
+  SituacaoRecurso           : R=RASCUNHO, E=AGUARDANDO_APROVACAO_ENVOLVIDOS,
+                              D=AGUARDANDO_DISTRIBUICAO, A=EM_ANALISE,
+                              C=ANALISE_CONCLUIDA, CA=CANCELADO
+  TipoRecurso               : A=CORRECAO_DE_ANALISE (CIA), V=CORRECAO_DE_VISTORIA (CIV)
+  TipoSolicitacaoRecurso    : I=INTEGRAL, P=PARCIAL
+  StatusRecurso (resultado) : T=DEFERIDO_TOTAL, P=DEFERIDO_PARCIAL, I=INDEFERIDO
+  SituacaoAnaliseRecursoEnum: EM_ANALISE, AGUARDANDO_AVALIACAO_COLEGIADO, ANALISE_CONCLUIDA
+
+Constantes em RecursoRN:
+  PRAZO_SOLICITAR_1_INSTANCIA          = 30
+  PRAZO_SOLICITAR_RECURSO_2_INSTANCIA  = 15
+  RECURSO_1_INSTANCIA                  = 1
+
+IND_RECURSO_BLOQUEADO usa SimNaoBooleanConverter: 'S'=true / 'N'/NULL=false
+    </bpmn:documentation>
+
+    <bpmn:laneSet id="LaneSet_P10">
+      <bpmn:lane id="Lane_Solicitante" name="Solicitante (RT / RU / Proprietário)">
+        <bpmn:flowNodeRef>StartEvent_P10</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_AcessarRecurso</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_PreencherFormulario</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_EnviarRecurso</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_CoSignatarios" name="Co-Signatários (RTs / RU / Proprietários envolvidos)">
+        <bpmn:flowNodeRef>Task_CoSignatarioDecide</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>BoundaryEvent_Recusa</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>BoundaryEvent_Cancelamento</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_SistemaBackend" name="Sistema SOL Backend (Java EE / WildFly)">
+        <bpmn:flowNodeRef>Task_ConsultarLicenciamento</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>GW_PodeRecursar</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_RecursoBloqueado</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_ValidarDados</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>GW_ValidacaoOk</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_ErroValidacao</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_UploadDocumentos</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_CriarRecurso</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_FiltrarCoSignatarios</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_RegistrarEnvio</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>GW_TodosAceitaram</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_SistemaRegistraRecusa</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_Recusado</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_CancelarRecurso</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_Cancelado</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_RegistrarUnanimidade</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_AtualizarSituacaoLic</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_NotificarCBM</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>GW_StatusRecurso</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_ConcluirDeferimento</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_Deferido</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>GW_Instancia</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_ConcluirIndeferido1a</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_Indeferido1a</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_SistemaBloqueiaRecurso</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_ConcluirIndeferido2a</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_Indeferido2a</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_AnalistaCBM" name="Analista CBM-RS (módulo administrativo)">
+        <bpmn:flowNodeRef>Task_AnalistaDistribui</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_AnalistaRegistraDespacho</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_AnalistaConcluiAnalise</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+
+    <!-- FASE 1 -->
+    <bpmn:startEvent id="StartEvent_P10" name="Solicitante acessa módulo de Recurso Administrativo">
+      <bpmn:documentation>
+Contexto: licenciamento com CIA ou CIV emitida. Auth: token JWT SOE PROCERGS (idUsuarioSoe Long).
+Rota Angular: /licenciamentos/{idLic}/recursos/novo. Tipo None (acionado por acesso direto).
+      </bpmn:documentation>
+      <bpmn:outgoing>SF01</bpmn:outgoing>
+    </bpmn:startEvent>
+
+    <bpmn:userTask id="Task_AcessarRecurso"
+        name="Selecionar licenciamento e consultar CIA/CIV disponível para recurso"
+        camunda:assignee="${solicitante}" camunda:formKey="recursos/consultar">
+      <bpmn:documentation>
+Endpoint: GET /recursos?idLicenciamento={id} — RecursoRest.listar()
+Exibe: tipo CIA/CIV, data emissão, prazo restante, instância disponível (1ª/2ª), histórico.
+NRO_INT_ARQUIVO_CIA_CIV identifica a análise ou vistoria específica contestada.
+      </bpmn:documentation>
+      <bpmn:incoming>SF01</bpmn:incoming>
+      <bpmn:outgoing>SF02</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:serviceTask id="Task_ConsultarLicenciamento"
+        name="Verificar pré-condições: prazo / IND_RECURSO_BLOQUEADO / instância disponível"
+        camunda:class="br.com.cbm.sol.recurso.rn.RecursoRNVal">
+      <bpmn:documentation>
+RN-075: COUNT CBM_RECURSO WHERE NRO_INSTANCIA=1 AND TP_SITUACAO!='CA' → define instância disponível.
+RN-078: ChronoUnit.DAYS.between(dataCia, now()) &lt;= PRAZO_SOLICITAR_1_INSTANCIA (30).
+RN-079: ChronoUnit.DAYS.between(dataConclusao1a, now()) &lt;= PRAZO_SOLICITAR_RECURSO_2_INSTANCIA (15).
+RN-082: SELECT IND_RECURSO_BLOQUEADO FROM CBM_LICENCIAMENTO; SimNaoBooleanConverter 'S'=true
+        → WebApplicationRNException HTTP 406 NOT_ACCEPTABLE.
+      </bpmn:documentation>
+      <bpmn:incoming>SF02</bpmn:incoming>
+      <bpmn:outgoing>SF03</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:exclusiveGateway id="GW_PodeRecursar" name="Pode abrir recurso? (prazo / bloqueio / instância)">
+      <bpmn:incoming>SF03</bpmn:incoming>
+      <bpmn:outgoing>SF04_bloqueado</bpmn:outgoing>
+      <bpmn:outgoing>SF05_liberado</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:endEvent id="EndEvent_RecursoBloqueado" name="Recurso bloqueado — pré-condição não atendida">
+      <bpmn:documentation>HTTP 406. Causas: prazo expirado (RN-078/079) ou IND_RECURSO_BLOQUEADO='S' (RN-082).</bpmn:documentation>
+      <bpmn:incoming>SF04_bloqueado</bpmn:incoming>
+      <bpmn:errorEventDefinition id="ErrDef_Bloqueado" errorRef="Error_RecursoBloqueado"/>
+    </bpmn:endEvent>
+
+    <!-- FASE 2 -->
+    <bpmn:userTask id="Task_PreencherFormulario"
+        name="Preencher formulário de recurso: tipo, instância, fundamentação legal e documentos"
+        camunda:assignee="${solicitante}" camunda:formKey="recursos/novo">
+      <bpmn:documentation>
+Campos → Colunas CBM_RECURSO:
+  tipoRecurso        → TP_RECURSO VARCHAR2(1): 'A'=CORRECAO_DE_ANALISE / 'V'=CORRECAO_DE_VISTORIA
+  tipoSolicitacao    → TP_SOLICITACAO VARCHAR2(1): 'I'=INTEGRAL / 'P'=PARCIAL
+  fundamentacaoLegal → TXT_FUNDAMENTACAO_LEGAL CLOB (obrigatório RN-076)
+  ciaCivContestada   → NRO_INT_ARQUIVO_CIA_CIV NUMBER (FK CBM_ANALISE ou CBM_VISTORIA)
+  instancia          → NRO_INSTANCIA NUMBER(1) (calculado RN-075, exibido read-only)
+  documentos         → Upload multipart → Alfresco ECM (Fase 3)
+Endpoint: POST /recursos
+      </bpmn:documentation>
+      <bpmn:incoming>SF05_liberado</bpmn:incoming>
+      <bpmn:outgoing>SF06</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:serviceTask id="Task_ValidarDados"
+        name="Validar RN-073 a RN-082 (regras de negócio do formulário)"
+        camunda:class="br.com.cbm.sol.recurso.rn.RecursoRNVal">
+      <bpmn:documentation>
+RN-073: tipoSolicitacao IN {INTEGRAL,PARCIAL}
+RN-074: tipoRecurso IN {CORRECAO_DE_ANALISE,CORRECAO_DE_VISTORIA}
+RN-075: instância calculada correta; sem salto de instância
+RN-076: fundamentacaoLegal != null &amp;&amp; !trim().isEmpty()
+RN-077: NRO_INT_ARQUIVO_CIA_CIV existe e pertence ao licenciamento
+RN-078/079: revalida prazos (defesa em profundidade — condição de corrida)
+RN-080: idUsuarioSoe é envolvido do licenciamento (RT, RU ou Proprietário)
+RN-081: sem recurso ativo para mesma instância e licenciamento
+RN-082: IND_RECURSO_BLOQUEADO != 'S' (revalida)
+      </bpmn:documentation>
+      <bpmn:incoming>SF06</bpmn:incoming>
+      <bpmn:outgoing>SF07</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:exclusiveGateway id="GW_ValidacaoOk" name="Dados válidos? (RN-073 a RN-082)">
+      <bpmn:incoming>SF07</bpmn:incoming>
+      <bpmn:outgoing>SF08_invalido</bpmn:outgoing>
+      <bpmn:outgoing>SF09_valido</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:endEvent id="EndEvent_ErroValidacao" name="Erro de validação — dados inválidos">
+      <bpmn:documentation>HTTP 400/422. Nenhum dado gravado em CBM_RECURSO, CBM_ARQUIVO ou CBM_RECURSO_ARQUIVO.</bpmn:documentation>
+      <bpmn:incoming>SF08_invalido</bpmn:incoming>
+      <bpmn:errorEventDefinition id="ErrDef_Validacao" errorRef="Error_ErroValidacao"/>
+    </bpmn:endEvent>
+
+    <!-- FASE 3 -->
+    <bpmn:serviceTask id="Task_UploadDocumentos"
+        name="Enviar documentos comprobatórios ao Alfresco ECM"
+        camunda:class="br.com.cbm.sol.arquivo.rn.ArquivoRN">
+      <bpmn:documentation>
+ArquivoRN.incluir(multipartFile). Retorno: nodeRef workspace://SpacesStore/{UUID}.
+Persistência em CBM_ARQUIVO: NRO_INT_ARQUIVO=CBM_ID_ARQUIVO_SEQ.NEXTVAL,
+IDENTIFICADOR_ALFRESCO VARCHAR2(150)=nodeRef (NOT NULL).
+Precede criação do RecursoED para evitar registros órfãos no Oracle.
+Se sem arquivos: no-op.
+      </bpmn:documentation>
+      <bpmn:incoming>SF09_valido</bpmn:incoming>
+      <bpmn:outgoing>SF10</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:serviceTask id="Task_CriarRecurso"
+        name="Persistir RecursoED em CBM_RECURSO com situação RASCUNHO"
+        camunda:class="br.com.cbm.sol.recurso.rn.RecursoRN">
+      <bpmn:documentation>
+RecursoRN.incluir(recursoDTO, idUsuarioSoe). Sequence: CBM_ID_RECURSO_SEQ.
+Colunas: NRO_INT_RECURSO, NRO_INT_LICENCIAMENTO, NRO_INSTANCIA (RN-075),
+TP_SITUACAO='R' (RASCUNHO), TP_RECURSO('A'/'V'), TP_SOLICITACAO('I'/'P'),
+TXT_FUNDAMENTACAO_LEGAL CLOB, NRO_INT_ARQUIVO_CIA_CIV, NRO_INT_USUARIO_SOE, CTR_DTH_INC.
+Também cria CBM_RECURSO_ARQUIVO (seq CBM_ID_RECURSO_ARQUIVO_SEQ) para cada arquivo Alfresco.
+      </bpmn:documentation>
+      <bpmn:incoming>SF10</bpmn:incoming>
+      <bpmn:outgoing>SF11</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:serviceTask id="Task_FiltrarCoSignatarios"
+        name="Filtrar co-signatários por TipoRecurso e criar registros de aceite (RN-083)"
+        camunda:class="br.com.cbm.sol.recurso.rn.RecursoRN">
+      <bpmn:documentation>
+RN-083: CIA(CORRECAO_DE_ANALISE) → RT PROJETO + RT PROJETO_EXECUCAO
+        CIV(CORRECAO_DE_VISTORIA)→ RT EXECUCAO + RT PROJETO_EXECUCAO
+Filter Java: stream().filter(r -> (EXECUCAO &amp;&amp; CIV) || (PROJETO &amp;&amp; CIA) || PROJETO_EXECUCAO).collect()
+Co-signatários adicionais: RU + todos os Proprietários do licenciamento.
+Cria registro de aceite IND_ACEITE=NULL para cada co-signatário (SimNaoBooleanConverter).
+      </bpmn:documentation>
+      <bpmn:incoming>SF11</bpmn:incoming>
+      <bpmn:outgoing>SF12</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- FASE 4 -->
+    <bpmn:userTask id="Task_EnviarRecurso"
+        name="Revisar resumo e confirmar envio do recurso para aceite dos co-signatários"
+        camunda:assignee="${solicitante}" camunda:formKey="recursos/enviar">
+      <bpmn:documentation>
+Tela de revisão: tipo, instância, fundamentação, documentos, lista de co-signatários.
+POST /recursos/{id}/enviar → RecursoRest.enviar() → RecursoRN.enviar(idRecurso, idUsuarioSoe)
+DELETE /recursos/{id}/cancelar (RN-085 — cancelamento em RASCUNHO)
+PUT /recursos/{id}/habilitar-edicao → RecursoRN.habilitarEdicao() retorna para RASCUNHO (RN-087)
+  + INSERT CBM_RECURSO_MARCO: TipoMarco.RECURSO_EDITADO
+      </bpmn:documentation>
+      <bpmn:incoming>SF12</bpmn:incoming>
+      <bpmn:outgoing>SF13</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:serviceTask id="Task_RegistrarEnvio"
+        name="Registrar envio: AGUARDANDO_APROVACAO_ENVOLVIDOS + marco ACEITE_RECURSO_ANALISE + notificar co-signatários"
+        camunda:class="br.com.cbm.sol.recurso.rn.RecursoRN">
+      <bpmn:documentation>
+RecursoRN.enviar(idRecurso, idUsuarioSoe) — transação JTA atômica.
+1. UPDATE CBM_RECURSO SET TP_SITUACAO='E' (AGUARDANDO_APROVACAO_ENVOLVIDOS).
+2. INSERT CBM_RECURSO_MARCO: COD_TP_MARCO=TipoMarco.ACEITE_RECURSO_ANALISE
+   (@Enumerated(ORDINAL)), COD_TP_VISIBILIDADE=INTERNO, DTH_MARCO=SYSDATE, NRO_INT_USUARIO_SOE.
+3. Email (RN-088) a todos co-signatários: 'Recurso {num} aguarda sua assinatura' + link.
+      </bpmn:documentation>
+      <bpmn:incoming>SF13</bpmn:incoming>
+      <bpmn:outgoing>SF14</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- FASE 5 -->
+    <bpmn:userTask id="Task_CoSignatarioDecide"
+        name="Co-signatário revisa recurso e decide: aceitar ou recusar"
+        camunda:assignee="${coSignatario}" camunda:formKey="recursos/aceite">
+      <bpmn:documentation>
+Duas entradas: SF14 (primeira chegada) e SF16_pendente (loop unanimidade).
+PUT /recursos/{id}/aceitar → RecursoRN.aceitar(): IND_ACEITE='S' (SimNaoBooleanConverter true→'S').
+PUT /recursos/{id}/recusar → aciona BoundaryEvent_Recusa (RN-086).
+DELETE /recursos/{id}/cancelar → aciona BoundaryEvent_Cancelamento (RN-085).
+      </bpmn:documentation>
+      <bpmn:incoming>SF14</bpmn:incoming>
+      <bpmn:incoming>SF16_pendente</bpmn:incoming>
+      <bpmn:outgoing>SF15</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:boundaryEvent id="BoundaryEvent_Recusa"
+        name="Co-signatário recusa aceite"
+        attachedToRef="Task_CoSignatarioDecide" cancelActivity="true">
+      <bpmn:documentation>
+Evento de mensagem interrompente (cancelActivity=true). messageRef: Msg_RecusaAceite.
+Acionado por PUT /recursos/{id}/recusar. Interrompe task e cancela aceites já dados.
+Direciona para Task_SistemaRegistraRecusa (RN-086).
+      </bpmn:documentation>
+      <bpmn:outgoing>SF32</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="MsgDef_Recusa" messageRef="Msg_RecusaAceite"/>
+    </bpmn:boundaryEvent>
+
+    <bpmn:boundaryEvent id="BoundaryEvent_Cancelamento"
+        name="Solicitante cancela recurso"
+        attachedToRef="Task_CoSignatarioDecide" cancelActivity="true">
+      <bpmn:documentation>
+Evento de mensagem interrompente (cancelActivity=true). messageRef: Msg_CancelamentoRecurso.
+Acionado por DELETE /recursos/{id}/cancelar. Condição (RN-085): AGUARDANDO_APROVACAO_ENVOLVIDOS ou RASCUNHO.
+Direciona para Task_CancelarRecurso.
+      </bpmn:documentation>
+      <bpmn:outgoing>SF34</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="MsgDef_Cancelamento" messageRef="Msg_CancelamentoRecurso"/>
+    </bpmn:boundaryEvent>
+
+    <bpmn:serviceTask id="Task_SistemaRegistraRecusa"
+        name="Registrar recusa: retornar para RASCUNHO + marco RECURSO_RECUSADO + notificar solicitante (RN-086)"
+        camunda:class="br.com.cbm.sol.recurso.rn.RecursoRN">
+      <bpmn:documentation>
+RecursoRN.recusar() → efetuarRecusas():
+1. UPDATE CBM_RECURSO SET TP_SITUACAO='R' (RASCUNHO — não CANCELADO).
+   RN-086: recusa de co-signatário não é desistência do solicitante; pode editar e reenviar.
+2. Zera IND_ACEITE=NULL para TODOS co-signatários (reinicia ciclo).
+3. INSERT CBM_RECURSO_MARCO: TipoMarco.RECURSO_RECUSADO.
+4. Email (RN-088) ao solicitante informando quem recusou.
+      </bpmn:documentation>
+      <bpmn:incoming>SF32</bpmn:incoming>
+      <bpmn:outgoing>SF33</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:endEvent id="EndEvent_Recusado" name="Recurso retornado para RASCUNHO (co-signatário recusou)">
+      <bpmn:documentation>Não é encerramento definitivo. Solicitante pode editar e reenviar dentro do prazo.</bpmn:documentation>
+      <bpmn:incoming>SF33</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <bpmn:serviceTask id="Task_CancelarRecurso"
+        name="Cancelar recurso: CANCELADO + marcos RECURSO_CANCELADO e CANCELAMENTO_RECURSO_CIA|CIV (RN-085)"
+        camunda:class="br.com.cbm.sol.recurso.rn.RecursoRN">
+      <bpmn:documentation>
+RecursoRN.cancelarRecurso(idRecurso, idUsuarioSoe).
+Pré-condição RN-085: situacao IN {AGUARDANDO_APROVACAO_ENVOLVIDOS, RASCUNHO} senão HTTP 400.
+1. UPDATE CBM_RECURSO SET TP_SITUACAO='CA' (CANCELADO).
+2. INSERT CBM_RECURSO_MARCO: TipoMarco.RECURSO_CANCELADO.
+3. INSERT CBM_RECURSO_MARCO: TipoMarco.CANCELAMENTO_RECURSO_CIA ou CANCELAMENTO_RECURSO_CIV.
+4. Email (RN-088) a todos envolvidos. Cancelamento definitivo — sem reversão.
+      </bpmn:documentation>
+      <bpmn:incoming>SF34</bpmn:incoming>
+      <bpmn:outgoing>SF35</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:endEvent id="EndEvent_Cancelado" name="Recurso cancelado definitivamente pelo solicitante">
+      <bpmn:incoming>SF35</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <bpmn:exclusiveGateway id="GW_TodosAceitaram" name="Todos os co-signatários aceitaram? (RN-084 unanimidade)">
+      <bpmn:documentation>
+RN-084: SELECT COUNT(*) FROM tabela_aceites WHERE NRO_INT_RECURSO=?
+  AND (IND_ACEITE IS NULL OR IND_ACEITE='N')
+= 0 → unanimidade → SF17_unanimidade
+> 0 → pendentes   → SF16_pendente (loop-back para Task_CoSignatarioDecide)
+IND_ACEITE: SimNaoBooleanConverter (@Converter na entidade).
+      </bpmn:documentation>
+      <bpmn:incoming>SF15</bpmn:incoming>
+      <bpmn:outgoing>SF16_pendente</bpmn:outgoing>
+      <bpmn:outgoing>SF17_unanimidade</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <!-- FASE 6 -->
+    <bpmn:serviceTask id="Task_RegistrarUnanimidade"
+        name="Unanimidade: AGUARDANDO_DISTRIBUICAO + marcos FIM_ACEITES + ENVIO_RECURSO_ANALISE + criar CBM_ANALISE_RECURSO"
+        camunda:class="br.com.cbm.sol.recurso.rn.RecursoRN">
+      <bpmn:documentation>
+RecursoRN.enviarParaAnalise(idRecurso) — transação JTA atômica.
+1. UPDATE CBM_RECURSO SET TP_SITUACAO='D', DTH_ENVIO_ANALISE=SYSDATE.
+2. INSERT CBM_RECURSO_MARCO: TipoMarco.FIM_ACEITES_RECURSO_ANALISE.
+3. INSERT CBM_RECURSO_MARCO: TipoMarco.ENVIO_RECURSO_ANALISE.
+4. INSERT CBM_ANALISE_RECURSO (seq CBM_ID_ANALISE_RECURSO_SEQ):
+   TP_STATUS='EM_ANALISE' (@Enumerated(STRING)), IND_CIENCIA='N' (SimNaoBooleanConverter),
+   NRO_INT_USUARIO_SOE=NULL, CTR_DTH_INC=SYSDATE.
+   Criação antecipada evita condição de corrida em distribuição simultânea.
+      </bpmn:documentation>
+      <bpmn:incoming>SF17_unanimidade</bpmn:incoming>
+      <bpmn:outgoing>SF18</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:serviceTask id="Task_AtualizarSituacaoLic"
+        name="Atualizar SIT_LICENCIAMENTO para RECURSO_EM_ANALISE_{1|2}_{CIA|CIV} (RN-075)"
+        camunda:class="br.com.cbm.sol.recurso.rn.RecursoRN">
+      <bpmn:documentation>
+RecursoRN.retornaNovaSituacaoLicenciamento(recursoED):
+  CORRECAO_DE_ANALISE + instancia=1 → RECURSO_EM_ANALISE_1_CIA
+  CORRECAO_DE_ANALISE + instancia=2 → RECURSO_EM_ANALISE_2_CIA
+  CORRECAO_DE_VISTORIA + instancia=1 → RECURSO_EM_ANALISE_1_CIV
+  CORRECAO_DE_VISTORIA + instancia=2 → RECURSO_EM_ANALISE_2_CIV
+UPDATE CBM_LICENCIAMENTO SET SIT_LICENCIAMENTO=? WHERE NRO_INT_LICENCIAMENTO=?
+      </bpmn:documentation>
+      <bpmn:incoming>SF18</bpmn:incoming>
+      <bpmn:outgoing>SF19</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:serviceTask id="Task_NotificarCBM"
+        name="Notificar analistas CBM-RS: recurso disponível para distribuição (RN-088)"
+        camunda:class="br.com.cbm.sol.notificacao.rn.NotificacaoRN">
+      <bpmn:documentation>
+Email a analistas CBM habilitados: licenciamento, tipo CIA/CIV, instância, solicitante, data.
+Necessário porque o SOL não tem push para o módulo administrativo.
+      </bpmn:documentation>
+      <bpmn:incoming>SF19</bpmn:incoming>
+      <bpmn:outgoing>SF20</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- FASE 7 -->
+    <bpmn:userTask id="Task_AnalistaDistribui"
+        name="Analista CBM distribui recurso para si e registra início da análise"
+        camunda:assignee="${analistaCBM}" camunda:formKey="adm/recursos/distribuir">
+      <bpmn:documentation>
+GET /adm/recursos?situacao=AGUARDANDO_DISTRIBUICAO (ordenado por DTH_ENVIO_ANALISE).
+POST /adm/recursos/{id}/distribuir → RecursoAdmRest.distribuir():
+1. UPDATE CBM_RECURSO SET TP_SITUACAO='A' (EM_ANALISE).
+2. UPDATE CBM_ANALISE_RECURSO SET NRO_INT_USUARIO_SOE=:idAnalistaSoe, TP_STATUS='EM_ANALISE'.
+2ª instância: TP_STATUS pode transitar para AGUARDANDO_AVALIACAO_COLEGIADO.
+      </bpmn:documentation>
+      <bpmn:incoming>SF20</bpmn:incoming>
+      <bpmn:outgoing>SF21</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="Task_AnalistaRegistraDespacho"
+        name="Analista CBM registra despacho técnico e posição"
+        camunda:assignee="${analistaCBM}" camunda:formKey="adm/recurso-analise/despacho">
+      <bpmn:documentation>
+PUT /adm/recurso-analise/{id} → RecursoAnaliseAdmRest.atualizar():
+  TXT_DESPACHO CLOB, NRO_INT_ARQUIVO (FK laudo PDF), TP_STATUS (pode ser AGUARDANDO_AVALIACAO_COLEGIADO).
+Idempotente: salva rascunhos sem alterar estado do recurso principal.
+POST /adm/recurso-analise/{id}/ciencia → IND_CIENCIA='S', DTH_CIENCIA_ATEC=now(), NRO_INT_USUARIO_CIENCIA.
+      </bpmn:documentation>
+      <bpmn:incoming>SF21</bpmn:incoming>
+      <bpmn:outgoing>SF22</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="Task_AnalistaConcluiAnalise"
+        name="Analista CBM conclui análise: status final DEFERIDO_TOTAL / DEFERIDO_PARCIAL / INDEFERIDO"
+        camunda:assignee="${analistaCBM}" camunda:formKey="adm/recurso-analise/concluir">
+      <bpmn:documentation>
+PUT /adm/recurso-analise/{id}/concluir → RecursoAnaliseAdmRest.concluir():
+  CBM_ANALISE_RECURSO: TP_STATUS='ANALISE_CONCLUIDA', CTR_DTH_CONCLUSAO_ANALISE=now().
+  CBM_RECURSO: TP_SITUACAO='C' (ANALISE_CONCLUIDA), TP_STATUS (StatusRecurso):
+    'T'=DEFERIDO_TOTAL, 'P'=DEFERIDO_PARCIAL, 'I'=INDEFERIDO.
+      </bpmn:documentation>
+      <bpmn:incoming>SF22</bpmn:incoming>
+      <bpmn:outgoing>SF23</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <!-- FASE 8 -->
+    <bpmn:exclusiveGateway id="GW_StatusRecurso" name="Status da análise? (TP_STATUS em CBM_RECURSO)">
+      <bpmn:documentation>
+'T' ou 'P' (deferido) → SF24_deferido → Task_ConcluirDeferimento
+'I' (indeferido)       → SF25_indeferido → GW_Instancia
+      </bpmn:documentation>
+      <bpmn:incoming>SF23</bpmn:incoming>
+      <bpmn:outgoing>SF24_deferido</bpmn:outgoing>
+      <bpmn:outgoing>SF25_indeferido</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:serviceTask id="Task_ConcluirDeferimento"
+        name="Registrar marco EXTERNO e notificar todos: recurso deferido (RN-088)"
+        camunda:class="br.com.cbm.sol.recurso.rn.RecursoRN">
+      <bpmn:documentation>
+INSERT CBM_RECURSO_MARCO: COD_TP_VISIBILIDADE=TipoVisibilidade.EXTERNO (ordinal).
+Email RN-088: DEFERIDO_TOTAL='CIA/CIV será revisada integralmente' / DEFERIDO_PARCIAL='revisão parcial'.
+IND_RECURSO_BLOQUEADO permanece 'N'.
+      </bpmn:documentation>
+      <bpmn:incoming>SF24_deferido</bpmn:incoming>
+      <bpmn:outgoing>SF_EndDeferido</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:endEvent id="EndEvent_Deferido" name="Recurso deferido — CIA/CIV será revisada pelo CBMRS">
+      <bpmn:incoming>SF_EndDeferido</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <bpmn:exclusiveGateway id="GW_Instancia" name="Qual instância foi indeferida? (NRO_INSTANCIA)">
+      <bpmn:documentation>
+NRO_INSTANCIA=1 → 1ª instância → Task_ConcluirIndeferido1a. IND_RECURSO_BLOQUEADO='N'.
+NRO_INSTANCIA=2 → 2ª instância → Task_SistemaBloqueiaRecurso. IND_RECURSO_BLOQUEADO='S' (RN-089).
+      </bpmn:documentation>
+      <bpmn:incoming>SF25_indeferido</bpmn:incoming>
+      <bpmn:outgoing>SF26_1a</bpmn:outgoing>
+      <bpmn:outgoing>SF27_2a</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:serviceTask id="Task_ConcluirIndeferido1a"
+        name="Notificar indeferimento em 1ª instância: prazo 15 dias para 2ª instância (RN-079)"
+        camunda:class="br.com.cbm.sol.recurso.rn.RecursoRN">
+      <bpmn:documentation>
+Email RN-088: 'Recurso indeferido em 1ª instância. Prazo para 2ª instância: 15 dias a partir de [data conclusão].'
+IND_RECURSO_BLOQUEADO permanece 'N'. Solicitante pode iniciar P10 para 2ª instância.
+      </bpmn:documentation>
+      <bpmn:incoming>SF26_1a</bpmn:incoming>
+      <bpmn:outgoing>SF28</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:endEvent id="EndEvent_Indeferido1a" name="Recurso indeferido em 1ª instância — 2ª instância disponível (15 dias)">
+      <bpmn:incoming>SF28</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <bpmn:serviceTask id="Task_SistemaBloqueiaRecurso"
+        name="Bloquear novos recursos: IND_RECURSO_BLOQUEADO='S' em CBM_LICENCIAMENTO (RN-089)"
+        camunda:class="br.com.cbm.sol.recurso.rn.RecursoRN">
+      <bpmn:documentation>
+RN-089: UPDATE CBM_LICENCIAMENTO SET IND_RECURSO_BLOQUEADO='S' WHERE NRO_INT_LICENCIAMENTO=?
+Efeito PERMANENTE E IRREVERSÍVEL. SimNaoBooleanConverter: 'S'=true.
+Separada de Task_ConcluirIndeferido2a por integridade transacional.
+RN-082 bloqueará toda futura tentativa de recurso.
+      </bpmn:documentation>
+      <bpmn:incoming>SF27_2a</bpmn:incoming>
+      <bpmn:outgoing>SF30</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:serviceTask id="Task_ConcluirIndeferido2a"
+        name="Notificar indeferimento definitivo em 2ª instância e atualizar SIT_LICENCIAMENTO"
+        camunda:class="br.com.cbm.sol.recurso.rn.RecursoRN">
+      <bpmn:documentation>
+Email RN-088: 'Recurso indeferido em 2ª e última instância. CIA/CIV definitiva. Sem novo recurso possível.'
+SIT_LICENCIAMENTO retorna para CIA/CIV emitida. IND_RECURSO_BLOQUEADO já 'S'.
+INSERT CBM_RECURSO_MARCO: COD_TP_VISIBILIDADE=TipoVisibilidade.EXTERNO.
+      </bpmn:documentation>
+      <bpmn:incoming>SF30</bpmn:incoming>
+      <bpmn:outgoing>SF31</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:endEvent id="EndEvent_Indeferido2a" name="Recurso indeferido em 2ª instância — processo encerrado definitivamente">
+      <bpmn:documentation>IND_RECURSO_BLOQUEADO='S' permanente. RN-082 bloqueará qualquer tentativa futura.</bpmn:documentation>
+      <bpmn:incoming>SF31</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <!-- SEQUENCE FLOWS -->
+    <bpmn:sequenceFlow id="SF01"            sourceRef="StartEvent_P10"             targetRef="Task_AcessarRecurso"/>
+    <bpmn:sequenceFlow id="SF02"            name="consulta licenciamento"           sourceRef="Task_AcessarRecurso"           targetRef="Task_ConsultarLicenciamento"/>
+    <bpmn:sequenceFlow id="SF03"            sourceRef="Task_ConsultarLicenciamento" targetRef="GW_PodeRecursar"/>
+    <bpmn:sequenceFlow id="SF04_bloqueado"  name="Não — bloqueado"                 sourceRef="GW_PodeRecursar"               targetRef="EndEvent_RecursoBloqueado"/>
+    <bpmn:sequenceFlow id="SF05_liberado"   name="Sim — liberado"                  sourceRef="GW_PodeRecursar"               targetRef="Task_PreencherFormulario"/>
+    <bpmn:sequenceFlow id="SF06"            name="POST /recursos"                  sourceRef="Task_PreencherFormulario"      targetRef="Task_ValidarDados"/>
+    <bpmn:sequenceFlow id="SF07"            sourceRef="Task_ValidarDados"           targetRef="GW_ValidacaoOk"/>
+    <bpmn:sequenceFlow id="SF08_invalido"   name="Inválido"                        sourceRef="GW_ValidacaoOk"                targetRef="EndEvent_ErroValidacao"/>
+    <bpmn:sequenceFlow id="SF09_valido"     name="Válido"                          sourceRef="GW_ValidacaoOk"                targetRef="Task_UploadDocumentos"/>
+    <bpmn:sequenceFlow id="SF10"            sourceRef="Task_UploadDocumentos"       targetRef="Task_CriarRecurso"/>
+    <bpmn:sequenceFlow id="SF11"            sourceRef="Task_CriarRecurso"           targetRef="Task_FiltrarCoSignatarios"/>
+    <bpmn:sequenceFlow id="SF12"            name="RASCUNHO criado"                 sourceRef="Task_FiltrarCoSignatarios"     targetRef="Task_EnviarRecurso"/>
+    <bpmn:sequenceFlow id="SF13"            name="POST /recursos/{id}/enviar"       sourceRef="Task_EnviarRecurso"            targetRef="Task_RegistrarEnvio"/>
+    <bpmn:sequenceFlow id="SF14"            name="AGUARDANDO_APROVACAO_ENVOLVIDOS"  sourceRef="Task_RegistrarEnvio"           targetRef="Task_CoSignatarioDecide"/>
+    <bpmn:sequenceFlow id="SF15"            name="decisão registrada"              sourceRef="Task_CoSignatarioDecide"       targetRef="GW_TodosAceitaram"/>
+    <bpmn:sequenceFlow id="SF16_pendente"   name="Não — pendentes"                 sourceRef="GW_TodosAceitaram"             targetRef="Task_CoSignatarioDecide"/>
+    <bpmn:sequenceFlow id="SF17_unanimidade" name="Sim — unanimidade"              sourceRef="GW_TodosAceitaram"             targetRef="Task_RegistrarUnanimidade"/>
+    <bpmn:sequenceFlow id="SF18"            sourceRef="Task_RegistrarUnanimidade"   targetRef="Task_AtualizarSituacaoLic"/>
+    <bpmn:sequenceFlow id="SF19"            sourceRef="Task_AtualizarSituacaoLic"   targetRef="Task_NotificarCBM"/>
+    <bpmn:sequenceFlow id="SF20"            name="recurso na fila CBM"             sourceRef="Task_NotificarCBM"             targetRef="Task_AnalistaDistribui"/>
+    <bpmn:sequenceFlow id="SF21"            sourceRef="Task_AnalistaDistribui"      targetRef="Task_AnalistaRegistraDespacho"/>
+    <bpmn:sequenceFlow id="SF22"            sourceRef="Task_AnalistaRegistraDespacho" targetRef="Task_AnalistaConcluiAnalise"/>
+    <bpmn:sequenceFlow id="SF23"            name="resultado da análise"            sourceRef="Task_AnalistaConcluiAnalise"   targetRef="GW_StatusRecurso"/>
+    <bpmn:sequenceFlow id="SF24_deferido"   name="DEFERIDO (T ou P)"               sourceRef="GW_StatusRecurso"              targetRef="Task_ConcluirDeferimento"/>
+    <bpmn:sequenceFlow id="SF_EndDeferido"  sourceRef="Task_ConcluirDeferimento"    targetRef="EndEvent_Deferido"/>
+    <bpmn:sequenceFlow id="SF25_indeferido" name="INDEFERIDO (I)"                  sourceRef="GW_StatusRecurso"              targetRef="GW_Instancia"/>
+    <bpmn:sequenceFlow id="SF26_1a"         name="1ª instância"                    sourceRef="GW_Instancia"                  targetRef="Task_ConcluirIndeferido1a"/>
+    <bpmn:sequenceFlow id="SF28"            sourceRef="Task_ConcluirIndeferido1a"   targetRef="EndEvent_Indeferido1a"/>
+    <bpmn:sequenceFlow id="SF27_2a"         name="2ª instância"                    sourceRef="GW_Instancia"                  targetRef="Task_SistemaBloqueiaRecurso"/>
+    <bpmn:sequenceFlow id="SF30"            sourceRef="Task_SistemaBloqueiaRecurso" targetRef="Task_ConcluirIndeferido2a"/>
+    <bpmn:sequenceFlow id="SF31"            sourceRef="Task_ConcluirIndeferido2a"   targetRef="EndEvent_Indeferido2a"/>
+    <bpmn:sequenceFlow id="SF32"            sourceRef="BoundaryEvent_Recusa"        targetRef="Task_SistemaRegistraRecusa"/>
+    <bpmn:sequenceFlow id="SF33"            sourceRef="Task_SistemaRegistraRecusa"  targetRef="EndEvent_Recusado"/>
+    <bpmn:sequenceFlow id="SF34"            sourceRef="BoundaryEvent_Cancelamento"  targetRef="Task_CancelarRecurso"/>
+    <bpmn:sequenceFlow id="SF35"            sourceRef="Task_CancelarRecurso"        targetRef="EndEvent_Cancelado"/>
+
+  </bpmn:process>
+
+  <!-- DI — Pool x=150 y=60 w=4400 h=820 -->
+  <!-- Lane_Solicitante    y=060 h=140 cy=130 -->
+  <!-- Lane_CoSignatarios  y=200 h=140 cy=270 -->
+  <!-- Lane_SistemaBackend y=340 h=320 cy=500 (main flow cy=460) -->
+  <!-- Lane_AnalistaCBM    y=660 h=220 cy=770 -->
+  <bpmndi:BPMNDiagram id="BPMNDiagram_P10">
+    <bpmndi:BPMNPlane id="BPMNPlane_P10" bpmnElement="Collaboration_P10">
+
+      <bpmndi:BPMNShape id="Pool_P10_di" bpmnElement="Pool_P10" isHorizontal="true">
+        <dc:Bounds x="150" y="60" width="4400" height="820"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Solicitante_di"    bpmnElement="Lane_Solicitante"    isHorizontal="true">
+        <dc:Bounds x="180" y="60"  width="4370" height="140"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_CoSignatarios_di"  bpmnElement="Lane_CoSignatarios"  isHorizontal="true">
+        <dc:Bounds x="180" y="200" width="4370" height="140"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_SistemaBackend_di" bpmnElement="Lane_SistemaBackend" isHorizontal="true">
+        <dc:Bounds x="180" y="340" width="4370" height="320"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_AnalistaCBM_di"    bpmnElement="Lane_AnalistaCBM"    isHorizontal="true">
+        <dc:Bounds x="180" y="660" width="4370" height="220"/>
+      </bpmndi:BPMNShape>
+
+      <!-- FASE 1 -->
+      <bpmndi:BPMNShape id="StartEvent_P10_di" bpmnElement="StartEvent_P10">
+        <dc:Bounds x="222" y="112" width="36" height="36"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="196" y="155" width="88" height="40"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_AcessarRecurso_di" bpmnElement="Task_AcessarRecurso">
+        <dc:Bounds x="310" y="90" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_ConsultarLicenciamento_di" bpmnElement="Task_ConsultarLicenciamento">
+        <dc:Bounds x="500" y="420" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="GW_PodeRecursar_di" bpmnElement="GW_PodeRecursar" isMarkerVisible="true">
+        <dc:Bounds x="690" y="435" width="50" height="50"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="648" y="492" width="134" height="27"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_RecursoBloqueado_di" bpmnElement="EndEvent_RecursoBloqueado">
+        <dc:Bounds x="716" y="525" width="36" height="36"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="686" y="568" width="97" height="27"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- FASE 2 -->
+      <bpmndi:BPMNShape id="Task_PreencherFormulario_di" bpmnElement="Task_PreencherFormulario">
+        <dc:Bounds x="800" y="90" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_ValidarDados_di" bpmnElement="Task_ValidarDados">
+        <dc:Bounds x="990" y="420" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="GW_ValidacaoOk_di" bpmnElement="GW_ValidacaoOk" isMarkerVisible="true">
+        <dc:Bounds x="1185" y="435" width="50" height="50"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="1148" y="492" width="124" height="27"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_ErroValidacao_di" bpmnElement="EndEvent_ErroValidacao">
+        <dc:Bounds x="1211" y="525" width="36" height="36"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="1181" y="568" width="97" height="27"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- FASE 3 -->
+      <bpmndi:BPMNShape id="Task_UploadDocumentos_di" bpmnElement="Task_UploadDocumentos">
+        <dc:Bounds x="1295" y="420" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_CriarRecurso_di" bpmnElement="Task_CriarRecurso">
+        <dc:Bounds x="1495" y="420" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_FiltrarCoSignatarios_di" bpmnElement="Task_FiltrarCoSignatarios">
+        <dc:Bounds x="1695" y="420" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- FASE 4 -->
+      <bpmndi:BPMNShape id="Task_EnviarRecurso_di" bpmnElement="Task_EnviarRecurso">
+        <dc:Bounds x="1870" y="90" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_RegistrarEnvio_di" bpmnElement="Task_RegistrarEnvio">
+        <dc:Bounds x="2070" y="420" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- FASE 5 -->
+      <bpmndi:BPMNShape id="Task_CoSignatarioDecide_di" bpmnElement="Task_CoSignatarioDecide">
+        <dc:Bounds x="2280" y="230" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BoundaryEvent_Recusa_di" bpmnElement="BoundaryEvent_Recusa">
+        <dc:Bounds x="2388" y="292" width="36" height="36"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="2416" y="320" width="80" height="27"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BoundaryEvent_Cancelamento_di" bpmnElement="BoundaryEvent_Cancelamento">
+        <dc:Bounds x="2262" y="292" width="36" height="36"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="2214" y="320" width="80" height="27"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_SistemaRegistraRecusa_di" bpmnElement="Task_SistemaRegistraRecusa">
+        <dc:Bounds x="2400" y="515" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_Recusado_di" bpmnElement="EndEvent_Recusado">
+        <dc:Bounds x="2600" y="537" width="36" height="36"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="2574" y="580" width="88" height="40"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_CancelarRecurso_di" bpmnElement="Task_CancelarRecurso">
+        <dc:Bounds x="2070" y="515" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_Cancelado_di" bpmnElement="EndEvent_Cancelado">
+        <dc:Bounds x="1940" y="537" width="36" height="36"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="1912" y="580" width="92" height="40"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="GW_TodosAceitaram_di" bpmnElement="GW_TodosAceitaram" isMarkerVisible="true">
+        <dc:Bounds x="2510" y="435" width="50" height="50"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="2466" y="492" width="138" height="27"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- FASE 6 -->
+      <bpmndi:BPMNShape id="Task_RegistrarUnanimidade_di" bpmnElement="Task_RegistrarUnanimidade">
+        <dc:Bounds x="2655" y="420" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_AtualizarSituacaoLic_di" bpmnElement="Task_AtualizarSituacaoLic">
+        <dc:Bounds x="2855" y="420" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_NotificarCBM_di" bpmnElement="Task_NotificarCBM">
+        <dc:Bounds x="3055" y="420" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- FASE 7 -->
+      <bpmndi:BPMNShape id="Task_AnalistaDistribui_di" bpmnElement="Task_AnalistaDistribui">
+        <dc:Bounds x="3255" y="730" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_AnalistaRegistraDespacho_di" bpmnElement="Task_AnalistaRegistraDespacho">
+        <dc:Bounds x="3455" y="730" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_AnalistaConcluiAnalise_di" bpmnElement="Task_AnalistaConcluiAnalise">
+        <dc:Bounds x="3655" y="730" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- FASE 8 -->
+      <bpmndi:BPMNShape id="GW_StatusRecurso_di" bpmnElement="GW_StatusRecurso" isMarkerVisible="true">
+        <dc:Bounds x="3855" y="435" width="50" height="50"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="3808" y="492" width="144" height="27"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_ConcluirDeferimento_di" bpmnElement="Task_ConcluirDeferimento">
+        <dc:Bounds x="3960" y="355" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_Deferido_di" bpmnElement="EndEvent_Deferido">
+        <dc:Bounds x="4160" y="377" width="36" height="36"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="4132" y="420" width="92" height="40"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="GW_Instancia_di" bpmnElement="GW_Instancia" isMarkerVisible="true">
+        <dc:Bounds x="3960" y="495" width="50" height="50"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="3914" y="552" width="142" height="27"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_ConcluirIndeferido1a_di" bpmnElement="Task_ConcluirIndeferido1a">
+        <dc:Bounds x="4080" y="450" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_Indeferido1a_di" bpmnElement="EndEvent_Indeferido1a">
+        <dc:Bounds x="4280" y="472" width="36" height="36"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="4252" y="515" width="92" height="40"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_SistemaBloqueiaRecurso_di" bpmnElement="Task_SistemaBloqueiaRecurso">
+        <dc:Bounds x="4080" y="550" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_ConcluirIndeferido2a_di" bpmnElement="Task_ConcluirIndeferido2a">
+        <dc:Bounds x="4280" y="550" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_Indeferido2a_di" bpmnElement="EndEvent_Indeferido2a">
+        <dc:Bounds x="4480" y="572" width="36" height="36"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="4452" y="615" width="92" height="40"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- EDGES -->
+      <bpmndi:BPMNEdge id="SF01_di" bpmnElement="SF01">
+        <di:waypoint x="258" y="130"/><di:waypoint x="310" y="130"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF02_di" bpmnElement="SF02">
+        <di:waypoint x="380" y="170"/><di:waypoint x="380" y="460"/><di:waypoint x="500" y="460"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF03_di" bpmnElement="SF03">
+        <di:waypoint x="640" y="460"/><di:waypoint x="690" y="460"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF04_bloqueado_di" bpmnElement="SF04_bloqueado">
+        <di:waypoint x="715" y="485"/><di:waypoint x="715" y="543"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="720" y="505" width="66" height="27"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF05_liberado_di" bpmnElement="SF05_liberado">
+        <di:waypoint x="715" y="435"/><di:waypoint x="715" y="130"/><di:waypoint x="800" y="130"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="720" y="280" width="65" height="27"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF06_di" bpmnElement="SF06">
+        <di:waypoint x="870" y="170"/><di:waypoint x="870" y="460"/><di:waypoint x="990" y="460"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF07_di" bpmnElement="SF07">
+        <di:waypoint x="1130" y="460"/><di:waypoint x="1185" y="460"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF08_invalido_di" bpmnElement="SF08_invalido">
+        <di:waypoint x="1210" y="485"/><di:waypoint x="1210" y="543"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="1217" y="505" width="44" height="14"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF09_valido_di" bpmnElement="SF09_valido">
+        <di:waypoint x="1235" y="460"/><di:waypoint x="1295" y="460"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="1245" y="443" width="40" height="14"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF10_di" bpmnElement="SF10">
+        <di:waypoint x="1435" y="460"/><di:waypoint x="1495" y="460"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF11_di" bpmnElement="SF11">
+        <di:waypoint x="1635" y="460"/><di:waypoint x="1695" y="460"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF12_di" bpmnElement="SF12">
+        <di:waypoint x="1765" y="420"/><di:waypoint x="1765" y="130"/><di:waypoint x="1870" y="130"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF13_di" bpmnElement="SF13">
+        <di:waypoint x="1940" y="170"/><di:waypoint x="1940" y="460"/><di:waypoint x="2070" y="460"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF14_di" bpmnElement="SF14">
+        <di:waypoint x="2140" y="420"/><di:waypoint x="2140" y="270"/><di:waypoint x="2280" y="270"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF15_di" bpmnElement="SF15">
+        <di:waypoint x="2350" y="310"/><di:waypoint x="2350" y="460"/><di:waypoint x="2510" y="460"/>
+      </bpmndi:BPMNEdge>
+      <!-- loop-back: GW esquerda → esq → sobe → Task esquerda -->
+      <bpmndi:BPMNEdge id="SF16_pendente_di" bpmnElement="SF16_pendente">
+        <di:waypoint x="2510" y="460"/><di:waypoint x="2260" y="460"/>
+        <di:waypoint x="2260" y="270"/><di:waypoint x="2280" y="270"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="2330" y="443" width="80" height="27"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF17_unanimidade_di" bpmnElement="SF17_unanimidade">
+        <di:waypoint x="2560" y="460"/><di:waypoint x="2655" y="460"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="2565" y="443" width="72" height="27"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF18_di" bpmnElement="SF18">
+        <di:waypoint x="2795" y="460"/><di:waypoint x="2855" y="460"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF19_di" bpmnElement="SF19">
+        <di:waypoint x="2995" y="460"/><di:waypoint x="3055" y="460"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF20_di" bpmnElement="SF20">
+        <di:waypoint x="3125" y="500"/><di:waypoint x="3125" y="770"/><di:waypoint x="3255" y="770"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF21_di" bpmnElement="SF21">
+        <di:waypoint x="3395" y="770"/><di:waypoint x="3455" y="770"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF22_di" bpmnElement="SF22">
+        <di:waypoint x="3595" y="770"/><di:waypoint x="3655" y="770"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF23_di" bpmnElement="SF23">
+        <di:waypoint x="3725" y="730"/><di:waypoint x="3725" y="460"/><di:waypoint x="3855" y="460"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF24_deferido_di" bpmnElement="SF24_deferido">
+        <di:waypoint x="3880" y="435"/><di:waypoint x="3880" y="395"/><di:waypoint x="3960" y="395"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="3885" y="407" width="70" height="27"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_EndDeferido_di" bpmnElement="SF_EndDeferido">
+        <di:waypoint x="4100" y="395"/><di:waypoint x="4160" y="395"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF25_indeferido_di" bpmnElement="SF25_indeferido">
+        <di:waypoint x="3880" y="485"/><di:waypoint x="3880" y="520"/><di:waypoint x="3960" y="520"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="3885" y="495" width="65" height="27"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF26_1a_di" bpmnElement="SF26_1a">
+        <di:waypoint x="3985" y="495"/><di:waypoint x="3985" y="490"/><di:waypoint x="4080" y="490"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="3990" y="473" width="70" height="14"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF28_di" bpmnElement="SF28">
+        <di:waypoint x="4220" y="490"/><di:waypoint x="4280" y="490"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF27_2a_di" bpmnElement="SF27_2a">
+        <di:waypoint x="3985" y="545"/><di:waypoint x="3985" y="590"/><di:waypoint x="4080" y="590"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="3990" y="556" width="70" height="14"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF30_di" bpmnElement="SF30">
+        <di:waypoint x="4220" y="590"/><di:waypoint x="4280" y="590"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF31_di" bpmnElement="SF31">
+        <di:waypoint x="4420" y="590"/><di:waypoint x="4480" y="590"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF32_di" bpmnElement="SF32">
+        <di:waypoint x="2406" y="328"/><di:waypoint x="2406" y="420"/>
+        <di:waypoint x="2470" y="420"/><di:waypoint x="2470" y="515"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF33_di" bpmnElement="SF33">
+        <di:waypoint x="2540" y="555"/><di:waypoint x="2600" y="555"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF34_di" bpmnElement="SF34">
+        <di:waypoint x="2280" y="328"/><di:waypoint x="2280" y="555"/><di:waypoint x="2210" y="555"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF35_di" bpmnElement="SF35">
+        <di:waypoint x="2070" y="555"/><di:waypoint x="1976" y="555"/>
+      </bpmndi:BPMNEdge>
+
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</bpmn:definitions>

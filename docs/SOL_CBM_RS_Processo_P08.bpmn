@@ -1,0 +1,207 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI"
+             xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+             targetNamespace="http://solcbm.procergs.rs.gov.br/bpmn"
+             id="definitions_P08">
+
+  <!-- ================================================================ -->
+  <!-- PROCESSO 08 – RENOVAÇÃO DE ALVARÁ                                -->
+  <!-- RT inicia renovação (status ALVARA_VENCIDO ou próximo) →         -->
+  <!-- Valida situação e gera novo boleto → Cidadão paga →              -->
+  <!-- Job confirma retorno bancário (loop até confirmação) →           -->
+  <!-- Nova análise técnica → RT assina PRPCI → emite APPCI vigente     -->
+  <!-- ================================================================ -->
+  <process id="Proc_08" name="08 - Renovação de Alvará" isExecutable="false">
+
+    <startEvent id="P08_Start" name="RT Inicia Processo&#10;de Renovação do Alvará">
+      <outgoing>P08_sf01</outgoing>
+    </startEvent>
+
+    <serviceTask id="P08_T01" name="Validar Situação do Alvará&#10;(ALVARA_VENCIDO / Vigente)">
+      <incoming>P08_sf01</incoming>
+      <outgoing>P08_sf02</outgoing>
+    </serviceTask>
+
+    <exclusiveGateway id="P08_GW01" name="Renovação&#10;Permitida?">
+      <incoming>P08_sf02</incoming>
+      <outgoing>P08_sf03</outgoing>
+      <outgoing>P08_sf04</outgoing>
+    </exclusiveGateway>
+
+    <endEvent id="P08_EndErr" name="Erro: Renovação&#10;Não Permitida">
+      <incoming>P08_sf03</incoming>
+      <errorEventDefinition id="P08_ErrDef"/>
+    </endEvent>
+
+    <serviceTask id="P08_T02" name="Gerar Boleto de&#10;Renovação (Integração Bancária)">
+      <incoming>P08_sf04</incoming>
+      <outgoing>P08_sf05</outgoing>
+    </serviceTask>
+
+    <userTask id="P08_T03" name="Cidadão Efetua&#10;Pagamento do Boleto">
+      <incoming>P08_sf05</incoming>
+      <outgoing>P08_sf06</outgoing>
+    </userTask>
+
+    <serviceTask id="P08_T04" name="Confirmar Pagamento&#10;(Retorno Bancário)">
+      <incoming>P08_sf06</incoming>
+      <incoming>P08_sf13</incoming>
+      <outgoing>P08_sf07</outgoing>
+    </serviceTask>
+
+    <exclusiveGateway id="P08_GW02" name="Pagamento&#10;Confirmado?">
+      <incoming>P08_sf07</incoming>
+      <outgoing>P08_sf08</outgoing>
+      <outgoing>P08_sf09</outgoing>
+    </exclusiveGateway>
+
+    <!-- T05 recebe sf08 (loop) e devolve para T04 via sf13 (novo ID) -->
+    <userTask id="P08_T05" name="Aguardar Confirmação&#10;Bancária (Retry)">
+      <incoming>P08_sf08</incoming>
+      <outgoing>P08_sf13</outgoing>
+    </userTask>
+
+    <serviceTask id="P08_T06" name="Reanalisar Documentação&#10;Técnica (Proc_04)">
+      <incoming>P08_sf09</incoming>
+      <outgoing>P08_sf10</outgoing>
+    </serviceTask>
+
+    <userTask id="P08_T07" name="RT Assina Novo PRPCI&#10;(AGUARDANDO_PRPCI)">
+      <incoming>P08_sf10</incoming>
+      <outgoing>P08_sf11</outgoing>
+    </userTask>
+
+    <serviceTask id="P08_T08" name="Emitir Novo APPCI&#10;e Atualizar Validade">
+      <incoming>P08_sf11</incoming>
+      <outgoing>P08_sf12</outgoing>
+    </serviceTask>
+
+    <endEvent id="P08_End" name="Alvará Renovado&#10;– ALVARA_VIGENTE">
+      <incoming>P08_sf12</incoming>
+    </endEvent>
+
+    <sequenceFlow id="P08_sf01"  sourceRef="P08_Start"  targetRef="P08_T01"/>
+    <sequenceFlow id="P08_sf02"  sourceRef="P08_T01"    targetRef="P08_GW01"/>
+    <sequenceFlow id="P08_sf03"  name="Não"             sourceRef="P08_GW01" targetRef="P08_EndErr"/>
+    <sequenceFlow id="P08_sf04"  name="Sim"             sourceRef="P08_GW01" targetRef="P08_T02"/>
+    <sequenceFlow id="P08_sf05"  sourceRef="P08_T02"    targetRef="P08_T03"/>
+    <sequenceFlow id="P08_sf06"  sourceRef="P08_T03"    targetRef="P08_T04"/>
+    <sequenceFlow id="P08_sf07"  sourceRef="P08_T04"    targetRef="P08_GW02"/>
+    <sequenceFlow id="P08_sf08"  name="Não (aguardar)"  sourceRef="P08_GW02" targetRef="P08_T05"/>
+    <sequenceFlow id="P08_sf09"  name="Sim"             sourceRef="P08_GW02" targetRef="P08_T06"/>
+    <sequenceFlow id="P08_sf13"  sourceRef="P08_T05"    targetRef="P08_T04"/>
+    <sequenceFlow id="P08_sf10"  sourceRef="P08_T06"    targetRef="P08_T07"/>
+    <sequenceFlow id="P08_sf11"  sourceRef="P08_T07"    targetRef="P08_T08"/>
+    <sequenceFlow id="P08_sf12"  sourceRef="P08_T08"    targetRef="P08_End"/>
+  </process>
+
+  <bpmndi:BPMNDiagram id="diagram_P08">
+    <bpmndi:BPMNPlane id="plane_P08" bpmnElement="Proc_08">
+
+      <bpmndi:BPMNShape id="shape_P08_Start" bpmnElement="P08_Start">
+        <omgdc:Bounds x="102" y="242" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P08_T01" bpmnElement="P08_T01">
+        <omgdc:Bounds x="200" y="220" width="170" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P08_GW01" bpmnElement="P08_GW01" isMarkerVisible="true">
+        <omgdc:Bounds x="425" y="235" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P08_EndErr" bpmnElement="P08_EndErr" isMarkerVisible="true">
+        <omgdc:Bounds x="432" y="102" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P08_T02" bpmnElement="P08_T02">
+        <omgdc:Bounds x="535" y="220" width="170" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P08_T03" bpmnElement="P08_T03">
+        <omgdc:Bounds x="755" y="220" width="160" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P08_T04" bpmnElement="P08_T04">
+        <omgdc:Bounds x="965" y="220" width="170" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P08_GW02" bpmnElement="P08_GW02" isMarkerVisible="true">
+        <omgdc:Bounds x="1190" y="235" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      <!-- T05 posicionado abaixo de T04, para evidenciar o loop de retry -->
+      <bpmndi:BPMNShape id="shape_P08_T05" bpmnElement="P08_T05">
+        <omgdc:Bounds x="965" y="380" width="160" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P08_T06" bpmnElement="P08_T06">
+        <omgdc:Bounds x="1300" y="220" width="170" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P08_T07" bpmnElement="P08_T07">
+        <omgdc:Bounds x="1520" y="220" width="160" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P08_T08" bpmnElement="P08_T08">
+        <omgdc:Bounds x="1730" y="220" width="160" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P08_End" bpmnElement="P08_End">
+        <omgdc:Bounds x="1952" y="242" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+
+      <!-- Edges — cada sequenceFlow tem exatamente UM BPMNEdge -->
+      <bpmndi:BPMNEdge id="edge_P08_sf01" bpmnElement="P08_sf01">
+        <omgdi:waypoint x="138" y="260"/>
+        <omgdi:waypoint x="200" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P08_sf02" bpmnElement="P08_sf02">
+        <omgdi:waypoint x="370" y="260"/>
+        <omgdi:waypoint x="425" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P08_sf03" bpmnElement="P08_sf03">
+        <omgdi:waypoint x="450" y="235"/>
+        <omgdi:waypoint x="450" y="138"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P08_sf04" bpmnElement="P08_sf04">
+        <omgdi:waypoint x="475" y="260"/>
+        <omgdi:waypoint x="535" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P08_sf05" bpmnElement="P08_sf05">
+        <omgdi:waypoint x="705" y="260"/>
+        <omgdi:waypoint x="755" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P08_sf06" bpmnElement="P08_sf06">
+        <omgdi:waypoint x="915" y="260"/>
+        <omgdi:waypoint x="965" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P08_sf07" bpmnElement="P08_sf07">
+        <omgdi:waypoint x="1135" y="260"/>
+        <omgdi:waypoint x="1190" y="260"/>
+      </bpmndi:BPMNEdge>
+      <!-- GW02 → T05 (loop "Não") — desce até T05 abaixo de T04 -->
+      <bpmndi:BPMNEdge id="edge_P08_sf08" bpmnElement="P08_sf08">
+        <omgdi:waypoint x="1215" y="285"/>
+        <omgdi:waypoint x="1215" y="420"/>
+        <omgdi:waypoint x="1125" y="420"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P08_sf09" bpmnElement="P08_sf09">
+        <omgdi:waypoint x="1240" y="260"/>
+        <omgdi:waypoint x="1300" y="260"/>
+      </bpmndi:BPMNEdge>
+      <!-- T05 → T04 (retry): sf13 — sobe de volta para confirmar pagamento -->
+      <bpmndi:BPMNEdge id="edge_P08_sf13" bpmnElement="P08_sf13">
+        <omgdi:waypoint x="965"  y="420"/>
+        <omgdi:waypoint x="880"  y="420"/>
+        <omgdi:waypoint x="880"  y="260"/>
+        <omgdi:waypoint x="965"  y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P08_sf10" bpmnElement="P08_sf10">
+        <omgdi:waypoint x="1470" y="260"/>
+        <omgdi:waypoint x="1520" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P08_sf11" bpmnElement="P08_sf11">
+        <omgdi:waypoint x="1680" y="260"/>
+        <omgdi:waypoint x="1730" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P08_sf12" bpmnElement="P08_sf12">
+        <omgdi:waypoint x="1890" y="260"/>
+        <omgdi:waypoint x="1952" y="260"/>
+      </bpmndi:BPMNEdge>
+
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</definitions>

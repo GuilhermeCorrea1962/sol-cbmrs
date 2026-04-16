@@ -1,0 +1,1061 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+             id="Definitions_P12"
+             targetNamespace="http://cbmrs.sol/p12"
+             exporter="Camunda Modeler"
+             exporterVersion="5.x">
+
+  <!-- ============================================================ -->
+  <!--  P12 — Extinção de Licenciamento                             -->
+  <!--  Stack atual: Java EE · JAX-RS · CDI · EJB · Oracle         -->
+  <!--  1 Pool · 3 Lanes:                                           -->
+  <!--    - Cidadão (RT / RU / Proprietário)                        -->
+  <!--    - Sistema SOL (Backend Java EE)                           -->
+  <!--    - Administrador CBM-RS                                    -->
+  <!-- ============================================================ -->
+
+  <!-- ====================================================== -->
+  <!--  ERRORS (filhos diretos de <definitions>)              -->
+  <!-- ====================================================== -->
+  <error id="Error_ExtincaoInvalida" name="Extinção Inválida" errorCode="EXTINCAO_INVALIDA"/>
+  <error id="Error_TrocaEnvolvido" name="Troca Envolvido Pendente" errorCode="EXTINCAO_BLOQUEADA_TROCA_ENVOLVIDO"/>
+
+  <collaboration id="Collab_P12">
+    <participant id="Pool_P12"
+                 name="P12 — Extinção de Licenciamento"
+                 processRef="Process_P12"/>
+  </collaboration>
+
+  <process id="Process_P12" name="P12 — Extinção de Licenciamento" isExecutable="true">
+
+    <!-- ===================== LANES ===================== -->
+    <laneSet id="LaneSet_P12">
+
+      <lane id="Lane_Cidadao" name="Cidadão&#10;(RT / RU / Proprietário)">
+        <flowNodeRef>Start_P12</flowNodeRef>
+        <flowNodeRef>UT_SolicitarExtincao</flowNodeRef>
+        <flowNodeRef>UT_AceitarRecusarExtincao</flowNodeRef>
+        <flowNodeRef>End_AguardandoAceite</flowNodeRef>
+        <flowNodeRef>UT_CancelarExtincao</flowNodeRef>
+        <flowNodeRef>End_ExtincaoCancelada</flowNodeRef>
+        <flowNodeRef>End_ExtincaoRecusada</flowNodeRef>
+      </lane>
+
+      <lane id="Lane_Sistema" name="Sistema SOL&#10;(Backend Java EE)">
+        <flowNodeRef>ST_ValidarSituacao</flowNodeRef>
+        <flowNodeRef>GW_SituacaoValida</flowNodeRef>
+        <flowNodeRef>End_ErroSituacao</flowNodeRef>
+        <flowNodeRef>ST_VerificarTrocaEnvolvido</flowNodeRef>
+        <flowNodeRef>GW_TrocaEnvolvidoPendente</flowNodeRef>
+        <flowNodeRef>End_ErrTrocaEnvolvido</flowNodeRef>
+        <flowNodeRef>ST_CancelarRecursosPendentes</flowNodeRef>
+        <flowNodeRef>GW_TemRTAtivo</flowNodeRef>
+        <flowNodeRef>GW_SolicitanteEhRT</flowNodeRef>
+        <flowNodeRef>ST_AguardarAceiteRT</flowNodeRef>
+        <flowNodeRef>ST_ExtinguirDireto</flowNodeRef>
+        <flowNodeRef>GW_DecisaoRT</flowNodeRef>
+        <flowNodeRef>ST_EfetivarExtincaoAposAceite</flowNodeRef>
+        <flowNodeRef>ST_RecusarExtincao</flowNodeRef>
+        <flowNodeRef>ST_CancelarExtincaoCidadao</flowNodeRef>
+        <flowNodeRef>ST_NotificarExtincao</flowNodeRef>
+        <flowNodeRef>ST_NotificarCancelamento</flowNodeRef>
+        <flowNodeRef>ST_NotificarRecusa</flowNodeRef>
+        <flowNodeRef>End_Extinto</flowNodeRef>
+        <flowNodeRef>BoundaryCancel_AguardaAceite</flowNodeRef>
+      </lane>
+
+      <lane id="Lane_Admin" name="Administrador&#10;CBM-RS">
+        <flowNodeRef>Start_Admin</flowNodeRef>
+        <flowNodeRef>UT_ExtinguirAdmin</flowNodeRef>
+        <flowNodeRef>ST_ValidarSituacaoAdmin</flowNodeRef>
+        <flowNodeRef>GW_SituacaoValidaAdmin</flowNodeRef>
+        <flowNodeRef>End_ErroSituacaoAdmin</flowNodeRef>
+        <flowNodeRef>ST_CancelarRecursosAdmin</flowNodeRef>
+        <flowNodeRef>ST_ExtinguirAdmin</flowNodeRef>
+        <flowNodeRef>ST_NotificarExtincaoAdmin</flowNodeRef>
+        <flowNodeRef>End_ExtintoAdmin</flowNodeRef>
+        <flowNodeRef>UT_CancelarExtincaoAdmin</flowNodeRef>
+        <flowNodeRef>ST_CancelarExtincaoAdmin</flowNodeRef>
+        <flowNodeRef>ST_NotificarCancelamentoAdmin</flowNodeRef>
+        <flowNodeRef>End_CanceladoAdmin</flowNodeRef>
+      </lane>
+
+    </laneSet>
+
+    <!-- ====================================================== -->
+    <!--  FLUXO A — CIDADÃO solicita extinção                   -->
+    <!-- ====================================================== -->
+
+    <!-- Start: Cidadão inicia pedido de extinção -->
+    <startEvent id="Start_P12" name="Cidadão solicita&#10;extinção">
+      <documentation>Cidadão (RT, RU ou Proprietário) aciona a opção "Extinguir Licenciamento" no portal SOL.
+Endpoint: POST /licenciamentos/{idLic}/extinguir
+Autenticação via SOE PROCERGS (meu.rs.gov.br).</documentation>
+      <outgoing>SF_Start_ValidarSituacao</outgoing>
+    </startEvent>
+
+    <!-- User Task: Cidadão confirma extinção no modal -->
+    <userTask id="UT_SolicitarExtincao" name="Confirmar pedido&#10;de extinção"
+              camunda:assignee="${cpfCidadao}"
+              camunda:formKey="solicitacao-extincao">
+      <documentation>Angular: ModalExtincaoLicenciamentoComponent
+Ação: Clique em "Extinguir" no modal de confirmação.
+Dispara POST /licenciamentos/{idLic}/extinguir.</documentation>
+      <incoming>SF_Start_ValidarSituacao</incoming>
+      <outgoing>SF_SolicitarExtincao_Validar</outgoing>
+    </userTask>
+
+    <sequenceFlow id="SF_Start_ValidarSituacao" sourceRef="Start_P12" targetRef="UT_SolicitarExtincao"/>
+    <sequenceFlow id="SF_SolicitarExtincao_Validar" sourceRef="UT_SolicitarExtincao" targetRef="ST_ValidarSituacao"/>
+
+    <!-- Service Task: Validar situação do licenciamento -->
+    <serviceTask id="ST_ValidarSituacao" name="Validar situação&#10;do licenciamento"
+                 camunda:class="com.procergs.solcbm.licenciamento.LicenciamentoCidadaoExtincaoRNVal">
+      <documentation>RN-109, RN-110
+EJB: LicenciamentoCidadaoExtincaoRNVal.validarExtinguir(lic, existeAnalise)
+Verifica SITUACOES_INVALIDAS (incondicionais) e SITUACOES_INVALIDAS_SEM_ANALISE (condicionais).
+Tabelas: CBM_LICENCIAMENTO, CBM_ANALISE_TECNICA, CBM_ANALISE_ISENCAO.</documentation>
+      <incoming>SF_SolicitarExtincao_Validar</incoming>
+      <outgoing>SF_Validar_GW</outgoing>
+    </serviceTask>
+
+    <sequenceFlow id="SF_Validar_GW" sourceRef="ST_ValidarSituacao" targetRef="GW_SituacaoValida"/>
+
+    <!-- Gateway: Situação válida? -->
+    <exclusiveGateway id="GW_SituacaoValida" name="Situação permite&#10;extinção?"/>
+
+    <sequenceFlow id="SF_GW_Invalido" name="Não" sourceRef="GW_SituacaoValida" targetRef="End_ErroSituacao"/>
+    <sequenceFlow id="SF_GW_Valido" name="Sim" sourceRef="GW_SituacaoValida" targetRef="ST_VerificarTrocaEnvolvido"/>
+
+    <!-- End Error: situação inválida -->
+    <endEvent id="End_ErroSituacao" name="Erro: situação&#10;inválida (HTTP 422)">
+      <documentation>Mensagem: licenciamento.extincao.invalida
+HTTP 422 retornado ao frontend.
+Angular exibe mensagem de erro no modal.</documentation>
+      <errorEventDefinition id="EED_ErroSituacao"
+                            errorRef="Error_ExtincaoInvalida"/>
+    </endEvent>
+
+    <!-- Service Task: Verificar troca de envolvido pendente -->
+    <serviceTask id="ST_VerificarTrocaEnvolvido" name="Verificar troca de&#10;envolvido pendente"
+                 camunda:class="com.procergs.solcbm.licenciamento.LicenciamentoCidadaoExtincaoRN">
+      <documentation>RN-115
+Consulta TrocaEnvolvidoDAO para verificar existência de TrocaEnvolvido em avaliação.
+Tabela: CBM_TROCA_ENVOLVIDO
+Lança NegocioException("licenciamento.extincao.invalida.troca.envolvidos") se pendente.</documentation>
+      <incoming>SF_GW_Valido</incoming>
+      <outgoing>SF_VerTroca_GW</outgoing>
+    </serviceTask>
+
+    <sequenceFlow id="SF_VerTroca_GW" sourceRef="ST_VerificarTrocaEnvolvido" targetRef="GW_TrocaEnvolvidoPendente"/>
+
+    <!-- Gateway: Há troca de envolvido pendente? -->
+    <exclusiveGateway id="GW_TrocaEnvolvidoPendente" name="Troca de envolvido&#10;em avaliação?"/>
+
+    <sequenceFlow id="SF_TrocaSim" name="Sim" sourceRef="GW_TrocaEnvolvidoPendente" targetRef="End_ErrTrocaEnvolvido"/>
+    <sequenceFlow id="SF_TrocaNao" name="Não" sourceRef="GW_TrocaEnvolvidoPendente" targetRef="ST_CancelarRecursosPendentes"/>
+
+    <!-- End Error: troca de envolvido pendente -->
+    <endEvent id="End_ErrTrocaEnvolvido" name="Erro: troca de&#10;envolvido pendente (422)">
+      <documentation>Mensagem: licenciamento.extincao.invalida.troca.envolvidos
+HTTP 422 retornado ao frontend.</documentation>
+      <errorEventDefinition id="EED_ErrTroca"
+                            errorRef="Error_TrocaEnvolvido"/>
+    </endEvent>
+
+    <!-- Service Task: Cancelar recursos pendentes automaticamente -->
+    <serviceTask id="ST_CancelarRecursosPendentes" name="Cancelar recursos&#10;pendentes (automático)"
+                 camunda:class="com.procergs.solcbm.licenciamento.RecursoRN">
+      <documentation>RN-113
+EJB: RecursoRN.cancelarPorExtincao(idLicenciamento)
+Cancela todos os RecursoED em situação pendente de análise.
+Registra marco RECURSO_CANCELADO_EXTINCAO para cada recurso cancelado.
+Tabelas: CBM_RECURSO, CBM_LICENCIAMENTO_MARCO.</documentation>
+      <incoming>SF_TrocaNao</incoming>
+      <outgoing>SF_CancelarRecursos_GW</outgoing>
+    </serviceTask>
+
+    <sequenceFlow id="SF_CancelarRecursos_GW" sourceRef="ST_CancelarRecursosPendentes" targetRef="GW_TemRTAtivo"/>
+
+    <!-- Gateway: Há RT ativo no licenciamento? -->
+    <exclusiveGateway id="GW_TemRTAtivo" name="Há RT ativo&#10;no licenciamento?"/>
+
+    <sequenceFlow id="SF_SemRT" name="Não" sourceRef="GW_TemRTAtivo" targetRef="ST_ExtinguirDireto"/>
+    <sequenceFlow id="SF_ComRT" name="Sim" sourceRef="GW_TemRTAtivo" targetRef="GW_SolicitanteEhRT"/>
+
+    <!-- Gateway: O solicitante é o próprio RT? -->
+    <exclusiveGateway id="GW_SolicitanteEhRT" name="Solicitante&#10;é o RT?"/>
+
+    <sequenceFlow id="SF_EhRT" name="Sim (RT solicitou)" sourceRef="GW_SolicitanteEhRT" targetRef="ST_ExtinguirDireto"/>
+    <sequenceFlow id="SF_NaoEhRT" name="Não (RU/Proprietário)" sourceRef="GW_SolicitanteEhRT" targetRef="ST_AguardarAceiteRT"/>
+
+    <!-- Service Task: Aguardar aceite RT — transita para AGUARDANDO_ACEITES_EXTINCAO -->
+    <serviceTask id="ST_AguardarAceiteRT" name="Aguardar aceite&#10;do RT"
+                 camunda:class="com.procergs.solcbm.licenciamento.LicenciamentoCidadaoExtincaoRN">
+      <documentation>RN-111
+EJB: LicenciamentoCidadaoExtincaoRN.extingue() — caminho com RT ativo e solicitante != RT.
+Ações:
+  1. Atualiza situacao = AGUARDANDO_ACEITES_EXTINCAO
+  2. Grava solicitanteExtincao = false no ResponsavelTecnicoED
+  3. Registra marco AGUARDANDO_ACEITE_EXTINCAO
+  4. Envia e-mail ao RT solicitando aceite
+Tabelas: CBM_LICENCIAMENTO, CBM_RESPONSAVEL_TECNICO, CBM_LICENCIAMENTO_MARCO.</documentation>
+      <incoming>SF_NaoEhRT</incoming>
+      <outgoing>SF_AguardarAceiteRT_UT</outgoing>
+    </serviceTask>
+
+    <sequenceFlow id="SF_AguardarAceiteRT_UT" sourceRef="ST_AguardarAceiteRT" targetRef="UT_AceitarRecusarExtincao"/>
+
+    <!-- User Task: RT aceita, recusa ou cancela -->
+    <userTask id="UT_AceitarRecusarExtincao" name="RT: aceitar, recusar&#10;ou cancelar extinção"
+              camunda:assignee="${cpfRT}"
+              camunda:formKey="aceite-extincao-rt">
+      <documentation>Angular: ModalExtincaoLicenciamentoComponent (modo RT)
+RT visualiza solicitação pendente e escolhe:
+  - Aceitar: dispara implicitamente a efetivação da extinção (PUT sem recusa)
+  - Recusar: PUT /licenciamentos/{idLic}/recusa-extincao
+  - Cancelar: PUT /licenciamentos/{idLic}/cancelar-extincao
+Situação do licenciamento: AGUARDANDO_ACEITES_EXTINCAO</documentation>
+      <incoming>SF_AguardarAceiteRT_UT</incoming>
+      <outgoing>SF_UT_GWDecisao</outgoing>
+    </userTask>
+
+    <!-- Boundary Cancel Event: cidadão cancela enquanto aguarda RT -->
+    <boundaryEvent id="BoundaryCancel_AguardaAceite"
+                   name="Cidadão cancela&#10;extinção"
+                   attachedToRef="UT_AceitarRecusarExtincao"
+                   cancelActivity="true">
+      <documentation>Evento disparado quando cidadão (RU/Proprietário) aciona
+PUT /licenciamentos/{idLic}/cancelar-extincao antes do RT se manifestar.</documentation>
+      <outgoing>SF_Boundary_Cancelar</outgoing>
+    </boundaryEvent>
+
+    <sequenceFlow id="SF_Boundary_Cancelar" sourceRef="BoundaryCancel_AguardaAceite" targetRef="ST_CancelarExtincaoCidadao"/>
+
+    <!-- User Task intermediária — End de estado AGUARDANDO_ACEITE (notificação visual) -->
+    <endEvent id="End_AguardandoAceite" name="Notificado RT —&#10;aguardando resposta">
+      <documentation>Estado intermediário: o sistema aguarda a manifestação do RT.
+Situação do licenciamento: AGUARDANDO_ACEITES_EXTINCAO.
+Esta não é uma end event de conclusão do processo — representa a conclusão
+da etapa de solicitação, com o processo suspenso aguardando o RT.</documentation>
+    </endEvent>
+
+    <sequenceFlow id="SF_UT_GWDecisao" sourceRef="UT_AceitarRecusarExtincao" targetRef="GW_DecisaoRT"/>
+
+    <!-- Gateway: Decisão do RT -->
+    <exclusiveGateway id="GW_DecisaoRT" name="Decisão do RT?"/>
+
+    <sequenceFlow id="SF_Aceite" name="Aceita" sourceRef="GW_DecisaoRT" targetRef="ST_EfetivarExtincaoAposAceite"/>
+    <sequenceFlow id="SF_Recusa" name="Recusa" sourceRef="GW_DecisaoRT" targetRef="ST_RecusarExtincao"/>
+
+    <!-- Service Task: Efetivar extinção após aceite do RT -->
+    <serviceTask id="ST_EfetivarExtincaoAposAceite" name="Efetivar extinção&#10;após aceite do RT"
+                 camunda:class="com.procergs.solcbm.licenciamento.trocaestado.TrocaEstadoLicenciamentoParaExtinguidoRN">
+      <documentation>RT aceitou a extinção.
+EJB: TrocaEstadoLicenciamentoParaExtinguidoRN.trocaEstado(idLicenciamento)
+Ações:
+  1. Atualiza situacao = EXTINGUIDO
+  2. Grava aceiteExtincao = true e dthAceiteExtincao = now() no ResponsavelTecnicoED
+  3. Registra marco EXTINCAO
+Tabelas: CBM_LICENCIAMENTO, CBM_RESPONSAVEL_TECNICO, CBM_LICENCIAMENTO_MARCO.</documentation>
+      <incoming>SF_Aceite</incoming>
+      <outgoing>SF_EfetivarAceite_Notificar</outgoing>
+    </serviceTask>
+
+    <sequenceFlow id="SF_EfetivarAceite_Notificar" sourceRef="ST_EfetivarExtincaoAposAceite" targetRef="ST_NotificarExtincao"/>
+
+    <!-- Service Task: Extinção direta (RT solicitante ou sem RT) -->
+    <serviceTask id="ST_ExtinguirDireto" name="Extinguir licenciamento&#10;diretamente"
+                 camunda:class="com.procergs.solcbm.licenciamento.trocaestado.TrocaEstadoLicenciamentoParaExtinguidoRN">
+      <documentation>RN-111 (caminho RT solicitante ou sem RT ativo)
+EJB: TrocaEstadoLicenciamentoParaExtinguidoRN.trocaEstado(idLicenciamento)
+Ações:
+  1. Atualiza situacao = EXTINGUIDO
+  2. Registra marco EXTINCAO
+Tabelas: CBM_LICENCIAMENTO, CBM_LICENCIAMENTO_MARCO.</documentation>
+      <incoming>SF_SemRT</incoming>
+      <incoming>SF_EhRT</incoming>
+      <outgoing>SF_ExtinguirDireto_Notificar</outgoing>
+    </serviceTask>
+
+    <sequenceFlow id="SF_ExtinguirDireto_Notificar" sourceRef="ST_ExtinguirDireto" targetRef="ST_NotificarExtincao"/>
+
+    <!-- Service Task: Notificar extinção efetivada -->
+    <serviceTask id="ST_NotificarExtincao" name="Notificar todos&#10;os envolvidos (extinção)"
+                 camunda:class="com.procergs.solcbm.notificacao.NotificacaoRN">
+      <documentation>RN-119
+EJB: NotificacaoRN.notificar(idLicenciamento, EXTINGUIDO)
+Destinatários: RT ativo, RU ativo, todos os Proprietários ativos.
+Template: notificacao.email.template.licenciamento.EXTINGUIDO
+Tabelas: CBM_USUARIO, CBM_RESPONSAVEL_TECNICO, CBM_PROPRIETARIO.</documentation>
+      <incoming>SF_EfetivarAceite_Notificar</incoming>
+      <incoming>SF_ExtinguirDireto_Notificar</incoming>
+      <outgoing>SF_Notificar_End</outgoing>
+    </serviceTask>
+
+    <sequenceFlow id="SF_Notificar_End" sourceRef="ST_NotificarExtincao" targetRef="End_Extinto"/>
+
+    <!-- End: Extinção concluída -->
+    <endEvent id="End_Extinto" name="Licenciamento&#10;EXTINGUIDO">
+      <documentation>SituacaoLicenciamento: EXTINGUIDO
+Marco registrado: EXTINCAO
+Todos os envolvidos foram notificados por e-mail.
+Estado terminal — não permite mais operações sobre o licenciamento (RN-114).</documentation>
+    </endEvent>
+
+    <!-- Service Task: Recusar extinção (RT) -->
+    <serviceTask id="ST_RecusarExtincao" name="Registrar recusa&#10;da extinção"
+                 camunda:class="com.procergs.solcbm.licenciamento.LicenciamentoCidadaoExtincaoRN">
+      <documentation>RN-116, RN-117
+EJB: LicenciamentoCidadaoExtincaoRN.recusa(idLicenciamento)
+Ações:
+  1. Grava aceiteExtincao = false e dthAceiteExtincao = now() no ResponsavelTecnicoED
+  2. Restaura situacao anterior do licenciamento (RN-117)
+  3. Registra marco RECUSA_EXTINCAO
+Tabelas: CBM_LICENCIAMENTO, CBM_RESPONSAVEL_TECNICO, CBM_LICENCIAMENTO_MARCO.</documentation>
+      <incoming>SF_Recusa</incoming>
+      <outgoing>SF_Recusar_Notificar</outgoing>
+    </serviceTask>
+
+    <sequenceFlow id="SF_Recusar_Notificar" sourceRef="ST_RecusarExtincao" targetRef="ST_NotificarRecusa"/>
+
+    <!-- Service Task: Notificar recusa -->
+    <serviceTask id="ST_NotificarRecusa" name="Notificar recusa&#10;aos envolvidos"
+                 camunda:class="com.procergs.solcbm.notificacao.NotificacaoRN">
+      <documentation>RN-119
+Template: notificacao.email.template.licenciamento.RECUSA_EXTINCAO
+Destinatários: RU ativo, Proprietários ativos, demais envolvidos.</documentation>
+      <incoming>SF_Recusar_Notificar</incoming>
+      <outgoing>SF_NotificarRecusa_End</outgoing>
+    </serviceTask>
+
+    <sequenceFlow id="SF_NotificarRecusa_End" sourceRef="ST_NotificarRecusa" targetRef="End_ExtincaoRecusada"/>
+
+    <!-- End: Extinção recusada -->
+    <endEvent id="End_ExtincaoRecusada" name="Extinção recusada —&#10;licenciamento restaurado">
+      <documentation>Situação anterior do licenciamento restaurada (RN-117).
+Marco RECUSA_EXTINCAO registrado.
+Campos de extinção no ResponsavelTecnicoED zerados.</documentation>
+    </endEvent>
+
+    <!-- Service Task: Cancelar extinção pelo cidadão -->
+    <serviceTask id="ST_CancelarExtincaoCidadao" name="Cancelar extinção&#10;(cidadão)"
+                 camunda:class="com.procergs.solcbm.licenciamento.LicenciamentoCidadaoExtincaoRN">
+      <documentation>RN-116, RN-117
+EJB: LicenciamentoCidadaoExtincaoRN.cancelar(idLicenciamento)
+Endpoint: PUT /licenciamentos/{idLic}/cancelar-extincao
+Ações:
+  1. Restaura situacao anterior do licenciamento
+  2. Zera aceiteExtincao, solicitanteExtincao, dthAceiteExtincao no ResponsavelTecnicoED
+  3. Registra marco CANCELAMENTO_EXTINCAO
+Tabelas: CBM_LICENCIAMENTO, CBM_RESPONSAVEL_TECNICO, CBM_LICENCIAMENTO_MARCO.</documentation>
+      <incoming>SF_Boundary_Cancelar</incoming>
+      <outgoing>SF_CancelarCidadao_Notificar</outgoing>
+    </serviceTask>
+
+    <!-- User Task: Cidadão aciona cancelamento explicitamente (fora do boundary) -->
+    <userTask id="UT_CancelarExtincao" name="Cancelar extinção&#10;(ação cidadão)">
+      <documentation>Angular: ModalExtincaoLicenciamentoComponent
+Botão "Cancelar extinção" aciona PUT /licenciamentos/{idLic}/cancelar-extincao.
+Disponível para RT, RU ou Proprietário quando licenciamento está em AGUARDANDO_ACEITES_EXTINCAO.</documentation>
+      <incoming>SF_End_AguardaAceite_Cancelar</incoming>
+      <outgoing>SF_UTCancelar_ST</outgoing>
+    </userTask>
+
+    <sequenceFlow id="SF_UTCancelar_ST" sourceRef="UT_CancelarExtincao" targetRef="ST_CancelarExtincaoCidadao"/>
+
+    <!-- Fluxo de saída para state "AGUARDANDO" (representação) -->
+    <sequenceFlow id="SF_End_AguardaAceite_Cancelar" sourceRef="End_AguardandoAceite" targetRef="UT_CancelarExtincao">
+      <documentation>Fluxo condicional — representa a ação assíncrona do cidadão
+cancelando a extinção enquanto aguarda o RT.
+Em implementação real, este fluxo é disparado pelo PUT /cancelar-extincao.</documentation>
+    </sequenceFlow>
+
+    <sequenceFlow id="SF_CancelarCidadao_Notificar" sourceRef="ST_CancelarExtincaoCidadao" targetRef="ST_NotificarCancelamento"/>
+
+    <!-- Service Task: Notificar cancelamento -->
+    <serviceTask id="ST_NotificarCancelamento" name="Notificar cancelamento&#10;aos envolvidos"
+                 camunda:class="com.procergs.solcbm.notificacao.NotificacaoRN">
+      <documentation>RN-119
+Template: notificacao.email.template.licenciamento.CANCELA_EXTINCAO
+Destinatários: RT ativo, RU ativo, todos os Proprietários ativos.</documentation>
+      <incoming>SF_CancelarCidadao_Notificar</incoming>
+      <outgoing>SF_NotificarCancelamento_End</outgoing>
+    </serviceTask>
+
+    <sequenceFlow id="SF_NotificarCancelamento_End" sourceRef="ST_NotificarCancelamento" targetRef="End_ExtincaoCancelada"/>
+
+    <!-- End: Extinção cancelada pelo cidadão -->
+    <endEvent id="End_ExtincaoCancelada" name="Extinção cancelada —&#10;licenciamento restaurado">
+      <documentation>Situação anterior do licenciamento restaurada (RN-117).
+Marco CANCELAMENTO_EXTINCAO registrado.</documentation>
+    </endEvent>
+
+    <!-- ====================================================== -->
+    <!--  FLUXO B — ADMINISTRADOR extingue ou cancela           -->
+    <!-- ====================================================== -->
+
+    <!-- Start: Admin inicia extinção -->
+    <startEvent id="Start_Admin" name="Administrador inicia&#10;extinção">
+      <documentation>Administrador CBM-RS acessa o portal de administração.
+Endpoint: POST /adm/licenciamentos/{idLic}/extinguir
+Sem etapa de aceite do RT (RN-112).</documentation>
+      <outgoing>SF_StartAdmin_UT</outgoing>
+    </startEvent>
+
+    <sequenceFlow id="SF_StartAdmin_UT" sourceRef="Start_Admin" targetRef="UT_ExtinguirAdmin"/>
+
+    <!-- User Task: Admin confirma extinção -->
+    <userTask id="UT_ExtinguirAdmin" name="Admin confirma&#10;extinção no sistema"
+              camunda:assignee="${cpfAdmin}"
+              camunda:formKey="extincao-admin">
+      <documentation>Angular (portal ADM): ModalExtincaoLicenciamentoComponent (versão admin)
+Admin seleciona licenciamento e confirma extinção.
+Dispara POST /adm/licenciamentos/{idLic}/extinguir
+→ LicenciamentoAdmRestImpl.extinguir()
+→ LicenciamentoCidadaoExtincaoRN.extingueAdm()</documentation>
+      <incoming>SF_StartAdmin_UT</incoming>
+      <outgoing>SF_UT_Admin_Validar</outgoing>
+    </userTask>
+
+    <sequenceFlow id="SF_UT_Admin_Validar" sourceRef="UT_ExtinguirAdmin" targetRef="ST_ValidarSituacaoAdmin"/>
+
+    <!-- Service Task: Validar situação (admin) -->
+    <serviceTask id="ST_ValidarSituacaoAdmin" name="Validar situação&#10;do licenciamento"
+                 camunda:class="com.procergs.solcbm.licenciamento.LicenciamentoCidadaoExtincaoRNVal">
+      <documentation>RN-109, RN-110
+Mesmo conjunto de validações do fluxo cidadão.
+EJB: LicenciamentoCidadaoExtincaoRNVal.validarExtinguir(lic, existeAnalise)</documentation>
+      <incoming>SF_UT_Admin_Validar</incoming>
+      <outgoing>SF_ValidarAdmin_GW</outgoing>
+    </serviceTask>
+
+    <sequenceFlow id="SF_ValidarAdmin_GW" sourceRef="ST_ValidarSituacaoAdmin" targetRef="GW_SituacaoValidaAdmin"/>
+
+    <!-- Gateway: Situação válida para admin? -->
+    <exclusiveGateway id="GW_SituacaoValidaAdmin" name="Situação permite&#10;extinção?"/>
+
+    <sequenceFlow id="SF_AdminInvalido" name="Não" sourceRef="GW_SituacaoValidaAdmin" targetRef="End_ErroSituacaoAdmin"/>
+    <sequenceFlow id="SF_AdminValido" name="Sim" sourceRef="GW_SituacaoValidaAdmin" targetRef="ST_CancelarRecursosAdmin"/>
+
+    <!-- End Error: situação inválida (admin) -->
+    <endEvent id="End_ErroSituacaoAdmin" name="Erro: situação&#10;inválida (HTTP 422)">
+      <errorEventDefinition id="EED_ErroSituacaoAdmin"
+                            errorRef="Error_ExtincaoInvalida"/>
+    </endEvent>
+
+    <!-- Service Task: Cancelar recursos (admin) -->
+    <serviceTask id="ST_CancelarRecursosAdmin" name="Cancelar recursos&#10;pendentes (automático)"
+                 camunda:class="com.procergs.solcbm.licenciamento.RecursoRN">
+      <documentation>RN-113 — mesmo comportamento do fluxo cidadão.</documentation>
+      <incoming>SF_AdminValido</incoming>
+      <outgoing>SF_CancelarAdmin_Extinguir</outgoing>
+    </serviceTask>
+
+    <sequenceFlow id="SF_CancelarAdmin_Extinguir" sourceRef="ST_CancelarRecursosAdmin" targetRef="ST_ExtinguirAdmin"/>
+
+    <!-- Service Task: Extinguir (admin, direto) -->
+    <serviceTask id="ST_ExtinguirAdmin" name="Extinguir licenciamento&#10;(admin, direto)"
+                 camunda:class="com.procergs.solcbm.licenciamento.trocaestado.TrocaEstadoLicenciamentoParaExtinguidoRN">
+      <documentation>RN-112
+EJB: TrocaEstadoLicenciamentoParaExtinguidoRN.trocaEstado(idLicenciamento)
+Extinção direta sem etapa de aceite do RT.
+Ações:
+  1. Atualiza situacao = EXTINGUIDO
+  2. Registra marco EXTINCAO
+Tabelas: CBM_LICENCIAMENTO, CBM_LICENCIAMENTO_MARCO.</documentation>
+      <incoming>SF_CancelarAdmin_Extinguir</incoming>
+      <outgoing>SF_ExtinguirAdmin_Notificar</outgoing>
+    </serviceTask>
+
+    <sequenceFlow id="SF_ExtinguirAdmin_Notificar" sourceRef="ST_ExtinguirAdmin" targetRef="ST_NotificarExtincaoAdmin"/>
+
+    <!-- Service Task: Notificar extinção admin -->
+    <serviceTask id="ST_NotificarExtincaoAdmin" name="Notificar envolvidos&#10;(extinção admin)"
+                 camunda:class="com.procergs.solcbm.notificacao.NotificacaoRN">
+      <documentation>RN-119 — mesmo comportamento: RT, RU e Proprietários notificados.</documentation>
+      <incoming>SF_ExtinguirAdmin_Notificar</incoming>
+      <outgoing>SF_NotificarAdmin_End</outgoing>
+    </serviceTask>
+
+    <sequenceFlow id="SF_NotificarAdmin_End" sourceRef="ST_NotificarExtincaoAdmin" targetRef="End_ExtintoAdmin"/>
+
+    <!-- End: Extinto (admin) -->
+    <endEvent id="End_ExtintoAdmin" name="Licenciamento&#10;EXTINGUIDO (admin)">
+      <documentation>SituacaoLicenciamento: EXTINGUIDO
+Extinção efetivada diretamente pelo Administrador (RN-112).</documentation>
+    </endEvent>
+
+    <!-- User Task: Admin cancela extinção pendente -->
+    <userTask id="UT_CancelarExtincaoAdmin" name="Admin cancela&#10;extinção pendente"
+              camunda:assignee="${cpfAdmin}"
+              camunda:formKey="cancelar-extincao-admin">
+      <documentation>Administrador aciona PUT /adm/licenciamentos/{idLic}/cancelar-extincao.
+Disponível quando licenciamento está em AGUARDANDO_ACEITES_EXTINCAO.</documentation>
+      <outgoing>SF_UTCancelarAdmin_ST</outgoing>
+    </userTask>
+
+    <sequenceFlow id="SF_UTCancelarAdmin_ST" sourceRef="UT_CancelarExtincaoAdmin" targetRef="ST_CancelarExtincaoAdmin"/>
+
+    <!-- Service Task: Cancelar extinção (admin) -->
+    <serviceTask id="ST_CancelarExtincaoAdmin" name="Cancelar extinção&#10;(admin)"
+                 camunda:class="com.procergs.solcbm.licenciamento.LicenciamentoCidadaoExtincaoRN">
+      <documentation>EJB: LicenciamentoCidadaoExtincaoRN.cancelarAdm(idLicenciamento)
+RN-116, RN-117
+Restaura situação anterior, zera campos de extinção no RT, registra marco CANCELAMENTO_EXTINCAO.</documentation>
+      <incoming>SF_UTCancelarAdmin_ST</incoming>
+      <outgoing>SF_CancelarAdmin_Notificar</outgoing>
+    </serviceTask>
+
+    <sequenceFlow id="SF_CancelarAdmin_Notificar" sourceRef="ST_CancelarExtincaoAdmin" targetRef="ST_NotificarCancelamentoAdmin"/>
+
+    <!-- Service Task: Notificar cancelamento (admin) -->
+    <serviceTask id="ST_NotificarCancelamentoAdmin" name="Notificar cancelamento&#10;(admin)"
+                 camunda:class="com.procergs.solcbm.notificacao.NotificacaoRN">
+      <documentation>Template: notificacao.email.template.licenciamento.CANCELA_EXTINCAO</documentation>
+      <incoming>SF_CancelarAdmin_Notificar</incoming>
+      <outgoing>SF_NotificarCancelamentoAdmin_End</outgoing>
+    </serviceTask>
+
+    <sequenceFlow id="SF_NotificarCancelamentoAdmin_End" sourceRef="ST_NotificarCancelamentoAdmin" targetRef="End_CanceladoAdmin"/>
+
+    <!-- End: Cancelado pelo admin -->
+    <endEvent id="End_CanceladoAdmin" name="Extinção cancelada&#10;pelo administrador">
+      <documentation>Situação anterior restaurada (RN-117). Marco CANCELAMENTO_EXTINCAO registrado.</documentation>
+    </endEvent>
+
+  </process>
+
+  <!-- ============================================================ -->
+  <!--  DIAGRAM INTERCHANGE (DI)                                    -->
+  <!-- ============================================================ -->
+  <bpmndi:BPMNDiagram id="BPMNDiagram_P12">
+    <bpmndi:BPMNPlane id="BPMNPlane_P12" bpmnElement="Collab_P12">
+
+      <!-- Pool -->
+      <bpmndi:BPMNShape id="Shape_Pool_P12" bpmnElement="Pool_P12" isHorizontal="true">
+        <dc:Bounds x="160" y="80" width="1700" height="820"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="170" y="80" width="30" height="820"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- Lane Cidadão -->
+      <bpmndi:BPMNShape id="Shape_Lane_Cidadao" bpmnElement="Lane_Cidadao" isHorizontal="true">
+        <dc:Bounds x="190" y="80" width="1670" height="250"/>
+      </bpmndi:BPMNShape>
+
+      <!-- Lane Sistema -->
+      <bpmndi:BPMNShape id="Shape_Lane_Sistema" bpmnElement="Lane_Sistema" isHorizontal="true">
+        <dc:Bounds x="190" y="330" width="1670" height="290"/>
+      </bpmndi:BPMNShape>
+
+      <!-- Lane Admin -->
+      <bpmndi:BPMNShape id="Shape_Lane_Admin" bpmnElement="Lane_Admin" isHorizontal="true">
+        <dc:Bounds x="190" y="620" width="1670" height="280"/>
+      </bpmndi:BPMNShape>
+
+      <!-- ===== FLUXO A — CIDADÃO ===== -->
+
+      <!-- Start_P12 -->
+      <bpmndi:BPMNShape id="Shape_Start_P12" bpmnElement="Start_P12">
+        <dc:Bounds x="242" y="172" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="220" y="215" width="80" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- UT_SolicitarExtincao -->
+      <bpmndi:BPMNShape id="Shape_UT_SolicitarExtincao" bpmnElement="UT_SolicitarExtincao">
+        <dc:Bounds x="320" y="150" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- ST_ValidarSituacao -->
+      <bpmndi:BPMNShape id="Shape_ST_ValidarSituacao" bpmnElement="ST_ValidarSituacao">
+        <dc:Bounds x="320" y="375" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- GW_SituacaoValida -->
+      <bpmndi:BPMNShape id="Shape_GW_SituacaoValida" bpmnElement="GW_SituacaoValida" isMarkerVisible="true">
+        <dc:Bounds x="495" y="395" width="50" height="50"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="472" y="452" width="96" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- End_ErroSituacao -->
+      <bpmndi:BPMNShape id="Shape_End_ErroSituacao" bpmnElement="End_ErroSituacao">
+        <dc:Bounds x="497" y="293" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="474" y="257" width="82" height="40"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- ST_VerificarTrocaEnvolvido -->
+      <bpmndi:BPMNShape id="Shape_ST_VerificarTrocaEnvolvido" bpmnElement="ST_VerificarTrocaEnvolvido">
+        <dc:Bounds x="600" y="375" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- GW_TrocaEnvolvidoPendente -->
+      <bpmndi:BPMNShape id="Shape_GW_TrocaEnvolvidoPendente" bpmnElement="GW_TrocaEnvolvidoPendente" isMarkerVisible="true">
+        <dc:Bounds x="775" y="395" width="50" height="50"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="750" y="452" width="100" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- End_ErrTrocaEnvolvido -->
+      <bpmndi:BPMNShape id="Shape_End_ErrTrocaEnvolvido" bpmnElement="End_ErrTrocaEnvolvido">
+        <dc:Bounds x="777" y="293" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="750" y="257" width="90" height="40"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- ST_CancelarRecursosPendentes -->
+      <bpmndi:BPMNShape id="Shape_ST_CancelarRecursosPendentes" bpmnElement="ST_CancelarRecursosPendentes">
+        <dc:Bounds x="880" y="375" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- GW_TemRTAtivo -->
+      <bpmndi:BPMNShape id="Shape_GW_TemRTAtivo" bpmnElement="GW_TemRTAtivo" isMarkerVisible="true">
+        <dc:Bounds x="1055" y="395" width="50" height="50"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1030" y="452" width="100" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- GW_SolicitanteEhRT -->
+      <bpmndi:BPMNShape id="Shape_GW_SolicitanteEhRT" bpmnElement="GW_SolicitanteEhRT" isMarkerVisible="true">
+        <dc:Bounds x="1160" y="395" width="50" height="50"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1135" y="452" width="100" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- ST_AguardarAceiteRT -->
+      <bpmndi:BPMNShape id="Shape_ST_AguardarAceiteRT" bpmnElement="ST_AguardarAceiteRT">
+        <dc:Bounds x="1270" y="375" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- UT_AceitarRecusarExtincao -->
+      <bpmndi:BPMNShape id="Shape_UT_AceitarRecusarExtincao" bpmnElement="UT_AceitarRecusarExtincao">
+        <dc:Bounds x="1270" y="150" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- BoundaryCancel_AguardaAceite -->
+      <bpmndi:BPMNShape id="Shape_BoundaryCancel_AguardaAceite" bpmnElement="BoundaryCancel_AguardaAceite">
+        <dc:Bounds x="1352" y="212" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1375" y="225" width="80" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- End_AguardandoAceite -->
+      <bpmndi:BPMNShape id="Shape_End_AguardandoAceite" bpmnElement="End_AguardandoAceite">
+        <dc:Bounds x="1432" y="172" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1408" y="215" width="84" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- UT_CancelarExtincao -->
+      <bpmndi:BPMNShape id="Shape_UT_CancelarExtincao" bpmnElement="UT_CancelarExtincao">
+        <dc:Bounds x="1430" y="92" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- GW_DecisaoRT -->
+      <bpmndi:BPMNShape id="Shape_GW_DecisaoRT" bpmnElement="GW_DecisaoRT" isMarkerVisible="true">
+        <dc:Bounds x="1445" y="395" width="50" height="50"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1420" y="452" width="100" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- ST_EfetivarExtincaoAposAceite -->
+      <bpmndi:BPMNShape id="Shape_ST_EfetivarExtincaoAposAceite" bpmnElement="ST_EfetivarExtincaoAposAceite">
+        <dc:Bounds x="1555" y="375" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- ST_ExtinguirDireto -->
+      <bpmndi:BPMNShape id="Shape_ST_ExtinguirDireto" bpmnElement="ST_ExtinguirDireto">
+        <dc:Bounds x="1160" y="480" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- ST_NotificarExtincao -->
+      <bpmndi:BPMNShape id="Shape_ST_NotificarExtincao" bpmnElement="ST_NotificarExtincao">
+        <dc:Bounds x="1690" y="375" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- End_Extinto -->
+      <bpmndi:BPMNShape id="Shape_End_Extinto" bpmnElement="End_Extinto">
+        <dc:Bounds x="1832" y="397" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1812" y="440" width="76" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- ST_RecusarExtincao -->
+      <bpmndi:BPMNShape id="Shape_ST_RecusarExtincao" bpmnElement="ST_RecusarExtincao">
+        <dc:Bounds x="1555" y="480" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- ST_NotificarRecusa -->
+      <bpmndi:BPMNShape id="Shape_ST_NotificarRecusa" bpmnElement="ST_NotificarRecusa">
+        <dc:Bounds x="1690" y="480" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- End_ExtincaoRecusada -->
+      <bpmndi:BPMNShape id="Shape_End_ExtincaoRecusada" bpmnElement="End_ExtincaoRecusada">
+        <dc:Bounds x="1832" y="502" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1808" y="545" width="84" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- ST_CancelarExtincaoCidadao -->
+      <bpmndi:BPMNShape id="Shape_ST_CancelarExtincaoCidadao" bpmnElement="ST_CancelarExtincaoCidadao">
+        <dc:Bounds x="1555" y="285" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- ST_NotificarCancelamento -->
+      <bpmndi:BPMNShape id="Shape_ST_NotificarCancelamento" bpmnElement="ST_NotificarCancelamento">
+        <dc:Bounds x="1690" y="285" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- End_ExtincaoCancelada -->
+      <bpmndi:BPMNShape id="Shape_End_ExtincaoCancelada" bpmnElement="End_ExtincaoCancelada">
+        <dc:Bounds x="1832" y="307" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1808" y="350" width="84" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- ===== FLUXO B — ADMINISTRADOR ===== -->
+
+      <!-- Start_Admin -->
+      <bpmndi:BPMNShape id="Shape_Start_Admin" bpmnElement="Start_Admin">
+        <dc:Bounds x="242" y="712" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="218" y="755" width="84" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- UT_ExtinguirAdmin -->
+      <bpmndi:BPMNShape id="Shape_UT_ExtinguirAdmin" bpmnElement="UT_ExtinguirAdmin">
+        <dc:Bounds x="320" y="690" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- ST_ValidarSituacaoAdmin -->
+      <bpmndi:BPMNShape id="Shape_ST_ValidarSituacaoAdmin" bpmnElement="ST_ValidarSituacaoAdmin">
+        <dc:Bounds x="495" y="690" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- GW_SituacaoValidaAdmin -->
+      <bpmndi:BPMNShape id="Shape_GW_SituacaoValidaAdmin" bpmnElement="GW_SituacaoValidaAdmin" isMarkerVisible="true">
+        <dc:Bounds x="670" y="710" width="50" height="50"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="645" y="767" width="100" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- End_ErroSituacaoAdmin -->
+      <bpmndi:BPMNShape id="Shape_End_ErroSituacaoAdmin" bpmnElement="End_ErroSituacaoAdmin">
+        <dc:Bounds x="672" y="638" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="648" y="602" width="84" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- ST_CancelarRecursosAdmin -->
+      <bpmndi:BPMNShape id="Shape_ST_CancelarRecursosAdmin" bpmnElement="ST_CancelarRecursosAdmin">
+        <dc:Bounds x="775" y="690" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- ST_ExtinguirAdmin -->
+      <bpmndi:BPMNShape id="Shape_ST_ExtinguirAdmin" bpmnElement="ST_ExtinguirAdmin">
+        <dc:Bounds x="950" y="690" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- ST_NotificarExtincaoAdmin -->
+      <bpmndi:BPMNShape id="Shape_ST_NotificarExtincaoAdmin" bpmnElement="ST_NotificarExtincaoAdmin">
+        <dc:Bounds x="1130" y="690" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- End_ExtintoAdmin -->
+      <bpmndi:BPMNShape id="Shape_End_ExtintoAdmin" bpmnElement="End_ExtintoAdmin">
+        <dc:Bounds x="1302" y="712" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1278" y="755" width="84" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- UT_CancelarExtincaoAdmin -->
+      <bpmndi:BPMNShape id="Shape_UT_CancelarExtincaoAdmin" bpmnElement="UT_CancelarExtincaoAdmin">
+        <dc:Bounds x="1430" y="690" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- ST_CancelarExtincaoAdmin -->
+      <bpmndi:BPMNShape id="Shape_ST_CancelarExtincaoAdmin" bpmnElement="ST_CancelarExtincaoAdmin">
+        <dc:Bounds x="1600" y="690" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- ST_NotificarCancelamentoAdmin -->
+      <bpmndi:BPMNShape id="Shape_ST_NotificarCancelamentoAdmin" bpmnElement="ST_NotificarCancelamentoAdmin">
+        <dc:Bounds x="1735" y="690" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- End_CanceladoAdmin -->
+      <bpmndi:BPMNShape id="Shape_End_CanceladoAdmin" bpmnElement="End_CanceladoAdmin">
+        <dc:Bounds x="1882" y="712" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1858" y="755" width="84" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- ===== SEQUENCE FLOWS — CIDADÃO ===== -->
+
+      <bpmndi:BPMNEdge id="Edge_SF_Start_ValidarSituacao" bpmnElement="SF_Start_ValidarSituacao">
+        <di:waypoint x="278" y="190"/>
+        <di:waypoint x="320" y="190"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_SF_SolicitarExtincao_Validar" bpmnElement="SF_SolicitarExtincao_Validar">
+        <di:waypoint x="380" y="230"/>
+        <di:waypoint x="380" y="415"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_SF_Validar_GW" bpmnElement="SF_Validar_GW">
+        <di:waypoint x="440" y="415"/>
+        <di:waypoint x="495" y="420"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_SF_GW_Invalido" bpmnElement="SF_GW_Invalido">
+        <di:waypoint x="520" y="395"/>
+        <di:waypoint x="520" y="329"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="528" y="358" width="20" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_SF_GW_Valido" bpmnElement="SF_GW_Valido">
+        <di:waypoint x="545" y="420"/>
+        <di:waypoint x="600" y="415"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="562" y="400" width="20" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_SF_VerTroca_GW" bpmnElement="SF_VerTroca_GW">
+        <di:waypoint x="720" y="415"/>
+        <di:waypoint x="775" y="420"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_SF_TrocaSim" bpmnElement="SF_TrocaSim">
+        <di:waypoint x="800" y="395"/>
+        <di:waypoint x="800" y="329"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="808" y="358" width="20" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_SF_TrocaNao" bpmnElement="SF_TrocaNao">
+        <di:waypoint x="825" y="420"/>
+        <di:waypoint x="880" y="415"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="842" y="400" width="20" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_SF_CancelarRecursos_GW" bpmnElement="SF_CancelarRecursos_GW">
+        <di:waypoint x="1000" y="415"/>
+        <di:waypoint x="1055" y="420"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_SF_SemRT" bpmnElement="SF_SemRT">
+        <di:waypoint x="1080" y="445"/>
+        <di:waypoint x="1080" y="520"/>
+        <di:waypoint x="1160" y="520"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1090" y="478" width="20" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_SF_ComRT" bpmnElement="SF_ComRT">
+        <di:waypoint x="1105" y="420"/>
+        <di:waypoint x="1160" y="420"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1122" y="400" width="20" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_SF_EhRT" bpmnElement="SF_EhRT">
+        <di:waypoint x="1185" y="445"/>
+        <di:waypoint x="1185" y="520"/>
+        <di:waypoint x="1160" y="520"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1190" y="478" width="80" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_SF_NaoEhRT" bpmnElement="SF_NaoEhRT">
+        <di:waypoint x="1210" y="420"/>
+        <di:waypoint x="1270" y="415"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1225" y="400" width="80" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_SF_AguardarAceiteRT_UT" bpmnElement="SF_AguardarAceiteRT_UT">
+        <di:waypoint x="1330" y="375"/>
+        <di:waypoint x="1330" y="230"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_SF_UT_GWDecisao" bpmnElement="SF_UT_GWDecisao">
+        <di:waypoint x="1330" y="230"/>
+        <di:waypoint x="1330" y="415"/>
+        <di:waypoint x="1445" y="420"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_SF_Boundary_Cancelar" bpmnElement="SF_Boundary_Cancelar">
+        <di:waypoint x="1370" y="230"/>
+        <di:waypoint x="1555" y="325"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_SF_End_AguardaAceite_Cancelar" bpmnElement="SF_End_AguardaAceite_Cancelar">
+        <di:waypoint x="1450" y="190"/>
+        <di:waypoint x="1490" y="190"/>
+        <di:waypoint x="1490" y="132"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_SF_UTCancelar_ST" bpmnElement="SF_UTCancelar_ST">
+        <di:waypoint x="1490" y="172"/>
+        <di:waypoint x="1490" y="325"/>
+        <di:waypoint x="1555" y="325"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_SF_Aceite" bpmnElement="SF_Aceite">
+        <di:waypoint x="1495" y="420"/>
+        <di:waypoint x="1555" y="415"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1510" y="400" width="36" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_SF_Recusa" bpmnElement="SF_Recusa">
+        <di:waypoint x="1470" y="445"/>
+        <di:waypoint x="1470" y="520"/>
+        <di:waypoint x="1555" y="520"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1478" y="478" width="36" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_SF_ExtinguirDireto_Notificar" bpmnElement="SF_ExtinguirDireto_Notificar">
+        <di:waypoint x="1280" y="520"/>
+        <di:waypoint x="1750" y="520"/>
+        <di:waypoint x="1750" y="455"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_SF_EfetivarAceite_Notificar" bpmnElement="SF_EfetivarAceite_Notificar">
+        <di:waypoint x="1675" y="415"/>
+        <di:waypoint x="1690" y="415"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_SF_Notificar_End" bpmnElement="SF_Notificar_End">
+        <di:waypoint x="1810" y="415"/>
+        <di:waypoint x="1832" y="415"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_SF_Recusar_Notificar" bpmnElement="SF_Recusar_Notificar">
+        <di:waypoint x="1675" y="520"/>
+        <di:waypoint x="1690" y="520"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_SF_NotificarRecusa_End" bpmnElement="SF_NotificarRecusa_End">
+        <di:waypoint x="1810" y="520"/>
+        <di:waypoint x="1832" y="520"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_SF_CancelarCidadao_Notificar" bpmnElement="SF_CancelarCidadao_Notificar">
+        <di:waypoint x="1675" y="325"/>
+        <di:waypoint x="1690" y="325"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_SF_NotificarCancelamento_End" bpmnElement="SF_NotificarCancelamento_End">
+        <di:waypoint x="1810" y="325"/>
+        <di:waypoint x="1832" y="325"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- ===== SEQUENCE FLOWS — ADMINISTRADOR ===== -->
+
+      <bpmndi:BPMNEdge id="Edge_SF_StartAdmin_UT" bpmnElement="SF_StartAdmin_UT">
+        <di:waypoint x="278" y="730"/>
+        <di:waypoint x="320" y="730"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_SF_UT_Admin_Validar" bpmnElement="SF_UT_Admin_Validar">
+        <di:waypoint x="440" y="730"/>
+        <di:waypoint x="495" y="730"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_SF_ValidarAdmin_GW" bpmnElement="SF_ValidarAdmin_GW">
+        <di:waypoint x="615" y="730"/>
+        <di:waypoint x="670" y="735"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_SF_AdminInvalido" bpmnElement="SF_AdminInvalido">
+        <di:waypoint x="695" y="710"/>
+        <di:waypoint x="695" y="674"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="703" y="688" width="20" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_SF_AdminValido" bpmnElement="SF_AdminValido">
+        <di:waypoint x="720" y="735"/>
+        <di:waypoint x="775" y="730"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="736" y="714" width="20" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_SF_CancelarAdmin_Extinguir" bpmnElement="SF_CancelarAdmin_Extinguir">
+        <di:waypoint x="895" y="730"/>
+        <di:waypoint x="950" y="730"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_SF_ExtinguirAdmin_Notificar" bpmnElement="SF_ExtinguirAdmin_Notificar">
+        <di:waypoint x="1070" y="730"/>
+        <di:waypoint x="1130" y="730"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_SF_NotificarAdmin_End" bpmnElement="SF_NotificarAdmin_End">
+        <di:waypoint x="1250" y="730"/>
+        <di:waypoint x="1302" y="730"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_SF_UTCancelarAdmin_ST" bpmnElement="SF_UTCancelarAdmin_ST">
+        <di:waypoint x="1550" y="730"/>
+        <di:waypoint x="1600" y="730"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_SF_CancelarAdmin_Notificar" bpmnElement="SF_CancelarAdmin_Notificar">
+        <di:waypoint x="1720" y="730"/>
+        <di:waypoint x="1735" y="730"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_SF_NotificarCancelamentoAdmin_End" bpmnElement="SF_NotificarCancelamentoAdmin_End">
+        <di:waypoint x="1855" y="730"/>
+        <di:waypoint x="1882" y="730"/>
+      </bpmndi:BPMNEdge>
+
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</definitions>

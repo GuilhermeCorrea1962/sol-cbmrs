@@ -1,0 +1,1335 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI"
+             xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             targetNamespace="http://solcbm.procergs.rs.gov.br/bpmn"
+             id="definitions_P03_Detalhado">
+
+  <!--
+  ============================================================
+  P03 — WIZARD DE NOVA SOLICITAÇÃO DE LICENCIAMENTO (DETALHADO)
+  Sistema: SOL — Sistema Online de Licenciamento / CBM-RS
+  Stack:   Java EE — JAX-RS · CDI · EJB @Stateless · JPA/Hibernate
+           Alfresco ECM · WildFly/JBoss · SOE PROCERGS OAuth2
+
+  Entidades JPA principais:
+    LicenciamentoED              → CBM_LICENCIAMENTO
+    ResponsavelTecnicoED         → CBM_RESPONSAVEL_TECNICO
+    ResponsavelUsoED             → CBM_RESPONSAVEL_USO
+    LicenciamentoProprietarioED  → CBM_LICEN_PROPRI
+    CaracteristicaED             → CBM_CARACTERISTICA
+    LocalizacaoED                → CBM_LOCALIZACAO
+    ElementoGraficoED            → CBM_ELEMENTO_GRAFICO
+    ArquivoED                    → CBM_ARQUIVO (nodeRef Alfresco)
+    TermoLicenciamentoED         → CBM_TERMO_LICENCIAMENTO
+    LicenciamentoMarcoED         → CBM_LICENCIAMENTO_MARCO
+
+  RNs (EJB @Stateless) principais:
+    LicenciamentoCidadaoRN       — incluir / alterar
+    TermoLicenciamentoRN         — confirmaAceiteAnalise / get
+    LicenciamentoMarcoRN         — criaMarcoPorTipo
+    LicenciamentoSituacaoHistRN  — salva
+    NotificacaoRN                — notificaEnvolvidosNovos
+
+  Padrão de camadas:
+    LicenciamentoRest (@Path /licenciamentos)
+      → RN (@Stateless, @TransactionAttribute REQUIRED)
+        → BD (JPA queries, DetachedCriteria)
+          → ED (@Entity @Audited)
+  ============================================================
+  -->
+
+  <collaboration id="Col_P03_Det">
+    <participant id="Part_SOL"
+                 name="SOL — Sistema Online de Licenciamento / CBM-RS"
+                 processRef="Proc_P03_Det"/>
+  </collaboration>
+
+  <process id="Proc_P03_Det"
+           name="P03 — Wizard de Nova Solicitação de Licenciamento (Detalhado)"
+           isExecutable="false">
+
+    <laneSet id="ls_P03_Det">
+
+      <!-- ============================================================
+           LANE 1: CIDADÃO (RU — Responsável pelo Uso)
+           Contém as 7 etapas do wizard.
+           Autenticação: SOE PROCERGS / meu.rs.gov.br (OAuth2/OIDC).
+           Segurança: @AutorizaEnvolvido + SegurancaEnvolvidoInterceptor.
+           ============================================================ -->
+      <lane id="Lane_Cidadao" name="Cidadão (RU — Responsável pelo Uso)">
+        <flowNodeRef>P03D_Start</flowNodeRef>
+        <flowNodeRef>P03D_T01</flowNodeRef>
+        <flowNodeRef>P03D_T02</flowNodeRef>
+        <flowNodeRef>P03D_GW_PPCI</flowNodeRef>
+        <flowNodeRef>P03D_T03</flowNodeRef>
+        <flowNodeRef>P03D_GW_JoinT03</flowNodeRef>
+        <flowNodeRef>P03D_T04</flowNodeRef>
+        <flowNodeRef>P03D_T05</flowNodeRef>
+        <flowNodeRef>P03D_T06</flowNodeRef>
+        <flowNodeRef>P03D_T07</flowNodeRef>
+      </lane>
+
+      <!-- ============================================================
+           LANE 2: RESPONSÁVEL TÉCNICO (RT)
+           Atua APÓS a submissão, aceitando o termo via sistema.
+           Segurança: @AutorizaEnvolvido verifica vínculo com licenciamento.
+           ============================================================ -->
+      <lane id="Lane_RT" name="Responsável Técnico (RT)">
+        <flowNodeRef>P03D_T09_RT</flowNodeRef>
+        <flowNodeRef>P03D_GW_RTAceit</flowNodeRef>
+        <flowNodeRef>P03D_End_RTRec</flowNodeRef>
+      </lane>
+
+      <!-- ============================================================
+           LANE 3: PROPRIETÁRIO
+           Deve aceitar o termo após a submissão.
+           Pode agir por Procurador (ProcuradorED).
+           ============================================================ -->
+      <lane id="Lane_Prop" name="Proprietário (ou Procurador)">
+        <flowNodeRef>P03D_T09_Prop</flowNodeRef>
+      </lane>
+
+      <!-- ============================================================
+           LANE 4: SISTEMA SOL (Automatizado)
+           Tarefas de serviço disparadas após ações dos atores.
+           Todas as ServiceTasks correspondem a chamadas ao backend
+           Java EE: REST Resource → EJB RN → JPA BD → Entity.
+           ============================================================ -->
+      <lane id="Lane_Sis" name="Sistema SOL — Backend Java EE (JAX-RS / EJB / JPA / Alfresco)">
+        <flowNodeRef>P03D_ST_Submissao</flowNodeRef>
+        <flowNodeRef>P03D_GW_SplitAc</flowNodeRef>
+        <flowNodeRef>P03D_GW_JoinAc</flowNodeRef>
+        <flowNodeRef>P03D_ST_TodosAceit</flowNodeRef>
+        <flowNodeRef>P03D_GW_Isencao</flowNodeRef>
+        <flowNodeRef>P03D_ST_SitAgPag</flowNodeRef>
+        <flowNodeRef>P03D_End_AgPag</flowNodeRef>
+        <flowNodeRef>P03D_GW_Inviab</flowNodeRef>
+        <flowNodeRef>P03D_ST_SitInviab</flowNodeRef>
+        <flowNodeRef>P03D_End_Inviab</flowNodeRef>
+        <flowNodeRef>P03D_ST_SitAgDist</flowNodeRef>
+        <flowNodeRef>P03D_End_AgDist</flowNodeRef>
+      </lane>
+
+    </laneSet>
+
+    <!-- ================================================================
+         EVENTO INICIAL
+         ================================================================ -->
+
+    <startEvent id="P03D_Start" name="Cidadão Inicia&#10;Nova Solicitação de&#10;Licenciamento">
+      <documentation>
+        Pré-condição: Cidadão autenticado via SOE PROCERGS (OAuth2/OIDC).
+        CPF obtido do token JWT — armazenado em CidadaoSessionMB (ou equivalente CDI @SessionScoped).
+        RN-P03-002: CPF deve estar cadastrado e ativo no sistema antes de criar.
+        Acesso via menu "Nova Solicitação" no portal SOL.
+      </documentation>
+      <outgoing>P03D_sf001</outgoing>
+    </startEvent>
+
+    <!-- ================================================================
+         FASE 1: WIZARD — ETAPAS 1 a 7
+         Formulário multi-etapa com persistência automática de progresso.
+         Campo LicenciamentoED.passo (coluna NRO_PASSO) armazena a etapa atual.
+         RN-P03-004: Cidadão pode fechar o navegador e retomar depois.
+         ================================================================ -->
+
+    <!-- ── ETAPA 1: Tipo de Atividade / Enquadramento ── -->
+    <userTask id="P03D_T01"
+              name="Etapa 1: Selecionar Tipo de&#10;Atividade e Enquadramento"
+              camunda:assignee="${cpfCidadao}"
+              camunda:formKey="sol/nova-solicitacao/etapa1">
+      <documentation>
+        RN-P03-010: Cidadão seleciona TipoLicenciamento:
+          PPCI                — Plano de Prevenção e Proteção Contra Incêndio
+          PSPCIM              — Plano de Segurança para Peq./Médias Edificações
+          CLCB                — Comunicação de Ligação Comercial de Baixo Risco
+          PSPCIB              — Plano de Segurança para Peq. Edificações de Baixo Risco
+          EVENTO_TEMPORARIO   — Licença para eventos temporários
+          EVENTO_PIROTECNICO  — Licença para eventos pirotécnicos
+          CONSTRUCAO_PROVISORIA — Licença para construção provisória
+
+        RN-P03-011: Tipos PPCI e PSPCIM exigem RT e RU (Etapa 3).
+                    Tipos CLCB/outros não exigem RT (Etapa 3 é pulada).
+
+        RN-P03-010: Tipo NÃO pode ser alterado após a submissão.
+
+        Ação do backend (LicenciamentoCidadaoRN.incluir):
+          REST: POST /licenciamentos
+          Segurança: @Permissao(objeto="ENVOLVIDOS", acao="INCLUIR")
+          Fluxo completo do método incluir():
+            1. licenciamentoRNVal.validaLicenciamentoParaInclusao(dto)
+            2. Cria LicenciamentoED via licenciamentoRN.inclui(ed)
+            3. licenciamentoSituacaoHistRN.salva(ed, RASCUNHO)
+            4. ed.setFase(PROJETO)
+            5. licenciamentoProprietarioRN.incluir(proprietarios, ed)
+            6. SE tipo==PPCI||PSPCIM:
+                 responsavelTecnicoRN.incluir(rts, ed)
+                 responsavelUsoRN.incluir(rus, ed)
+            7. estabelecimentoRN.incluir(estabelecimentos, ed)
+            8. licenciamentoMarcoRN.criaMarcoPorTipo(ed, RASCUNHO_LICENCIAMENTO)
+            9. notificacaoRN.notificaEnvolvidosNovos(ed)
+           10. return ed.getId()
+
+        Estado inicial do LicenciamentoED:
+          situacao = SituacaoLicenciamento.RASCUNHO
+          fase     = TipoFaseLicenciamento.PROJETO
+          passo    = 1  (constante NRO_PASSO em LicenciamentoCidadaoRN)
+          numero   = null (gerado na submissão)
+          diasAnaliseAnterior = 0
+          recursoBloqueado = false
+
+        Tabela: CBM_LICENCIAMENTO
+        Sequência: CBM_ID_LICENCIAMENTO_SEQ (allocationSize=1)
+        Auditoria: @Audited → tabela CBM_LICENCIAMENTO_AUD
+        Marco criado: TipoMarco.RASCUNHO_LICENCIAMENTO → CBM_LICENCIAMENTO_MARCO
+      </documentation>
+      <incoming>P03D_sf001</incoming>
+      <outgoing>P03D_sf002</outgoing>
+    </userTask>
+
+    <!-- ── ETAPA 2: Dados do Estabelecimento / Empresa e Proprietários ── -->
+    <userTask id="P03D_T02"
+              name="Etapa 2: Dados do Estabelecimento /&#10;Empresa e Proprietários"
+              camunda:assignee="${cpfCidadao}"
+              camunda:formKey="sol/nova-solicitacao/etapa2">
+      <documentation>
+        RN-P03-020: Estabelecimento vinculado via EstabelecimentoED.
+          Um licenciamento pode ter múltiplos estabelecimentos.
+          REST: GET/PUT /licenciamentos/{id}/estabelecimentos
+                GET/PUT /licenciamentos/{id}/estabelecimentos/{idEst}
+
+        RN-P03-021: Proprietário vinculado via LicenciamentoProprietarioED → ProprietarioED.
+          Pode haver mais de um proprietário.
+          REST: GET /licenciamentos/{id}/proprietarios
+                POST/PUT /licenciamentos/{id}/proprietarios/{idProp}
+
+        RN-P03-022: Procurador opcional (ProcuradorED).
+          Se RU ou Proprietário age por procurador, a procuração é vinculada.
+          ProcuradorED FK em: ResponsavelUsoED.procurador e LicenciamentoProprietarioED.procurador.
+          Upload procuração: POST /licenciamentos/{id}/procurador-ru
+                             POST /licenciamentos/{id}/procurador-propri
+          Arquivo armazenado no Alfresco (identificadorAlfresco em ArquivoED).
+
+        Persistência: PUT /licenciamentos/{id} → passo = 3
+
+        Tabelas:
+          CBM_RESPONSAVEL_USO   (seq: CBM_ID_RESPONSAVEL_USO_SEQ)
+          CBM_LICEN_PROPRI      (seq: CBM_ID_LICEN_PROPRI_SEQ)
+          CBM_ARQUIVO           (seq: CBM_ID_ARQUIVO_SEQ, campo identificadorAlfresco)
+      </documentation>
+      <incoming>P03D_sf002</incoming>
+      <outgoing>P03D_sf003</outgoing>
+    </userTask>
+
+    <!-- ── Gateway: Tipo PPCI ou PSPCIM? ── -->
+    <exclusiveGateway id="P03D_GW_PPCI"
+                      name="Tipo exige&#10;Responsável Técnico?&#10;(PPCI ou PSPCIM)">
+      <documentation>
+        RN-P03-011: Condição: tipo == TipoLicenciamento.PPCI || tipo == TipoLicenciamento.PSPCIM
+          Sim → Etapa 3 obrigatória (vincular RT)
+          Não → Etapa 3 ignorada (passo avança de 2 para 4)
+        Implementação: bloco condicional em LicenciamentoCidadaoRN.incluir()
+      </documentation>
+      <incoming>P03D_sf003</incoming>
+      <outgoing>P03D_sf004_sim</outgoing>
+      <outgoing>P03D_sf004_nao</outgoing>
+    </exclusiveGateway>
+
+    <!-- ── ETAPA 3: Vincular Responsável Técnico (RT) — condicional ── -->
+    <userTask id="P03D_T03"
+              name="Etapa 3: Vincular&#10;Responsável Técnico (RT)"
+              camunda:assignee="${cpfCidadao}"
+              camunda:formKey="sol/nova-solicitacao/etapa3">
+      <documentation>
+        Executada apenas se tipo == PPCI ou PSPCIM.
+
+        RN-P03-030: Ao menos um RT deve ser vinculado.
+        RN-P03-031: RT deve ter cadastro aprovado no sistema (P02 concluído).
+          A busca retorna dados do UsuarioED associado ao RT aprovado.
+        RN-P03-032: TipoResponsabilidadeTecnica atribuída ao RT:
+          PROJETO            — responsável apenas pelo projeto do PPCI
+          EXECUCAO           — responsável pela execução das medidas
+          PROJETO_EXECUCAO   — responsável por projeto e execução
+          (RENOVACAO_APPCI   — somente em renovações, não neste wizard)
+        RN-P03-033: aceite inicial = false; confirmado após submissão.
+        RN-P03-034: Upload ART/RRT obrigatório:
+          REST: POST /licenciamentos/{id}/rt/{idRT}/arquivo
+          Arquivo armazenado no Alfresco.
+          Tabela: CBM_RESPONSAVEL_ARQUIVO (ManyToMany: RT ↔ ArquivoED)
+        RN-P03-035: Múltiplos RTs permitidos (ex.: arquiteto + engenheiro).
+          Cada RT vinculado aceita individualmente após a submissão.
+
+        Persistência: PUT /licenciamentos/{id} → passo = 4
+
+        Entidade: ResponsavelTecnicoED
+        Tabela: CBM_RESPONSAVEL_TECNICO (seq: CBM_ID_RESPONSAVEL_TECNICO_SEQ)
+        Interface: EnvolvidoED
+        Campos relevantes:
+          aceite              — Boolean (SimNaoBooleanConverter: S/N no BD)
+          aceiteVistoria      — Boolean
+          aceiteAnexoD        — Boolean
+          tipoResponsabilidadeTecnica — TipoResponsabilidadeTecnica
+          arquivos            — ManyToMany com ArquivoED (tabela CBM_RESPONSAVEL_ARQUIVO)
+      </documentation>
+      <incoming>P03D_sf004_sim</incoming>
+      <outgoing>P03D_sf005_rt</outgoing>
+    </userTask>
+
+    <!-- ── Gateway de junção (PPCI/PSPCIM vs outros tipos) ── -->
+    <exclusiveGateway id="P03D_GW_JoinT03" name="">
+      <incoming>P03D_sf005_rt</incoming>
+      <incoming>P03D_sf004_nao</incoming>
+      <outgoing>P03D_sf006</outgoing>
+    </exclusiveGateway>
+
+    <!-- ── ETAPA 4: Endereço / Localização ── -->
+    <userTask id="P03D_T04"
+              name="Etapa 4: Informar Endereço&#10;e Localização do Estabelecimento"
+              camunda:assignee="${cpfCidadao}"
+              camunda:formKey="sol/nova-solicitacao/etapa4">
+      <documentation>
+        RN-P03-040: Localização representada por LocalizacaoED.
+          Campos principais:
+            latitudeEndereco / longitudeEndereco — coordenadas do endereço digitado
+            latitudeMapa / longitudeMapa         — ajuste interativo no mapa
+            isolamentoRisco                      — Boolean (SimNaoBooleanConverter)
+            endereco     FK → EnderecoLicenciamentoED    (endereço estruturado)
+            enderecoNovo FK → EnderecoLicenciamentoNovoED (endereço novo)
+            arquivo      FK → ArquivoED                  (comprovante, não auditado)
+          Métodos:
+            getNomeCidade()    — retorna nome do município
+            getNroMunicipioIBGE() — retorna código IBGE
+          REST: POST /licenciamentos/{id}/localizacao/
+                PUT  /licenciamentos/{id}/localizacao/
+
+        RN-P03-041: Upload comprovante de endereço:
+          REST: POST /licenciamentos/{id}/localizacao/{idLoc}/arquivo
+          Arquivo armazenado no Alfresco (identificadorAlfresco @NotNull, max 150).
+
+        RN-P03-042: Verificação de endereço existente:
+          REST: GET /licenciamentos/{id}/endereco-existente
+          Verifica se já existe licenciamento ativo no mesmo endereço.
+          Resultado: ALERTA ao cidadão (não bloqueia, apenas informa).
+
+        Persistência: PUT /licenciamentos/{id} → passo = 5
+
+        Tabela: CBM_LOCALIZACAO (seq: CBM_ID_LOCALIZACAO_SEQ)
+        Auditoria: @Audited
+      </documentation>
+      <incoming>P03D_sf006</incoming>
+      <outgoing>P03D_sf007</outgoing>
+    </userTask>
+
+    <!-- ── ETAPA 5: Dados da Edificação ── -->
+    <userTask id="P03D_T05"
+              name="Etapa 5: Dados da Edificação&#10;(Área, Pavimentos, Características,&#10;Ocupações e Medidas de Segurança)"
+              camunda:assignee="${cpfCidadao}"
+              camunda:formKey="sol/nova-solicitacao/etapa5">
+      <documentation>
+        RN-P03-050: Edificação descrita por CaracteristicaED.
+          REST: POST /licenciamentos/{id}/caracteristicas/
+                PUT  /licenciamentos/{id}/caracteristicas/{idCar}
+
+        RN-P03-051: Campos OBRIGATÓRIOS de CaracteristicaED:
+          edificacao            — TipoEdificacao (enum)
+          periodoConstrucao     — TipoPeriodoConstrucao (enum)
+          areaConstruida        — Double (m², valor positivo)
+          pavimAcimaSolo        — Long (mínimo 1)
+          alturaAscendente      — Double (metros, altura do piso mais alto)
+          populacaoTotal        — Long (valor positivo)
+          regularizada          — Boolean
+          (demais campos opcionais dependem do tipo de edificação)
+
+        Campos adicionais de CaracteristicaED:
+          areaProtegida, areaMaiorPopulacao, areaSubsolo
+          pavimAbaixoSolo, alturaDescendente
+          nroPopulacaoPavimMaior, possuiAfastamento
+          separacaoHorizontalAreas, separacaoVerticalAreas
+          caracteristicaConstrutiva — TipoCaracteristicaConstrutiva
+          depositoDescoberto        — TipoDepositoDescoberto
+          unidadeArmazenadora       — TipoUnidadeArmazenadora
+          instalacao, operacao, maiorTransformador, transformado
+          capacidadeTransformado, liquidoIsolante, tempoResistenciaFogo
+
+        RN-P03-052: Ao menos uma OcupacaoED vinculada (List, OneToMany, não auditada).
+
+        RN-P03-053: EspecificacaoRiscoED (tipos de risco da edificação):
+          REST: POST /licenciamentos/{id}/riscos
+                PUT  /licenciamentos/{id}/riscos
+
+        RN-P03-054: EspecificacaoSegurancaED (medidas de segurança):
+          REST: POST /licenciamentos/{id}/medidas-seguranca
+                PUT  /licenciamentos/{id}/medidas-seguranca/{idEspec}/
+                DELETE /licenciamentos/{id}/remove-espec-seg-voltar (retorna ao passo anterior)
+
+        RN-P03-055: Upload de planta associada à característica:
+          REST: POST /licenciamentos/{id}/caracteristicas/{idCar}/arquivo
+          Arquivo armazenado no Alfresco.
+
+        Persistência: PUT /licenciamentos/{id} → passo = 6
+
+        Tabela: CBM_CARACTERISTICA (seq: CBM_ID_CARACTERISTICA_SEQ)
+        Auditoria: @Audited
+      </documentation>
+      <incoming>P03D_sf007</incoming>
+      <outgoing>P03D_sf008</outgoing>
+    </userTask>
+
+    <!-- ── ETAPA 6: Upload de Documentos Obrigatórios ── -->
+    <userTask id="P03D_T06"
+              name="Etapa 6: Upload de Documentos&#10;Obrigatórios (Elementos Gráficos —&#10;Plantas, Memoriais, ART/RRT)"
+              camunda:assignee="${cpfCidadao}"
+              camunda:formKey="sol/nova-solicitacao/etapa6">
+      <documentation>
+        RN-P03-060: Cada documento representado por ElementoGraficoED + ArquivoED.
+          O arquivo binário é armazenado no Alfresco ECM.
+          Apenas o identificadorAlfresco (nodeRef, max 150, @NotNull) é persistido no BD.
+
+        ElementoGraficoED:
+          tipo         — TipoElementoGrafico (enum, determina docs obrigatórios por TipoLicenciamento)
+          descricao    — String (max 120)
+          situacao     — TipoSituacao: ATIVO | INATIVO
+          dataExclusao — Calendar (exclusão lógica)
+          idUsuarioExclusao — Long
+          historicos   — Set&lt;ElementoGraficoHistoricoED&gt; (histórico de versões, OneToMany lazy)
+          arquivo      — FK ArquivoED (ManyToOne)
+
+        RN-P03-061: Endpoints de gerenciamento:
+          PUT  /licenciamentos/{id}/elementos-graficos               — cria/altera lista
+          POST /licenciamentos/{id}/elementos-graficos/{idEG}/arquivo  — faz upload
+          PUT  /licenciamentos/{id}/elementos-graficos/{idEG}/arquivo  — substitui arquivo
+          GET  /licenciamentos/{id}/elementos-graficos/{idEG}/arquivo  — download (application/octet-stream)
+          GET  /licenciamentos/{id}/elementos-graficos/{idEG}/arquivo/validar-upload — valida disponibilidade
+
+        RN-P03-062: Exclusão lógica de documento:
+          situacao = TipoSituacao.INATIVO
+          dataExclusao = Calendar.getInstance()
+          idUsuarioExclusao = usuarioLogado.getId()
+          Histórico mantido em ElementoGraficoHistoricoED.
+
+        RN-P03-063: Validação ANTES de avançar para Etapa 7:
+          Todos os ElementoGraficoED obrigatórios para o TipoLicenciamento+Ocupação devem:
+            situacao == ATIVO
+            arquivo.identificadorAlfresco != null
+
+        Persistência: PUT /licenciamentos/{id} → passo = 7
+
+        Tabela: CBM_ELEMENTO_GRAFICO (seq: CBM_ID_ELEM_GRAFICO_SEQ)
+        ArquivoED: tabela CBM_ARQUIVO (seq: CBM_ID_ARQUIVO_SEQ)
+        Upload/Download: ArquivoRN.salvar() / ArquivoRN.buscar() — integração Alfresco ECM
+      </documentation>
+      <incoming>P03D_sf008</incoming>
+      <outgoing>P03D_sf009</outgoing>
+    </userTask>
+
+    <!-- ── ETAPA 7: Revisão, Aceite do Termo (RU) e Submissão ── -->
+    <userTask id="P03D_T07"
+              name="Etapa 7: Revisão da Solicitação,&#10;Leitura e Aceite do Termo (RU) e&#10;Confirmação de Submissão"
+              camunda:assignee="${cpfCidadao}"
+              camunda:formKey="sol/nova-solicitacao/etapa7">
+      <documentation>
+        RN-P03-070: Exibição do Termo de Licenciamento:
+          REST: GET /licenciamentos/{id}/termo
+          Classe: TermoLicenciamentoRN.get(idLicenciamento)
+          Lógica de seleção do termo:
+            1. Verifica se usuário é RT, RU ou ambos (via UsuarioED + envolvimento)
+            2. Determina TipoLicenciamento do licenciamento
+            3. Consulta TermoLicenciamentoED onde:
+               tpEnvolvido == TipoEnvolvido.RU (ou AMBOS)
+               tpLicenciamento == tipo do licenciamento
+          Tabela: CBM_TERMO_LICENCIAMENTO (campo termo: String max 4000)
+
+        RN-P03-071: O cidadão (RU) lê o termo e clica "Aceitar e Submeter".
+          REST: PUT /licenciamentos/{id}/termo
+          Dispara: TermoLicenciamentoRN.confirmaAceiteAnalise(idLicenciamento)
+          Consumer aplicado: CONFIRMA_ACEITE_ANALISE → envolvido.setAceite(true)
+          Tabela: CBM_RESPONSAVEL_USO.ACEITE = 'S'
+
+        RN-P03-074: Após esta ação:
+          LicenciamentoED.situacao != RASCUNHO → dados IMUTÁVEIS pelo cidadão.
+          Exceção: alterações em AGUARDANDO_ENDERECO via fluxo específico.
+
+        Ação 6.1 (Alteração de envolvidos, se cidadão precisar corrigir antes de submeter):
+          LicenciamentoCidadaoRN.alterar() — @Permissao(objeto="ENVOLVIDOS", acao="ALTERAR")
+          Qualquer alteração de envolvidos:
+            termoLicenciamentoRN.removerAceitesAnalise(id) — Consumer REMOVE_ACEITE_ANALISE
+            licenciamentoED.setPasso(1) — volta ao passo 1
+          Regra crítica: mudança de envolvidos invalida todos os aceites e reinicia o wizard.
+      </documentation>
+      <incoming>P03D_sf009</incoming>
+      <outgoing>P03D_sf010</outgoing>
+    </userTask>
+
+    <!-- ================================================================
+         FASE 2: SUBMISSÃO — BACKEND AUTOMATIZA (Lane Sistema)
+         Acionada pelo aceite do RU na Etapa 7 (PUT /licenciamentos/{id}/termo).
+         Classe principal: TermoLicenciamentoRN.confirmaAceiteAnalise()
+         ================================================================ -->
+
+    <serviceTask id="P03D_ST_Submissao"
+                 name="Submeter Solicitação:&#10;Gerar Número · Situar AGUARDANDO_ACEITE&#10;· Marcos · Notificar Envolvidos"
+                 camunda:class="com.procergs.solcbm.termolicenciamento.TermoLicenciamentoRN">
+      <documentation>
+        Acionado por: PUT /licenciamentos/{id}/termo (aceite do RU na Etapa 7).
+        Classe: TermoLicenciamentoRN.confirmaAceiteAnalise(idLicenciamento)
+        Transação: @TransactionAttribute(REQUIRED)
+
+        Fluxo completo de confirmaAceiteAnalise (passos 1-7 para o RU):
+          1. Consulta LicenciamentoED por idLicenciamento
+          2. Busca lista de RTs (ResponsavelTecnicoED por licenciamento)
+          3. Busca lista de RUs (ResponsavelUsoED por licenciamento)
+          4. Busca lista de Proprietários (LicenciamentoProprietarioED por licenciamento)
+          5. Aplica Consumer CONFIRMA_ACEITE_ANALISE no envolvido logado (RU):
+               Consumer: e -> e.setAceite(true)
+               → ResponsavelUsoED.aceite = true (campo ACEITE = 'S' via SimNaoBooleanConverter)
+          6. licenciamentoMarcoRN.criaMarcoPorTipo(ed, TipoMarco.ACEITE_ANALISE)
+               Tabela: CBM_LICENCIAMENTO_MARCO (tipo=ACEITE_ANALISE, usuario=RU)
+          7. VERIFICA: todos os envolvidos têm aceite==true?
+               NÃO (RT e Prop ainda pendentes) → situacao = AGUARDANDO_ACEITE
+
+        Geração do número do licenciamento (RN-P03-073):
+          Formato: [Tipo][Seq 8d][Lote 2L][Versão 3d]
+          Exemplo: "A 00000361 AA 001"
+          Gerado por: LicenciamentoNumeroRN (usa sequence CBM_ID_LICENCIAMENTO_SEQ + lógica de lote)
+          Campo: LicenciamentoED.numero = COD_LICENCIAMENTO (unique, imutável após geração)
+
+        licenciamentoSituacaoHistRN.salva(ed, AGUARDANDO_ACEITE):
+          Atualiza: LicenciamentoED.situacao = AGUARDANDO_ACEITE
+          Registra histórico: CBM_LICENCIAMENTO_SITU_HIST (situação anterior + nova + timestamp)
+
+        Marco criado: TipoMarco.ACEITE_ANALISE (para o RU)
+          Tabela: CBM_LICENCIAMENTO_MARCO
+
+        notificacaoRN.notificaEnvolvidosNovos(ed):
+          Notifica RTs e Proprietários sobre nova solicitação aguardando aceite.
+          Envio de e-mail com link de acesso ao sistema.
+
+        Predicates e Consumers disponíveis em TermoLicenciamentoRN:
+          Consumer CONFIRMA_ACEITE_ANALISE  = e -> e.setAceite(true)
+          Consumer REMOVE_ACEITE_ANALISE    = e -> e.setAceite(null)
+          Consumer CONFIRMA_ACEITE_VISTORIA = e -> { e.setAceiteVistoria(true); e.setDthAceiteVistoria(Calendar.getInstance()); }
+          Predicate RETORNA_ACEITE_ANALISE  = e -> Optional.ofNullable(e.getAceite()).orElse(false)
+      </documentation>
+      <incoming>P03D_sf010</incoming>
+      <outgoing>P03D_sf011</outgoing>
+    </serviceTask>
+
+    <!-- ── Gateway: Split Paralelo — Aceites independentes dos envolvidos ── -->
+    <parallelGateway id="P03D_GW_SplitAc"
+                     name="Aguardar Aceites&#10;Independentes&#10;(RT e Proprietário)">
+      <documentation>
+        Situação do licenciamento: AGUARDANDO_ACEITE.
+        RT e Proprietário receberam notificação por e-mail.
+        Cada envolvido acessa o sistema com seu CPF (SOE PROCERGS) e aceita individualmente.
+        Os aceites são assíncronos — cada envolvido age no seu próprio momento.
+        RU já aceitou na Etapa 7 (ST_Submissao).
+      </documentation>
+      <incoming>P03D_sf011</incoming>
+      <outgoing>P03D_sf012_RT</outgoing>
+      <outgoing>P03D_sf012_Prop</outgoing>
+    </parallelGateway>
+
+    <!-- ================================================================
+         FASE 3: ACEITES PÓS-SUBMISSÃO (Lanes RT e Proprietário)
+         Cada envolvido acessa o sistema e aceita o termo individualmente.
+         Endpoint: PUT /licenciamentos/{id}/termo
+         Classe: TermoLicenciamentoRN.confirmaAceiteAnalise(idLicenciamento)
+         ================================================================ -->
+
+    <!-- ── Responsável Técnico: Aceitar Termo ── -->
+    <userTask id="P03D_T09_RT"
+              name="RT: Acessar o Sistema, Revisar a&#10;Solicitação e Aceitar o Termo&#10;de Análise"
+              camunda:assignee="${cpfRT}"
+              camunda:formKey="sol/aceite/termo-rt">
+      <documentation>
+        Situação do licenciamento: AGUARDANDO_ACEITE.
+        Segurança: @AutorizaEnvolvido verifica que o usuário logado é RT deste licenciamento.
+        Interceptor: SegurancaEnvolvidoInterceptor.
+
+        Ação do RT:
+          1. Acessa o sistema com seu CPF (autenticação SOE PROCERGS / meu.rs.gov.br)
+          2. Localiza solicitação em "Minhas Solicitações" / "Solicitações Aguardando Aceite"
+          3. Revisa todos os dados da solicitação (somente leitura)
+          4. Lê o termo: GET /licenciamentos/{id}/termo
+             TermoLicenciamentoRN.get() — seleciona termo onde tpEnvolvido=RT e tpLicenciamento=tipo
+          5. Aceita ou Recusa: PUT /licenciamentos/{id}/termo
+             Chama: TermoLicenciamentoRN.confirmaAceiteAnalise(idLicenciamento)
+             Consumer CONFIRMA_ACEITE_ANALISE: ResponsavelTecnicoED.setAceite(true)
+             Tabela: CBM_RESPONSAVEL_TECNICO.ACEITE = 'S'
+             Marco: TipoMarco.ACEITE_ANALISE registrado para o RT
+
+        RN-P03-035: Se múltiplos RTs vinculados, CADA UM deve aceitar individualmente.
+          O sistema checa se TODOS os RTs aceitaram antes de considerar o RT-group como concluído.
+          Predicate RETORNA_ACEITE_ANALISE: e -> Optional.ofNullable(e.getAceite()).orElse(false)
+
+        Se RT recusa (não aceita e abandona):
+          ResponsavelTecnicoED.aceite permanece false/null.
+          Situação permanece AGUARDANDO_ACEITE.
+          Cidadão deve alterar envolvidos (LicenciamentoCidadaoRN.alterar()),
+          o que reinicia o wizard (passo=1) e remove todos os aceites.
+      </documentation>
+      <incoming>P03D_sf012_RT</incoming>
+      <outgoing>P03D_sf013</outgoing>
+    </userTask>
+
+    <!-- ── Gateway: RT Aceitou? ── -->
+    <exclusiveGateway id="P03D_GW_RTAceit"
+                      name="RT Aceitou&#10;o Termo de Análise?">
+      <documentation>
+        Verifica: ResponsavelTecnicoED.aceite == true (campo ACEITE = 'S')
+        Sim → RT aceitou, continua para junção dos aceites
+        Não → RT formalmente recusou; o processo fica bloqueado em AGUARDANDO_ACEITE.
+               O cidadão deve tomar uma ação (alterar RT ou renegociar).
+               Modelado aqui como end event para representar o término deste token.
+      </documentation>
+      <incoming>P03D_sf013</incoming>
+      <outgoing>P03D_sf014_sim</outgoing>
+      <outgoing>P03D_sf014_nao</outgoing>
+    </exclusiveGateway>
+
+    <!-- ── Fim: RT Recusou ── -->
+    <endEvent id="P03D_End_RTRec"
+              name="RT Recusou o Termo&#10;(Licenciamento permanece&#10;em AGUARDANDO_ACEITE)">
+      <documentation>
+        ResponsavelTecnicoED.aceite = false/null.
+        LicenciamentoED.situacao = AGUARDANDO_ACEITE (mantido).
+        Ação necessária pelo cidadão:
+          LicenciamentoCidadaoRN.alterar() → remove aceites, reinicia passo=1.
+        O cidadão pode trocar o RT ou renegociar a aceitação fora do sistema.
+        Prazo: não há prazo definido para aceite no P03 (apenas monitoramento).
+      </documentation>
+      <incoming>P03D_sf014_nao</incoming>
+      <terminateEventDefinition/>
+    </endEvent>
+
+    <!-- ── Proprietário: Aceitar Termo ── -->
+    <userTask id="P03D_T09_Prop"
+              name="Proprietário: Acessar o Sistema&#10;e Aceitar o Termo de Análise"
+              camunda:assignee="${cpfProprietario}"
+              camunda:formKey="sol/aceite/termo-proprietario">
+      <documentation>
+        Situação do licenciamento: AGUARDANDO_ACEITE.
+        Segurança: @AutorizaEnvolvido verifica que o usuário logado é Proprietário deste licenciamento.
+
+        Ação do Proprietário:
+          1. Acessa o sistema com seu CPF (autenticação SOE PROCERGS)
+          2. Localiza a solicitação
+          3. Lê o termo: GET /licenciamentos/{id}/termo
+             TermoLicenciamentoRN.get() — seleciona termo para PROPRIETARIO/AMBOS
+          4. Aceita: PUT /licenciamentos/{id}/termo
+             Chama: TermoLicenciamentoRN.confirmaAceiteAnalise(idLicenciamento)
+             Consumer CONFIRMA_ACEITE_ANALISE: LicenciamentoProprietarioED.setAceite(true)
+             Implementação segura do getter:
+               getAceite() { return Optional.ofNullable(aceite).orElse(false); }
+             Tabela: CBM_LICEN_PROPRI.ACEITE = 'S'
+             Marco: TipoMarco.ACEITE_ANALISE registrado para o Proprietário
+
+        Nota: Se Proprietário age por Procurador (ProcuradorED):
+          O Procurador realiza o aceite em nome do Proprietário.
+          LicenciamentoProprietarioED.procurador → FK ProcuradorED
+          ResponsavelUsoED.procurador → FK ProcuradorED (para o RU)
+
+        Se mais de um Proprietário vinculado: cada um aceita individualmente.
+      </documentation>
+      <incoming>P03D_sf012_Prop</incoming>
+      <outgoing>P03D_sf015</outgoing>
+    </userTask>
+
+    <!-- ================================================================
+         FASE 4: VERIFICAÇÃO DE ACEITES COMPLETOS E TRANSIÇÃO DE ESTADO
+         Acionada quando todos os envolvidos aceitaram.
+         Classe: TermoLicenciamentoRN.confirmaAceiteAnalise()
+         ================================================================ -->
+
+    <!-- ── Gateway: Join Paralelo — todos os aceites registrados ── -->
+    <parallelGateway id="P03D_GW_JoinAc"
+                     name="Todos os Aceites&#10;Concluídos">
+      <documentation>
+        Aguarda a conclusão dos branches de RT (aceito) e Proprietário.
+        O branch do RT só chega aqui se GW_RTAceit = Sim.
+        O branch do Proprietário chega após T09_Prop completar.
+        Quando ambos chegam: avança para a verificação final.
+      </documentation>
+      <incoming>P03D_sf014_sim</incoming>
+      <incoming>P03D_sf015</incoming>
+      <outgoing>P03D_sf016</outgoing>
+    </parallelGateway>
+
+    <!-- ── Service Task: Verificar todos os aceites e transicionar ── -->
+    <serviceTask id="P03D_ST_TodosAceit"
+                 name="Verificar se Todos Aceitaram,&#10;Criar Marco FIM_ACEITES_ANALISE&#10;e Determinar Próxima Transição"
+                 camunda:class="com.procergs.solcbm.termolicenciamento.TermoLicenciamentoRN">
+      <documentation>
+        Classe: TermoLicenciamentoRN.confirmaAceiteAnalise(idLicenciamento)
+        (chamada pelo último envolvido que aceitar — Predicate identifica quem é o último)
+
+        Fluxo (passos 8-12 de confirmaAceiteAnalise):
+          8. VERIFICA: todos os envolvidos têm aceite==true?
+               Predicate RETORNA_ACEITE_ANALISE = e -> Optional.ofNullable(e.getAceite()).orElse(false)
+               Verifica: todos RTs, todos RUs, todos Proprietários
+               NÃO → situacao permanece AGUARDANDO_ACEITE (este passo não ocorre)
+               SIM → continua:
+
+          9. licenciamentoMarcoRN.criaMarcoPorTipo(ed, TipoMarco.FIM_ACEITES_ANALISE)
+               Tabela: CBM_LICENCIAMENTO_MARCO
+               tipo = FIM_ACEITES_ANALISE
+
+          10. Determina condição de transição:
+               a) LicenciamentoED.isencao == true
+                    → situacao = AGUARDANDO_PAGAMENTO
+                    → TipoSituacaoIsencao = SOLICITADA
+                    → dthSolicitacaoIsencao = Calendar.getInstance()
+                    → Marco SOLICITACAO_ISENCAO criado
+               b) Inviabilidade técnica detectada (ex.: tipo de edificação incompatível,
+                  EspecificacaoSegurancaED com inviabilidade marcada)
+                    → situacao = ANALISE_INVIABILIDADE_PENDENTE
+                    → LicenciamentoED.inviabilidadeAprovada = null (pendente CBM-RS)
+               c) Padrão (sem isenção, sem inviabilidade):
+                    → situacao = AGUARDANDO_DISTRIBUICAO
+
+          11. licenciamentoSituacaoHistRN.salva(ed, novaSituacao)
+               Registra histórico: CBM_LICENCIAMENTO_SITU_HIST
+
+          12. notificacaoRN.notifica(ed, ANALISTAS_CBMRS)
+               Notifica analistas CBM-RS sobre nova solicitação na fila.
+
+        Marcos relevantes ao P03 (TipoMarco):
+          RASCUNHO_LICENCIAMENTO — criado em incluir() (Etapa 1)
+          ACEITE_ANALISE         — criado a cada aceite individual
+          FIM_ACEITES_ANALISE    — criado quando todos aceitaram
+          SOLICITACAO_ISENCAO    — criado se isencao=true
+      </documentation>
+      <incoming>P03D_sf016</incoming>
+      <outgoing>P03D_sf017</outgoing>
+    </serviceTask>
+
+    <!-- ── Gateway: Isenção de taxa solicitada? ── -->
+    <exclusiveGateway id="P03D_GW_Isencao"
+                      name="Isenção de Taxa&#10;Solicitada?&#10;(LicenciamentoED.isencao == true)">
+      <documentation>
+        Condição: LicenciamentoED.isencao == true (campo IND_ISENCAO = 'S')
+        Converter: SimNaoBooleanConverter (Boolean Java ↔ 'S'/'N' no BD)
+        Sim → situacao = AGUARDANDO_PAGAMENTO (aguarda análise de isenção pelo CBM-RS)
+        Não → verifica inviabilidade técnica (GW_Inviab)
+      </documentation>
+      <incoming>P03D_sf017</incoming>
+      <outgoing>P03D_sf018_sim</outgoing>
+      <outgoing>P03D_sf018_nao</outgoing>
+    </exclusiveGateway>
+
+    <!-- ── Service Task: Situar como AGUARDANDO_PAGAMENTO ── -->
+    <serviceTask id="P03D_ST_SitAgPag"
+                 name="Transição de Situação:&#10;AGUARDANDO_PAGAMENTO&#10;(isenção solicitada)"
+                 camunda:class="com.procergs.solcbm.licenciamento.LicenciamentoSituacaoHistRN">
+      <documentation>
+        Condição de entrada: LicenciamentoED.isencao == true
+
+        Atualiza LicenciamentoED:
+          situacao          = SituacaoLicenciamento.AGUARDANDO_PAGAMENTO
+          situacaoIsencao   = TipoSituacaoIsencao.SOLICITADA
+          dthSolicitacaoIsencao = Calendar.getInstance()
+
+        licenciamentoSituacaoHistRN.salva(ed, AGUARDANDO_PAGAMENTO)
+          Registra histórico: CBM_LICENCIAMENTO_SITU_HIST
+
+        licenciamentoMarcoRN.criaMarcoPorTipo(ed, TipoMarco.SOLICITACAO_ISENCAO)
+          Tabela: CBM_LICENCIAMENTO_MARCO
+
+        Próximo: CBM-RS analisa o pedido de isenção.
+          Se APROVADA  → TipoSituacaoIsencao.APROVADA  → AGUARDANDO_DISTRIBUICAO
+          Se REPROVADA → TipoSituacaoIsencao.REPROVADA → pagamento normal de boleto
+      </documentation>
+      <incoming>P03D_sf018_sim</incoming>
+      <outgoing>P03D_sf019</outgoing>
+    </serviceTask>
+
+    <!-- ── Fim: AGUARDANDO_PAGAMENTO ── -->
+    <endEvent id="P03D_End_AgPag"
+              name="AGUARDANDO_PAGAMENTO&#10;(Saída P03 → Processo de&#10;Isenção / Pagamento de Taxa)">
+      <documentation>
+        Saída do P03. LicenciamentoED.situacao = AGUARDANDO_PAGAMENTO.
+        situacaoIsencao = TipoSituacaoIsencao.SOLICITADA
+        O CBM-RS analisa o pedido de isenção:
+          Aprovada  → situacaoIsencao = APROVADA → transição para AGUARDANDO_DISTRIBUICAO (P04)
+          Reprovada → situacaoIsencao = REPROVADA → cidadão deve pagar boleto (BoletoLicenciamentoED)
+        Tabela: CBM_BOLETO_LICENCIAMENTO (gerado pelo sistema se isenção reprovada ou não solicitada)
+      </documentation>
+      <incoming>P03D_sf019</incoming>
+    </endEvent>
+
+    <!-- ── Gateway: Inviabilidade técnica? ── -->
+    <exclusiveGateway id="P03D_GW_Inviab"
+                      name="Inviabilidade Técnica&#10;Identificada?">
+      <documentation>
+        Condição: inviabilidade técnica detectada.
+        Pode ser identificada por:
+          - RT que sinalizou inviabilidade ao vincular-se (campo em EspecificacaoSegurancaED)
+          - Documentação da EspecificacaoSegurancaED indica inviabilidade
+        LicenciamentoED.inviabilidadeAprovada: null (pendente), true (aprovada), false (negada)
+
+        Sim → situacao = ANALISE_INVIABILIDADE_PENDENTE (CBM-RS delibera)
+        Não → situacao = AGUARDANDO_DISTRIBUICAO (fluxo padrão → P04)
+      </documentation>
+      <incoming>P03D_sf018_nao</incoming>
+      <outgoing>P03D_sf020_sim</outgoing>
+      <outgoing>P03D_sf020_nao</outgoing>
+    </exclusiveGateway>
+
+    <!-- ── Service Task: Situar como ANALISE_INVIABILIDADE_PENDENTE ── -->
+    <serviceTask id="P03D_ST_SitInviab"
+                 name="Transição de Situação:&#10;ANALISE_INVIABILIDADE_PENDENTE"
+                 camunda:class="com.procergs.solcbm.licenciamento.LicenciamentoSituacaoHistRN">
+      <documentation>
+        Condição de entrada: inviabilidade técnica detectada.
+
+        Atualiza LicenciamentoED:
+          situacao                = SituacaoLicenciamento.ANALISE_INVIABILIDADE_PENDENTE
+          inviabilidadeAprovada   = null (aguarda deliberação do CBM-RS)
+          Campo BD: IND_INVIABILIDADE_APROVADA (SimNaoBooleanConverter: S/N)
+
+        licenciamentoSituacaoHistRN.salva(ed, ANALISE_INVIABILIDADE_PENDENTE)
+
+        CBM-RS delibera:
+          Aprovada  → inviabilidadeAprovada = true  → AGUARDANDO_DISTRIBUICAO
+          Não aprov → inviabilidadeAprovada = false → extinção: EXTINGUIDO
+        Campo: LicenciamentoED.inviabilidadeAprovada (Boolean, @Convert SimNaoBooleanConverter)
+      </documentation>
+      <incoming>P03D_sf020_sim</incoming>
+      <outgoing>P03D_sf021</outgoing>
+    </serviceTask>
+
+    <!-- ── Fim: ANALISE_INVIABILIDADE_PENDENTE ── -->
+    <endEvent id="P03D_End_Inviab"
+              name="ANALISE_INVIABILIDADE_PENDENTE&#10;(Saída P03 → Análise de&#10;Inviabilidade pelo CBM-RS)">
+      <documentation>
+        Saída do P03. LicenciamentoED.situacao = ANALISE_INVIABILIDADE_PENDENTE.
+        LicenciamentoED.inviabilidadeAprovada = null (aguarda deliberação).
+        CBM-RS analisa:
+          Aprovada  → inviabilidadeAprovada = true  → AGUARDANDO_DISTRIBUICAO → P04
+          Não aprov → inviabilidadeAprovada = false → EXTINGUIDO (extinção do licenciamento)
+        LicenciamentoCidadaoExtincaoRN — classe de extinção.
+      </documentation>
+      <incoming>P03D_sf021</incoming>
+    </endEvent>
+
+    <!-- ── Service Task: Situar como AGUARDANDO_DISTRIBUICAO ── -->
+    <serviceTask id="P03D_ST_SitAgDist"
+                 name="Transição de Situação:&#10;AGUARDANDO_DISTRIBUICAO (Padrão)&#10;· Notificar Analistas CBM-RS"
+                 camunda:class="com.procergs.solcbm.licenciamento.LicenciamentoSituacaoHistRN">
+      <documentation>
+        Fluxo padrão: sem isenção, sem inviabilidade técnica.
+
+        Atualiza LicenciamentoED:
+          situacao = SituacaoLicenciamento.AGUARDANDO_DISTRIBUICAO
+
+        licenciamentoSituacaoHistRN.salva(ed, AGUARDANDO_DISTRIBUICAO)
+          Registra histórico: CBM_LICENCIAMENTO_SITU_HIST
+
+        notificacaoRN.notifica(ed, ANALISTAS_CBMRS):
+          Notifica analistas CBM-RS com perfil de distribuição.
+          Informa que nova solicitação está disponível para distribuição.
+
+        Em P04 (Análise Técnica):
+          O analista recebe a solicitação e inicia a análise.
+          LicenciamentoED.dthEncaminhamentoAnalise será preenchido.
+          LicenciamentoED.situacao → EM_ANALISE
+
+        Constantes em LicenciamentoCidadaoRN:
+          PRAZO_SOLICITAR_RECURSO_1_INSTANCIA = 30 (dias)
+          PRAZO_SOLICITAR_RECURSO_2_INSTANCIA = 15 (dias)
+          (Prazos usados em processos de recurso administrativo — P09/P10)
+
+        Resultados possíveis após P04 (saídas de P04+):
+          CA  → SituacaoLicenciamento.CA  → APPCI emitido (AppciED) → P11 ciência
+          NCA → SituacaoLicenciamento.NCA → vistoria técnica → P07
+          CIA → inviabilidade arquivada   → extinção (EXTINGUIDO)
+      </documentation>
+      <incoming>P03D_sf020_nao</incoming>
+      <outgoing>P03D_sf022</outgoing>
+    </serviceTask>
+
+    <!-- ── Fim: AGUARDANDO_DISTRIBUICAO (saída principal do P03) ── -->
+    <endEvent id="P03D_End_AgDist"
+              name="AGUARDANDO_DISTRIBUICAO&#10;(Saída Principal P03 →&#10;P04: Análise Técnica CBM-RS)">
+      <documentation>
+        SAÍDA PRINCIPAL DO P03.
+        LicenciamentoED.situacao = AGUARDANDO_DISTRIBUICAO.
+        Numeração PPCI gerada. Todos os aceites registrados.
+        Marco FIM_ACEITES_ANALISE registrado.
+
+        O licenciamento entra na fila de distribuição do CBM-RS.
+        Processo seguinte: P04 — Análise Técnica.
+          Analista CBM-RS recebe → EM_ANALISE.
+          Resultados: CA | NCA | CIA.
+
+        AppciED (Alvará de Prevenção e Proteção Contra Incêndio):
+          Tabela: CBM_APPCI (seq: CBM_ID_APPCI_SEQ)
+          Interfaces: Appci + LicenciamentoCiencia
+          Campo indVersaoVigente: 'S'=versão vigente, 'N'=histórica
+          Campo dthCiencia: quando o cidadão toma ciência (P11)
+
+        SituacaoLicenciamento subsequentes possíveis:
+          EM_ANALISE → CA → ALVARA_VIGENTE (via P11)
+          EM_ANALISE → NCA → (aguarda CIA) → AGUARDANDO_ACEITE_VISTORIA (P07)
+          EM_ANALISE → CIA → AGUARDANDO_CIENCIA → EXTINGUIDO
+          EM_ANALISE → (recurso) → RECURSO_EM_ANALISE_1_CIA → RECURSO_EM_ANALISE_2_CIA
+      </documentation>
+      <incoming>P03D_sf022</incoming>
+    </endEvent>
+
+    <!-- ================================================================
+         SEQUENCE FLOWS
+         ================================================================ -->
+
+    <!-- WIZARD (Cidadão lane) -->
+    <sequenceFlow id="P03D_sf001"     sourceRef="P03D_Start"      targetRef="P03D_T01"/>
+    <sequenceFlow id="P03D_sf002"     sourceRef="P03D_T01"        targetRef="P03D_T02"/>
+    <sequenceFlow id="P03D_sf003"     sourceRef="P03D_T02"        targetRef="P03D_GW_PPCI"/>
+
+    <sequenceFlow id="P03D_sf004_sim" name="Sim (PPCI / PSPCIM)"
+                  sourceRef="P03D_GW_PPCI"   targetRef="P03D_T03">
+      <conditionExpression xsi:type="tFormalExpression">
+        ${tipoLicenciamento == 'PPCI' || tipoLicenciamento == 'PSPCIM'}
+      </conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="P03D_sf004_nao" name="Não (CLCB / outros — RT não exigido)"
+                  sourceRef="P03D_GW_PPCI"   targetRef="P03D_GW_JoinT03">
+      <conditionExpression xsi:type="tFormalExpression">
+        ${tipoLicenciamento != 'PPCI' &amp;&amp; tipoLicenciamento != 'PSPCIM'}
+      </conditionExpression>
+    </sequenceFlow>
+
+    <sequenceFlow id="P03D_sf005_rt"  sourceRef="P03D_T03"        targetRef="P03D_GW_JoinT03"/>
+    <sequenceFlow id="P03D_sf006"     sourceRef="P03D_GW_JoinT03" targetRef="P03D_T04"/>
+    <sequenceFlow id="P03D_sf007"     sourceRef="P03D_T04"        targetRef="P03D_T05"/>
+    <sequenceFlow id="P03D_sf008"     sourceRef="P03D_T05"        targetRef="P03D_T06"/>
+    <sequenceFlow id="P03D_sf009"     sourceRef="P03D_T06"        targetRef="P03D_T07"/>
+
+    <!-- Cidadão → Sistema (cross-lane: RU aceita em T07 → submissão automática) -->
+    <sequenceFlow id="P03D_sf010"     sourceRef="P03D_T07"        targetRef="P03D_ST_Submissao"/>
+
+    <!-- Sistema: submissão → split aceites -->
+    <sequenceFlow id="P03D_sf011"     sourceRef="P03D_ST_Submissao"  targetRef="P03D_GW_SplitAc"/>
+
+    <!-- Sistema → RT e Prop (cross-lane) -->
+    <sequenceFlow id="P03D_sf012_RT"  sourceRef="P03D_GW_SplitAc"   targetRef="P03D_T09_RT"/>
+    <sequenceFlow id="P03D_sf012_Prop" sourceRef="P03D_GW_SplitAc"  targetRef="P03D_T09_Prop"/>
+
+    <!-- RT → Gateway -->
+    <sequenceFlow id="P03D_sf013"     sourceRef="P03D_T09_RT"       targetRef="P03D_GW_RTAceit"/>
+
+    <!-- Gateway RT: sim → join Sistema; não → end -->
+    <sequenceFlow id="P03D_sf014_sim" name="Sim (RT aceitou)"
+                  sourceRef="P03D_GW_RTAceit" targetRef="P03D_GW_JoinAc">
+      <conditionExpression xsi:type="tFormalExpression">${rtAceitou == true}</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="P03D_sf014_nao" name="Não (RT recusou)"
+                  sourceRef="P03D_GW_RTAceit" targetRef="P03D_End_RTRec">
+      <conditionExpression xsi:type="tFormalExpression">${rtAceitou == false}</conditionExpression>
+    </sequenceFlow>
+
+    <!-- Prop → join Sistema (cross-lane) -->
+    <sequenceFlow id="P03D_sf015"     sourceRef="P03D_T09_Prop"     targetRef="P03D_GW_JoinAc"/>
+
+    <!-- Join → verificação final -->
+    <sequenceFlow id="P03D_sf016"     sourceRef="P03D_GW_JoinAc"    targetRef="P03D_ST_TodosAceit"/>
+    <sequenceFlow id="P03D_sf017"     sourceRef="P03D_ST_TodosAceit" targetRef="P03D_GW_Isencao"/>
+
+    <!-- Isenção: sim → AgPag; não → Inviab -->
+    <sequenceFlow id="P03D_sf018_sim" name="Sim (isencao == true)"
+                  sourceRef="P03D_GW_Isencao" targetRef="P03D_ST_SitAgPag">
+      <conditionExpression xsi:type="tFormalExpression">${isencao == true}</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="P03D_sf018_nao" name="Não"
+                  sourceRef="P03D_GW_Isencao" targetRef="P03D_GW_Inviab">
+      <conditionExpression xsi:type="tFormalExpression">${isencao == false || isencao == null}</conditionExpression>
+    </sequenceFlow>
+
+    <sequenceFlow id="P03D_sf019"     sourceRef="P03D_ST_SitAgPag"  targetRef="P03D_End_AgPag"/>
+
+    <!-- Inviabilidade: sim → Inviab; não → AgDist -->
+    <sequenceFlow id="P03D_sf020_sim" name="Sim (inviabilidade técnica)"
+                  sourceRef="P03D_GW_Inviab" targetRef="P03D_ST_SitInviab">
+      <conditionExpression xsi:type="tFormalExpression">${inviabilidadeTecnica == true}</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="P03D_sf020_nao" name="Não (fluxo padrão)"
+                  sourceRef="P03D_GW_Inviab" targetRef="P03D_ST_SitAgDist">
+      <conditionExpression xsi:type="tFormalExpression">${inviabilidadeTecnica == false || inviabilidadeTecnica == null}</conditionExpression>
+    </sequenceFlow>
+
+    <sequenceFlow id="P03D_sf021"     sourceRef="P03D_ST_SitInviab" targetRef="P03D_End_Inviab"/>
+    <sequenceFlow id="P03D_sf022"     sourceRef="P03D_ST_SitAgDist" targetRef="P03D_End_AgDist"/>
+
+  </process>
+
+  <!-- ================================================================
+       BPMN DIAGRAM — Layout para Camunda Modeler
+       Pool:          x=160,  y=60,   w=3820, h=900
+       Lane Cidadão:  y=60,   h=270
+       Lane RT:       y=330,  h=195
+       Lane Prop:     y=525,  h=155
+       Lane Sistema:  y=680,  h=280
+       ================================================================ -->
+  <bpmndi:BPMNDiagram id="diagram_P03_Det">
+    <bpmndi:BPMNPlane id="plane_P03_Det" bpmnElement="Col_P03_Det">
+
+      <!-- Pool -->
+      <bpmndi:BPMNShape id="shape_Part_SOL" bpmnElement="Part_SOL" isHorizontal="true">
+        <omgdc:Bounds x="160" y="60" width="3820" height="900"/>
+      </bpmndi:BPMNShape>
+
+      <!-- Lane Cidadão -->
+      <bpmndi:BPMNShape id="shape_Lane_Cidadao" bpmnElement="Lane_Cidadao" isHorizontal="true">
+        <omgdc:Bounds x="190" y="60" width="3790" height="270"/>
+      </bpmndi:BPMNShape>
+
+      <!-- Lane RT -->
+      <bpmndi:BPMNShape id="shape_Lane_RT" bpmnElement="Lane_RT" isHorizontal="true">
+        <omgdc:Bounds x="190" y="330" width="3790" height="195"/>
+      </bpmndi:BPMNShape>
+
+      <!-- Lane Prop -->
+      <bpmndi:BPMNShape id="shape_Lane_Prop" bpmnElement="Lane_Prop" isHorizontal="true">
+        <omgdc:Bounds x="190" y="525" width="3790" height="155"/>
+      </bpmndi:BPMNShape>
+
+      <!-- Lane Sistema -->
+      <bpmndi:BPMNShape id="shape_Lane_Sis" bpmnElement="Lane_Sis" isHorizontal="true">
+        <omgdc:Bounds x="190" y="680" width="3790" height="280"/>
+      </bpmndi:BPMNShape>
+
+      <!-- ============================================================
+           LANE CIDADÃO: Shapes
+           Task standard: w=160, h=80 | center y=195 | top y=155
+           ============================================================ -->
+
+      <!-- Start Event: x=248, y=177 (center: 266, 195) -->
+      <bpmndi:BPMNShape id="shape_P03D_Start" bpmnElement="P03D_Start">
+        <omgdc:Bounds x="248" y="177" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+
+      <!-- T01 Etapa 1: x=330 -->
+      <bpmndi:BPMNShape id="shape_P03D_T01" bpmnElement="P03D_T01">
+        <omgdc:Bounds x="330" y="155" width="165" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- T02 Etapa 2: x=555 -->
+      <bpmndi:BPMNShape id="shape_P03D_T02" bpmnElement="P03D_T02">
+        <omgdc:Bounds x="555" y="155" width="165" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- GW_PPCI: x=780, y=170 -->
+      <bpmndi:BPMNShape id="shape_P03D_GW_PPCI" bpmnElement="P03D_GW_PPCI" isMarkerVisible="true">
+        <omgdc:Bounds x="780" y="170" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+
+      <!-- T03 Etapa 3 (branch PPCI - raised): x=875, y=80 -->
+      <bpmndi:BPMNShape id="shape_P03D_T03" bpmnElement="P03D_T03">
+        <omgdc:Bounds x="875" y="80" width="165" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- GW_JoinT03: x=1100, y=170 -->
+      <bpmndi:BPMNShape id="shape_P03D_GW_JoinT03" bpmnElement="P03D_GW_JoinT03" isMarkerVisible="true">
+        <omgdc:Bounds x="1100" y="170" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+
+      <!-- T04 Etapa 4: x=1200 -->
+      <bpmndi:BPMNShape id="shape_P03D_T04" bpmnElement="P03D_T04">
+        <omgdc:Bounds x="1200" y="155" width="165" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- T05 Etapa 5: x=1430 -->
+      <bpmndi:BPMNShape id="shape_P03D_T05" bpmnElement="P03D_T05">
+        <omgdc:Bounds x="1430" y="155" width="165" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- T06 Etapa 6: x=1660 -->
+      <bpmndi:BPMNShape id="shape_P03D_T06" bpmnElement="P03D_T06">
+        <omgdc:Bounds x="1660" y="155" width="165" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- T07 Etapa 7: x=1890 -->
+      <bpmndi:BPMNShape id="shape_P03D_T07" bpmnElement="P03D_T07">
+        <omgdc:Bounds x="1890" y="155" width="165" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- ============================================================
+           LANE RT: Shapes
+           Task center y=427 | top y=387
+           ============================================================ -->
+
+      <!-- T09_RT: x=2380 -->
+      <bpmndi:BPMNShape id="shape_P03D_T09_RT" bpmnElement="P03D_T09_RT">
+        <omgdc:Bounds x="2380" y="387" width="165" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- GW_RTAceit: x=2610, y=402 -->
+      <bpmndi:BPMNShape id="shape_P03D_GW_RTAceit" bpmnElement="P03D_GW_RTAceit" isMarkerVisible="true">
+        <omgdc:Bounds x="2610" y="402" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+
+      <!-- End_RTRec: x=2720, y=346 -->
+      <bpmndi:BPMNShape id="shape_P03D_End_RTRec" bpmnElement="P03D_End_RTRec">
+        <omgdc:Bounds x="2720" y="346" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+
+      <!-- ============================================================
+           LANE PROP: Shapes
+           Task center y=602 | top y=562
+           ============================================================ -->
+
+      <!-- T09_Prop: x=2380 -->
+      <bpmndi:BPMNShape id="shape_P03D_T09_Prop" bpmnElement="P03D_T09_Prop">
+        <omgdc:Bounds x="2380" y="562" width="165" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- ============================================================
+           LANE SISTEMA: Shapes
+           Task center y=820 | top y=780
+           ============================================================ -->
+
+      <!-- ST_Submissao: x=2090, y=780, w=190 -->
+      <bpmndi:BPMNShape id="shape_P03D_ST_Submissao" bpmnElement="P03D_ST_Submissao">
+        <omgdc:Bounds x="2090" y="780" width="195" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- GW_SplitAc: x=2345, y=795 -->
+      <bpmndi:BPMNShape id="shape_P03D_GW_SplitAc" bpmnElement="P03D_GW_SplitAc">
+        <omgdc:Bounds x="2345" y="795" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+
+      <!-- GW_JoinAc: x=2745, y=795 -->
+      <bpmndi:BPMNShape id="shape_P03D_GW_JoinAc" bpmnElement="P03D_GW_JoinAc">
+        <omgdc:Bounds x="2745" y="795" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+
+      <!-- ST_TodosAceit: x=2855, y=780, w=190 -->
+      <bpmndi:BPMNShape id="shape_P03D_ST_TodosAceit" bpmnElement="P03D_ST_TodosAceit">
+        <omgdc:Bounds x="2855" y="780" width="200" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- GW_Isencao: x=3120, y=795 -->
+      <bpmndi:BPMNShape id="shape_P03D_GW_Isencao" bpmnElement="P03D_GW_Isencao" isMarkerVisible="true">
+        <omgdc:Bounds x="3120" y="795" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+
+      <!-- ST_SitAgPag: x=3230, y=710 (ramo superior: isenção) -->
+      <bpmndi:BPMNShape id="shape_P03D_ST_SitAgPag" bpmnElement="P03D_ST_SitAgPag">
+        <omgdc:Bounds x="3230" y="710" width="185" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- End_AgPag: x=3475, y=722 -->
+      <bpmndi:BPMNShape id="shape_P03D_End_AgPag" bpmnElement="P03D_End_AgPag">
+        <omgdc:Bounds x="3475" y="722" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+
+      <!-- GW_Inviab: x=3230, y=855 (ramo inferior: inviabilidade) -->
+      <bpmndi:BPMNShape id="shape_P03D_GW_Inviab" bpmnElement="P03D_GW_Inviab" isMarkerVisible="true">
+        <omgdc:Bounds x="3230" y="855" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+
+      <!-- ST_SitInviab: x=3340, y=860 (ramo inferior: inviabilidade) -->
+      <bpmndi:BPMNShape id="shape_P03D_ST_SitInviab" bpmnElement="P03D_ST_SitInviab">
+        <omgdc:Bounds x="3340" y="860" width="185" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- End_Inviab: x=3585, y=882 -->
+      <bpmndi:BPMNShape id="shape_P03D_End_Inviab" bpmnElement="P03D_End_Inviab">
+        <omgdc:Bounds x="3585" y="882" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+
+      <!-- ST_SitAgDist: x=3340, y=780 (ramo do meio: padrão) -->
+      <bpmndi:BPMNShape id="shape_P03D_ST_SitAgDist" bpmnElement="P03D_ST_SitAgDist">
+        <omgdc:Bounds x="3340" y="780" width="185" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- End_AgDist: x=3585, y=802 -->
+      <bpmndi:BPMNShape id="shape_P03D_End_AgDist" bpmnElement="P03D_End_AgDist">
+        <omgdc:Bounds x="3585" y="802" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+
+      <!-- ============================================================
+           EDGES (Sequence Flows)
+           ============================================================ -->
+
+      <!-- Start → T01 -->
+      <bpmndi:BPMNEdge id="edge_P03D_sf001" bpmnElement="P03D_sf001">
+        <omgdi:waypoint x="284" y="195"/>
+        <omgdi:waypoint x="330" y="195"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- T01 → T02 -->
+      <bpmndi:BPMNEdge id="edge_P03D_sf002" bpmnElement="P03D_sf002">
+        <omgdi:waypoint x="495" y="195"/>
+        <omgdi:waypoint x="555" y="195"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- T02 → GW_PPCI -->
+      <bpmndi:BPMNEdge id="edge_P03D_sf003" bpmnElement="P03D_sf003">
+        <omgdi:waypoint x="720" y="195"/>
+        <omgdi:waypoint x="780" y="195"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW_PPCI → T03 (Sim: sobe para branch superior) -->
+      <bpmndi:BPMNEdge id="edge_P03D_sf004_sim" bpmnElement="P03D_sf004_sim">
+        <omgdi:waypoint x="805" y="170"/>
+        <omgdi:waypoint x="805" y="120"/>
+        <omgdi:waypoint x="875" y="120"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW_PPCI → GW_JoinT03 (Não: segue horizontalmente) -->
+      <bpmndi:BPMNEdge id="edge_P03D_sf004_nao" bpmnElement="P03D_sf004_nao">
+        <omgdi:waypoint x="830" y="195"/>
+        <omgdi:waypoint x="1100" y="195"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- T03 → GW_JoinT03 (desce de volta à linha principal) -->
+      <bpmndi:BPMNEdge id="edge_P03D_sf005_rt" bpmnElement="P03D_sf005_rt">
+        <omgdi:waypoint x="1040" y="120"/>
+        <omgdi:waypoint x="1125" y="120"/>
+        <omgdi:waypoint x="1125" y="170"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW_JoinT03 → T04 -->
+      <bpmndi:BPMNEdge id="edge_P03D_sf006" bpmnElement="P03D_sf006">
+        <omgdi:waypoint x="1150" y="195"/>
+        <omgdi:waypoint x="1200" y="195"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- T04 → T05 -->
+      <bpmndi:BPMNEdge id="edge_P03D_sf007" bpmnElement="P03D_sf007">
+        <omgdi:waypoint x="1365" y="195"/>
+        <omgdi:waypoint x="1430" y="195"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- T05 → T06 -->
+      <bpmndi:BPMNEdge id="edge_P03D_sf008" bpmnElement="P03D_sf008">
+        <omgdi:waypoint x="1595" y="195"/>
+        <omgdi:waypoint x="1660" y="195"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- T06 → T07 -->
+      <bpmndi:BPMNEdge id="edge_P03D_sf009" bpmnElement="P03D_sf009">
+        <omgdi:waypoint x="1825" y="195"/>
+        <omgdi:waypoint x="1890" y="195"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- T07 → ST_Submissao (cross-lane: Cidadão → Sistema) -->
+      <bpmndi:BPMNEdge id="edge_P03D_sf010" bpmnElement="P03D_sf010">
+        <omgdi:waypoint x="1972" y="235"/>
+        <omgdi:waypoint x="1972" y="820"/>
+        <omgdi:waypoint x="2090" y="820"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- ST_Submissao → GW_SplitAc -->
+      <bpmndi:BPMNEdge id="edge_P03D_sf011" bpmnElement="P03D_sf011">
+        <omgdi:waypoint x="2285" y="820"/>
+        <omgdi:waypoint x="2345" y="820"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW_SplitAc → T09_RT (cross-lane: Sistema → RT) -->
+      <bpmndi:BPMNEdge id="edge_P03D_sf012_RT" bpmnElement="P03D_sf012_RT">
+        <omgdi:waypoint x="2370" y="795"/>
+        <omgdi:waypoint x="2370" y="427"/>
+        <omgdi:waypoint x="2380" y="427"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW_SplitAc → T09_Prop (cross-lane: Sistema → Prop) -->
+      <bpmndi:BPMNEdge id="edge_P03D_sf012_Prop" bpmnElement="P03D_sf012_Prop">
+        <omgdi:waypoint x="2370" y="845"/>
+        <omgdi:waypoint x="2370" y="602"/>
+        <omgdi:waypoint x="2380" y="602"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- T09_RT → GW_RTAceit -->
+      <bpmndi:BPMNEdge id="edge_P03D_sf013" bpmnElement="P03D_sf013">
+        <omgdi:waypoint x="2545" y="427"/>
+        <omgdi:waypoint x="2610" y="427"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW_RTAceit → GW_JoinAc (Sim: cross-lane RT → Sistema) -->
+      <bpmndi:BPMNEdge id="edge_P03D_sf014_sim" bpmnElement="P03D_sf014_sim">
+        <omgdi:waypoint x="2660" y="427"/>
+        <omgdi:waypoint x="2770" y="427"/>
+        <omgdi:waypoint x="2770" y="795"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW_RTAceit → End_RTRec (Não: RT recusou) -->
+      <bpmndi:BPMNEdge id="edge_P03D_sf014_nao" bpmnElement="P03D_sf014_nao">
+        <omgdi:waypoint x="2635" y="402"/>
+        <omgdi:waypoint x="2635" y="364"/>
+        <omgdi:waypoint x="2720" y="364"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- T09_Prop → GW_JoinAc (cross-lane Prop → Sistema) -->
+      <bpmndi:BPMNEdge id="edge_P03D_sf015" bpmnElement="P03D_sf015">
+        <omgdi:waypoint x="2545" y="602"/>
+        <omgdi:waypoint x="2770" y="602"/>
+        <omgdi:waypoint x="2770" y="845"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW_JoinAc → ST_TodosAceit -->
+      <bpmndi:BPMNEdge id="edge_P03D_sf016" bpmnElement="P03D_sf016">
+        <omgdi:waypoint x="2795" y="820"/>
+        <omgdi:waypoint x="2855" y="820"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- ST_TodosAceit → GW_Isencao -->
+      <bpmndi:BPMNEdge id="edge_P03D_sf017" bpmnElement="P03D_sf017">
+        <omgdi:waypoint x="3055" y="820"/>
+        <omgdi:waypoint x="3120" y="820"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW_Isencao → ST_SitAgPag (Sim: sobe) -->
+      <bpmndi:BPMNEdge id="edge_P03D_sf018_sim" bpmnElement="P03D_sf018_sim">
+        <omgdi:waypoint x="3145" y="795"/>
+        <omgdi:waypoint x="3145" y="750"/>
+        <omgdi:waypoint x="3230" y="750"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW_Isencao → GW_Inviab (Não: desce) -->
+      <bpmndi:BPMNEdge id="edge_P03D_sf018_nao" bpmnElement="P03D_sf018_nao">
+        <omgdi:waypoint x="3145" y="845"/>
+        <omgdi:waypoint x="3145" y="880"/>
+        <omgdi:waypoint x="3230" y="880"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- ST_SitAgPag → End_AgPag -->
+      <bpmndi:BPMNEdge id="edge_P03D_sf019" bpmnElement="P03D_sf019">
+        <omgdi:waypoint x="3415" y="750"/>
+        <omgdi:waypoint x="3475" y="750"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW_Inviab → ST_SitInviab (Sim: inviabilidade) -->
+      <bpmndi:BPMNEdge id="edge_P03D_sf020_sim" bpmnElement="P03D_sf020_sim">
+        <omgdi:waypoint x="3280" y="880"/>
+        <omgdi:waypoint x="3340" y="900"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW_Inviab → ST_SitAgDist (Não: padrão, sobe) -->
+      <bpmndi:BPMNEdge id="edge_P03D_sf020_nao" bpmnElement="P03D_sf020_nao">
+        <omgdi:waypoint x="3255" y="855"/>
+        <omgdi:waypoint x="3255" y="820"/>
+        <omgdi:waypoint x="3340" y="820"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- ST_SitInviab → End_Inviab -->
+      <bpmndi:BPMNEdge id="edge_P03D_sf021" bpmnElement="P03D_sf021">
+        <omgdi:waypoint x="3525" y="900"/>
+        <omgdi:waypoint x="3585" y="900"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- ST_SitAgDist → End_AgDist -->
+      <bpmndi:BPMNEdge id="edge_P03D_sf022" bpmnElement="P03D_sf022">
+        <omgdi:waypoint x="3525" y="820"/>
+        <omgdi:waypoint x="3585" y="820"/>
+      </bpmndi:BPMNEdge>
+
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</definitions>

@@ -1,0 +1,1864 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI"
+             targetNamespace="http://solcbm.procergs.rs.gov.br/bpmn/p06"
+             xsi:schemaLocation="http://www.omg.org/spec/BPMN/20100524/MODEL BPMN20.xsd"
+             id="Definitions_P06">
+
+  <!--
+    =====================================================================
+    PROJETO : SOL — Sistema Online de Licenciamento / CBM-RS
+    PROCESSO: P06 — Solicitação de Isenção de Taxa
+    VERSÃO  : 1.0  |  DATA: 2026-03-10
+    STACK   : Java EE (WildFly/JBoss, EJB @Stateless, CDI, JAX-RS, JPA)
+    CAMUNDA : Modeler 5.x  |  BPMN 2.0
+    =====================================================================
+
+    SUB-PROCESSOS:
+      P06-A — Isenção de Taxa de Licenciamento
+              Entidade: AnaliseLicenciamentoIsencaoED
+              Tabela  : CBM_ANALISE_LIC_ISENCAO
+              Enum    : TipoSituacaoIsencao (SOLICITADA/APROVADA/REPROVADA/SOLICITADA_RENOV)
+              Enum    : StatusAnaliseLicenciamentoIsencao (APROVADO/REPROVADO)
+
+      P06-B — Isenção de Taxa de FACT
+              Entidade: AnaliseFactIsencaoED
+              Tabela  : CBM_ANALISE_FACT_ISENCAO
+              Enum    : StatusAnaliseFactIsencao (APROVADO/REPROVADO/SOLICITADA)
+              Enum    : StatusFact (AGUARDANDO_PAGAMENTO_ISENCAO/AGUARDANDO_DISTRIBUICAO/ISENCAO_REJEITADA)
+
+    RAIAS (lanes) — P06-A e P06-B:
+      Lane 1: Cidadão / RT   — ações do usuário externo
+      Lane 2: Sistema SOL BE — ServiceTasks automáticas (EJB RN classes)
+      Lane 3: ADM CBM-RS     — ações do analista interno
+      Lane 4: Alfresco / SOE — armazenamento ECM e envio de e-mails
+    =====================================================================
+  -->
+
+  <error id="Error_HTTP406"
+         name="HTTP 406 — Licenciamento não elegível para isenção"
+         errorCode="406" />
+
+  <collaboration id="Collaboration_P06">
+    <participant id="Participant_P06A"
+                 name="P06-A — Isenção de Taxa de Licenciamento"
+                 processRef="Process_P06A" />
+    <participant id="Participant_P06B"
+                 name="P06-B — Isenção de Taxa de FACT"
+                 processRef="Process_P06B" />
+  </collaboration>
+
+  <!-- ================================================================ -->
+  <!-- PROCESSO P06-A: ISENÇÃO DE TAXA DE LICENCIAMENTO                 -->
+  <!-- ================================================================ -->
+  <process id="Process_P06A"
+           name="P06-A: Isenção de Taxa de Licenciamento"
+           isExecutable="false">
+
+    <laneSet id="LaneSet_P06A">
+      <lane id="Lane_RT_A" name="Cidadão / RT">
+        <flowNodeRef>Start_P06A</flowNodeRef>
+        <flowNodeRef>Task_RT_SolicitarIsencao</flowNodeRef>
+        <flowNodeRef>Task_RT_EnviarComprovante</flowNodeRef>
+        <flowNodeRef>End_P06A_AprovadoAuto</flowNodeRef>
+        <flowNodeRef>End_P06A_AprovadoManual</flowNodeRef>
+      </lane>
+      <lane id="Lane_BE_A" name="Sistema SOL Backend (EJB/JAX-RS)">
+        <flowNodeRef>Task_BE_ValidarEstado</flowNodeRef>
+        <flowNodeRef>GW_EstadoValido</flowNodeRef>
+        <flowNodeRef>Task_BE_CriarAnalise</flowNodeRef>
+        <flowNodeRef>Task_BE_MarcoSolicit</flowNodeRef>
+        <flowNodeRef>GW_PreAnalise</flowNodeRef>
+        <flowNodeRef>Task_BE_AvaliarNCS</flowNodeRef>
+        <flowNodeRef>GW_NCSAprovado</flowNodeRef>
+        <flowNodeRef>Task_BE_AprovarAuto</flowNodeRef>
+        <flowNodeRef>Task_BE_MarcoAprovAuto</flowNodeRef>
+        <flowNodeRef>Task_BE_ReprovarAuto</flowNodeRef>
+        <flowNodeRef>Task_BE_MarcoReprovAuto</flowNodeRef>
+        <flowNodeRef>Task_BE_RegistrarDecisao</flowNodeRef>
+        <flowNodeRef>GW_Decisao</flowNodeRef>
+        <flowNodeRef>Task_BE_TrocaEstadoAprov</flowNodeRef>
+        <flowNodeRef>Task_BE_MarcoAprovManual</flowNodeRef>
+        <flowNodeRef>Task_BE_SituacaoReprovada</flowNodeRef>
+        <flowNodeRef>Task_BE_MarcoReprovManual</flowNodeRef>
+        <flowNodeRef>GW_Renovacao</flowNodeRef>
+      </lane>
+      <lane id="Lane_ADM_A" name="ADM CBM-RS (Analista)">
+        <flowNodeRef>End_P06A_EstadoInvalido</flowNodeRef>
+        <flowNodeRef>Task_ADM_ListarPendentes</flowNodeRef>
+        <flowNodeRef>Task_ADM_AnalisarIsencao</flowNodeRef>
+        <flowNodeRef>End_P06A_ReprovadoAuto</flowNodeRef>
+        <flowNodeRef>End_P06A_ReprovadoManual</flowNodeRef>
+      </lane>
+      <lane id="Lane_AlfSOE_A" name="Alfresco / SOE PROCERGS">
+        <flowNodeRef>Task_Alf_UploadComprovante</flowNodeRef>
+        <flowNodeRef>Task_SOE_NotifAprovAuto</flowNodeRef>
+        <flowNodeRef>Task_SOE_NotifReprovAuto</flowNodeRef>
+        <flowNodeRef>Task_SOE_NotifAprovManual</flowNodeRef>
+        <flowNodeRef>Task_SOE_NotifReprovManual</flowNodeRef>
+      </lane>
+    </laneSet>
+
+    <!-- ============================================================== -->
+    <!-- START EVENT                                                     -->
+    <!-- ============================================================== -->
+    <startEvent id="Start_P06A"
+                name="Licenciamento em&#xa;AGUARDANDO_PAGAMENTO">
+      <documentation>
+        Pré-condição: LicenciamentoED.situacao = SituacaoLicenciamento.AGUARDANDO_PAGAMENTO.
+        O Cidadão (RT ou RU) acessa o portal SOL para solicitar isenção da taxa de análise.
+
+        Endpoint REST acionado:
+          POST /licenciamentos/{id}/solicitacaoIsencao
+          Classe: LicenciamentoIsencaoRestImpl (JAX-RS @Path)
+
+        Segurança:
+          @AutorizaEnvolvido: verifica que o usuário autenticado via SOE/PROCERGS
+          é RT ou RU vinculado ao licenciamento.
+          Token obtido via SessionMB.getUsuario() (@SessionScoped CDI bean).
+
+        Tabela verificada: CBM_LICENCIAMENTO (campo SITUACAO).
+      </documentation>
+      <outgoing>SF_Start_to_Solicitar</outgoing>
+    </startEvent>
+
+    <!-- ============================================================== -->
+    <!-- TASK: RT Solicitar Isenção                                      -->
+    <!-- ============================================================== -->
+    <userTask id="Task_RT_SolicitarIsencao"
+              name="Solicitar Isenção de&#xa;Taxa de Análise"
+              camunda:assignee="${rt_cpf}">
+      <documentation>
+        Ator: Cidadão / Responsável Técnico (RT) ou Responsável pelo Uso (RU).
+        Tela: Portal SOL → Licenciamento → Aba "Isenção de Taxa".
+
+        Endpoint: POST /licenciamentos/{id}/solicitacaoIsencao
+        Classe REST: LicenciamentoIsencaoRestImpl
+        DTO de entrada: SolicitacaoIsencaoDTO
+          - justificativa (String, obrigatório)
+          - tipoIsencao (enum — MEI, Filantrópica, Órgão Público, etc.)
+
+        Segurança: @AutorizaEnvolvido + token SOE PROCERGS (meu.rs.gov.br).
+        Interceptor: @AppInterceptor (logging, auditoria de acesso).
+
+        Regras de negócio:
+          RN_P06A_01: Apenas RT ou RU vinculado ao licenciamento pode solicitar.
+          RN_P06A_02: Licenciamento deve estar em SituacaoLicenciamento.AGUARDANDO_PAGAMENTO.
+          RN_P06A_03: Não deve existir AnaliseLicenciamentoIsencaoED ativa
+                      (situacaoIsencao = SOLICITADA) para o mesmo licenciamento.
+      </documentation>
+      <incoming>SF_Start_to_Solicitar</incoming>
+      <outgoing>SF_Solicitar_to_Validar</outgoing>
+    </userTask>
+
+    <!-- ============================================================== -->
+    <!-- TASK: Backend Validar Estado do Licenciamento                  -->
+    <!-- ============================================================== -->
+    <serviceTask id="Task_BE_ValidarEstado"
+                 name="Validar Estado do Licenciamento&#xa;(AnaliseLicenciamentoIsencaoRNVal)"
+                 camunda:class="br.gov.rs.procergs.solcbm.rn.AnaliseLicenciamentoIsencaoRNVal">
+      <documentation>
+        Classe: AnaliseLicenciamentoIsencaoRNVal (EJB @Stateless, @AppInterceptor).
+        Método: validarPendenteIsencao(Long idLicenciamento).
+
+        Validações executadas:
+          1. Busca LicenciamentoED por ID (tabela CBM_LICENCIAMENTO).
+          2. Verifica: licenciamento.getSituacao() == SituacaoLicenciamento.AGUARDANDO_PAGAMENTO.
+          3. Verifica: não existe AnaliseLicenciamentoIsencaoED com
+             situacaoIsencao == TipoSituacaoIsencao.SOLICITADA para este licenciamento.
+
+        Exceção em caso de falha:
+          throw new WebApplicationException(Response.Status.NOT_ACCEPTABLE)
+          com chave de mensagem: "licenciamento.isencao.naopendente"
+          → HTTP 406 retornado ao cliente Angular.
+
+        Tabelas lidas: CBM_LICENCIAMENTO, CBM_ANALISE_LIC_ISENCAO.
+        Auditoria Envers: não altera dados — apenas leitura.
+      </documentation>
+      <incoming>SF_Solicitar_to_Validar</incoming>
+      <outgoing>SF_Validar_to_GW_Estado</outgoing>
+    </serviceTask>
+
+    <!-- GATEWAY: Estado Válido? -->
+    <exclusiveGateway id="GW_EstadoValido"
+                      name="Licenciamento elegível&#xa;para isenção?">
+      <documentation>
+        Avalia resultado da validação AnaliseLicenciamentoIsencaoRNVal.
+
+        [Sim] licenciamento.situacao == AGUARDANDO_PAGAMENTO AND sem isenção ativa
+          → prossegue com criação da análise.
+        [Não] WebApplicationException HTTP 406 já lançada pelo RNVal
+          → EndEvent de erro (representação do erro para o BPMN).
+
+        Nota: no sistema atual a exceção é lançada dentro do RNVal,
+        interrompendo o fluxo. Este gateway modela a decisão de negócio
+        para clareza do diagrama de processo.
+      </documentation>
+      <incoming>SF_Validar_to_GW_Estado</incoming>
+      <outgoing>SF_Estado_Sim</outgoing>
+      <outgoing>SF_Estado_Nao</outgoing>
+    </exclusiveGateway>
+
+    <!-- END EVENT: Estado Inválido (Erro HTTP 406) -->
+    <endEvent id="End_P06A_EstadoInvalido"
+              name="Erro: Isenção Rejeitada&#xa;(HTTP 406 — estado inválido)">
+      <documentation>
+        Licenciamento não está em AGUARDANDO_PAGAMENTO
+        ou já existe solicitação de isenção ativa.
+        HTTP 406 retornado ao Angular com mensagem localizada.
+        Tabela CBM_ANALISE_LIC_ISENCAO_AUD registra a tentativa (Envers).
+      </documentation>
+      <incoming>SF_Estado_Nao</incoming>
+      <errorEventDefinition id="ErrDef_EstadoInvalido" errorRef="Error_HTTP406" />
+    </endEvent>
+
+    <!-- ============================================================== -->
+    <!-- TASK: Backend Criar AnaliseLicenciamentoIsencaoED              -->
+    <!-- ============================================================== -->
+    <serviceTask id="Task_BE_CriarAnalise"
+                 name="Criar AnaliseLicenciamentoIsencaoED&#xa;situacaoIsencao = SOLICITADA"
+                 camunda:class="br.gov.rs.procergs.solcbm.rn.AnaliseLicenciamentoIsencaoRN">
+      <documentation>
+        Classe: AnaliseLicenciamentoIsencaoRN (EJB @Stateless, @AppInterceptor).
+        Método: inclui(AnaliseLicenciamentoIsencaoDTO dto) — fase de criação.
+
+        Operações:
+          1. new AnaliseLicenciamentoIsencaoED().
+          2. ed.setLicenciamento(licenciamentoED)  [FK id_licenciamento].
+          3. ed.setDthSolicitacao(Calendar.getInstance()).
+          4. ed.setSituacaoIsencao(TipoSituacaoIsencao.SOLICITADA).
+          5. ed.setAnalista(null)  [preenchido pelo ADM na análise].
+          6. ed.setJustificativa(dto.getJustificativa()).
+          7. entityManager.persist(ed).
+          8. Auditoria Envers → CBM_ANALISE_LIC_ISENCAO_AUD.
+
+        Entidade: AnaliseLicenciamentoIsencaoED (@Entity @Audited).
+        Tabela  : CBM_ANALISE_LIC_ISENCAO.
+        Campos principais:
+          ID (sequence), ID_LICENCIAMENTO (FK), DTH_SOLICITACAO,
+          SITUACAO_ISENCAO ('SOLICITADA'), ANALISTA_CPF (null),
+          DTH_ANALISE (null), STATUS_ANALISE (null), PARECER (null).
+
+        Injeções CDI desta classe:
+          @Inject AnaliseLicenciamentoIsencaoRNVal val
+          @Inject @TrocaEstadoEnderecoRN     TrocaEstadoRN trocaEstadoEnderecoRN
+          @Inject @TrocaEstadoInviabilidadeRN TrocaEstadoRN trocaEstadoInviabilidadeRN
+          @Inject @TrocaEstadoPadraoRN        TrocaEstadoRN trocaEstadoPadraoRN
+          @Inject MarcoRN marcoRN
+          @Inject LicenciamentoAdmNotificacaoRN notificacaoRN
+          @Inject ParametroNcsBD parametroNcsBD
+          @Inject JustificativaNcsIsencaoBD justificativaNcsBD
+      </documentation>
+      <incoming>SF_Estado_Sim</incoming>
+      <outgoing>SF_CriarAnalise_to_Marco</outgoing>
+    </serviceTask>
+
+    <!-- ============================================================== -->
+    <!-- TASK: Backend Registrar Marco SOLICITACAO_ISENCAO              -->
+    <!-- ============================================================== -->
+    <serviceTask id="Task_BE_MarcoSolicit"
+                 name="Registrar Marco&#xa;SOLICITACAO_ISENCAO"
+                 camunda:class="br.gov.rs.procergs.solcbm.rn.MarcoRN">
+      <documentation>
+        Classe: MarcoRN (EJB @Stateless).
+        Método: incluir(Long idLicenciamento, TipoMarco tipo, String cpfUsuario).
+
+        Parâmetros:
+          tipo      = TipoMarco.SOLICITACAO_ISENCAO
+          cpfUsuario = SessionMB.getUsuario().getCpf()
+
+        Tabela: CBM_MARCO_LICENCIAMENTO.
+        Campos: ID, ID_LICENCIAMENTO (FK), TIPO_MARCO, DTH_MARCO, CPF_USUARIO.
+
+        Propósito:
+          - Rastreio permanente da data/hora da solicitação.
+          - IsencaoTaxaReanaliseRN usa este marco para calcular prazos
+            cumulativos de correção (PRAZO_CORRECAO = 30L dias).
+          - Base para relatórios de auditoria CBM-RS.
+      </documentation>
+      <incoming>SF_CriarAnalise_to_Marco</incoming>
+      <outgoing>SF_Marco_to_GW_PreAnalise</outgoing>
+    </serviceTask>
+
+    <!-- ============================================================== -->
+    <!-- GATEWAY: Pré-análise Automática Habilitada?                    -->
+    <!-- ============================================================== -->
+    <exclusiveGateway id="GW_PreAnalise"
+                      name="Pré-análise Automática&#xa;Habilitada? (ParametroNcsED)">
+      <documentation>
+        Consulta: ParametroNcsBD.buscarPorChave("APROVA_ISENCAOTAXA_PREANALISE").
+        Tabela  : CBM_PARAMETRO_NCS.
+        Coluna  : VALOR (mapeado por SimNaoBooleanConverter → Boolean).
+          SimNaoBooleanConverter: 'S' → true, 'N' → false.
+
+        [Sim — APROVA_ISENCAOTAXA_PREANALISE = 'S']
+          → Fluxo automático: sistema avalia NCS sem interação humana.
+        [Não — APROVA_ISENCAOTAXA_PREANALISE = 'N' ou parâmetro ausente]
+          → Fluxo manual: ADM CBM-RS analisa a solicitação.
+
+        ParametroNcsED:
+          @Entity, tabela CBM_PARAMETRO_NCS.
+          Campos: ID, CHAVE (unique), VALOR, DESCRICAO.
+      </documentation>
+      <incoming>SF_Marco_to_GW_PreAnalise</incoming>
+      <outgoing>SF_PreAnalise_Sim</outgoing>
+      <outgoing>SF_PreAnalise_Nao</outgoing>
+    </exclusiveGateway>
+
+    <!-- ============================================================== -->
+    <!-- CAMINHO AUTO: PRÉ-ANÁLISE AUTOMÁTICA                           -->
+    <!-- ============================================================== -->
+
+    <serviceTask id="Task_BE_AvaliarNCS"
+                 name="Avaliar Não Conformidades (NCS)&#xa;Automaticamente"
+                 camunda:class="br.gov.rs.procergs.solcbm.rn.AnaliseLicenciamentoIsencaoRN">
+      <documentation>
+        Classe: AnaliseLicenciamentoIsencaoRN — bloco de pré-análise automática.
+        Método: inclui() — ramo de avaliação NCS.
+
+        Operações:
+          1. Busca lista JustificativaNcsIsencaoED por idAnaliseLicenciamentoIsencao.
+             Entidade: JustificativaNcsIsencaoED
+             Tabela  : CBM_JUSTIFICATIVA_NCS_ISENCAO
+             Campos  : ID, ID_ANALISE_LIC_ISENCAO (FK), ID_PARAMETRO_NCS (FK),
+                       DESCRICAO_JUSTIFICATIVA, IND_APROVADO (S/N via SimNaoBooleanConverter).
+
+          2. Para cada NCS, consulta ParametroNcsED (@ManyToOne fetch=LAZY na
+             JustificativaNcsIsencaoED; EAGER na JustificativaNcsFactIsencaoED).
+
+          3. Avalia o conjunto: se todos os NCS obrigatórios estão conformes
+             → statusAnalise = APROVADO.
+             Se qualquer NCS obrigatório não conforme
+             → statusAnalise = REPROVADO.
+
+          4. Define AnaliseLicenciamentoIsencaoED.statusAnalise
+             = StatusAnaliseLicenciamentoIsencao.APROVADO ou REPROVADO.
+      </documentation>
+      <incoming>SF_PreAnalise_Sim</incoming>
+      <outgoing>SF_AvaliarNCS_to_GW</outgoing>
+    </serviceTask>
+
+    <exclusiveGateway id="GW_NCSAprovado"
+                      name="NCS Aprovado?&#xa;(pré-análise automática)">
+      <documentation>
+        Avalia statusAnalise definido pela pré-análise automática de NCS.
+        [Aprovado] statusAnalise == StatusAnaliseLicenciamentoIsencao.APROVADO
+        [Reprovado] statusAnalise == StatusAnaliseLicenciamentoIsencao.REPROVADO
+      </documentation>
+      <incoming>SF_AvaliarNCS_to_GW</incoming>
+      <outgoing>SF_NCS_Aprovado</outgoing>
+      <outgoing>SF_NCS_Reprovado</outgoing>
+    </exclusiveGateway>
+
+    <serviceTask id="Task_BE_AprovarAuto"
+                 name="Aprovar Isenção (pré-análise):&#xa;situacaoIsencao = APROVADA"
+                 camunda:class="br.gov.rs.procergs.solcbm.rn.AnaliseLicenciamentoIsencaoRN">
+      <documentation>
+        Classe: AnaliseLicenciamentoIsencaoRN — ramo de aprovação automática.
+
+        Operações:
+          1. ed.setSituacaoIsencao(TipoSituacaoIsencao.APROVADA).
+          2. ed.setDthAnalise(Calendar.getInstance()).
+          3. ed.setAnalista("SISTEMA").
+          4. ed.setStatusAnalise(StatusAnaliseLicenciamentoIsencao.APROVADO).
+          5. Chama trocaEstadoLicenciamento(licenciamentoED):
+               if (licenciamento.hasEndereco() AND NOT licenciamento.isInviabilidade()):
+                   trocaEstadoEnderecoRN.executar(licenciamento)
+               else if (licenciamento.isInviabilidade()):
+                   trocaEstadoInviabilidadeRN.executar(licenciamento)
+               else:
+                   trocaEstadoPadraoRN.executar(licenciamento)
+             → Resultado: LicenciamentoED.situacao = AGUARDANDO_DISTRIBUICAO.
+          6. entityManager.merge(ed).
+          7. entityManager.merge(licenciamentoED).
+          8. Auditoria Envers: CBM_ANALISE_LIC_ISENCAO_AUD, CBM_LICENCIAMENTO_AUD.
+
+        CDI qualificadores TrocaEstadoRN:
+          @TrocaEstadoEnderecoRN     — licenciamentos com endereço confirmado
+          @TrocaEstadoInviabilidadeRN — licenciamentos de inviabilidade
+          @TrocaEstadoPadraoRN       — demais casos
+      </documentation>
+      <incoming>SF_NCS_Aprovado</incoming>
+      <outgoing>SF_AprovarAuto_to_Marco</outgoing>
+    </serviceTask>
+
+    <serviceTask id="Task_BE_MarcoAprovAuto"
+                 name="Registrar Marco&#xa;ANALISE_ISENCAO_APROVADO"
+                 camunda:class="br.gov.rs.procergs.solcbm.rn.MarcoRN">
+      <documentation>
+        Classe: MarcoRN (EJB @Stateless).
+        Método: incluir(Long idLicenciamento, TipoMarco tipo, String cpfUsuario).
+
+        Parâmetros:
+          tipo       = TipoMarco.ANALISE_ISENCAO_APROVADO
+          cpfUsuario = "SISTEMA" (pré-análise automática)
+
+        Tabela: CBM_MARCO_LICENCIAMENTO.
+        Propósito: registro permanente de aprovação de isenção por pré-análise.
+        Usado em relatórios e histórico de auditoria CBM-RS.
+      </documentation>
+      <incoming>SF_AprovarAuto_to_Marco</incoming>
+      <outgoing>SF_MarcoAprovAuto_to_Notif</outgoing>
+    </serviceTask>
+
+    <serviceTask id="Task_SOE_NotifAprovAuto"
+                 name="Notificar Aprovação de Isenção&#xa;(e-mail via SOE PROCERGS)"
+                 camunda:class="br.gov.rs.procergs.solcbm.rn.LicenciamentoAdmNotificacaoRN">
+      <documentation>
+        Classe: LicenciamentoAdmNotificacaoRN (EJB @Stateless).
+        Método: notificarIsencaoDeTaxaRevisada(Long idLicenciamento, Boolean aprovado).
+        Parâmetros: aprovado = true.
+
+        Template de e-mail: "notificacao.email.template.licenciamento.isencao"
+        Assunto           : "notificacao.assunto.isencao.analisada"
+
+        Destinatários:
+          - RT: ResponsavelTecnicoED.email
+          - RU: ResponsavelUsoED.email (se cadastrado)
+
+        Integração SOE PROCERGS:
+          @Inject SoeEmailService soeEmailService
+          @SOEAuthRest — credenciais de serviço para autenticação no SOE
+          URL SMTP gerenciada pelo SOE estadual (meu.rs.gov.br).
+
+        Conteúdo do e-mail:
+          - Número do licenciamento
+          - Resultado: APROVADO
+          - Próximo passo: licenciamento encaminhado para distribuição
+          - Link para o portal SOL
+      </documentation>
+      <incoming>SF_MarcoAprovAuto_to_Notif</incoming>
+      <outgoing>SF_NotifAprovAuto_to_End</outgoing>
+    </serviceTask>
+
+    <endEvent id="End_P06A_AprovadoAuto"
+              name="Isenção Concedida (pré-análise):&#xa;APROVADA → AGUARDANDO_DISTRIBUICAO">
+      <documentation>
+        Estado final — pré-análise automática aprovada:
+          AnaliseLicenciamentoIsencaoED.situacaoIsencao = APROVADA
+          AnaliseLicenciamentoIsencaoED.statusAnalise   = APROVADO
+          LicenciamentoED.situacao                      = AGUARDANDO_DISTRIBUICAO
+          Marco registrado: ANALISE_ISENCAO_APROVADO
+          E-mail enviado via SOE PROCERGS.
+        Cidadão isento da taxa de análise — licenciamento prossegue normalmente.
+      </documentation>
+      <incoming>SF_NotifAprovAuto_to_End</incoming>
+    </endEvent>
+
+    <serviceTask id="Task_BE_ReprovarAuto"
+                 name="Reprovar Isenção (pré-análise):&#xa;situacaoIsencao = REPROVADA"
+                 camunda:class="br.gov.rs.procergs.solcbm.rn.AnaliseLicenciamentoIsencaoRN">
+      <documentation>
+        Classe: AnaliseLicenciamentoIsencaoRN — ramo de reprovação automática.
+
+        Operações:
+          1. ed.setSituacaoIsencao(TipoSituacaoIsencao.REPROVADA).
+          2. ed.setDthAnalise(Calendar.getInstance()).
+          3. ed.setAnalista("SISTEMA").
+          4. ed.setStatusAnalise(StatusAnaliseLicenciamentoIsencao.REPROVADO).
+          5. LicenciamentoED.situacao permanece = AGUARDANDO_PAGAMENTO.
+             (taxa de análise continua sendo cobrada — NÃO chama trocaEstado).
+          6. entityManager.merge(ed).
+          7. Auditoria Envers: CBM_ANALISE_LIC_ISENCAO_AUD.
+
+        RN: quando reprovado, o licenciamento NÃO muda de estado.
+        Cidadão deve pagar a taxa normalmente.
+      </documentation>
+      <incoming>SF_NCS_Reprovado</incoming>
+      <outgoing>SF_ReprovarAuto_to_Marco</outgoing>
+    </serviceTask>
+
+    <serviceTask id="Task_BE_MarcoReprovAuto"
+                 name="Registrar Marco&#xa;ANALISE_ISENCAO_REPROVADO"
+                 camunda:class="br.gov.rs.procergs.solcbm.rn.MarcoRN">
+      <documentation>
+        Classe: MarcoRN (EJB @Stateless).
+        Parâmetros:
+          tipo       = TipoMarco.ANALISE_ISENCAO_REPROVADO
+          cpfUsuario = "SISTEMA"
+        Tabela: CBM_MARCO_LICENCIAMENTO.
+      </documentation>
+      <incoming>SF_ReprovarAuto_to_Marco</incoming>
+      <outgoing>SF_MarcoReprovAuto_to_Notif</outgoing>
+    </serviceTask>
+
+    <serviceTask id="Task_SOE_NotifReprovAuto"
+                 name="Notificar Reprovação de Isenção&#xa;(e-mail via SOE PROCERGS)"
+                 camunda:class="br.gov.rs.procergs.solcbm.rn.LicenciamentoAdmNotificacaoRN">
+      <documentation>
+        Classe: LicenciamentoAdmNotificacaoRN.
+        Método: notificarIsencaoDeTaxaRevisada(Long idLicenciamento, Boolean aprovado).
+        Parâmetros: aprovado = false.
+
+        Template: "notificacao.email.template.licenciamento.isencao"
+        Assunto  : "notificacao.assunto.isencao.analisada"
+
+        Conteúdo: reprovação da isenção, NCS não conformes,
+        orientação para efetuar pagamento da taxa de análise.
+      </documentation>
+      <incoming>SF_MarcoReprovAuto_to_Notif</incoming>
+      <outgoing>SF_NotifReprovAuto_to_End</outgoing>
+    </serviceTask>
+
+    <endEvent id="End_P06A_ReprovadoAuto"
+              name="Isenção Negada (pré-análise):&#xa;REPROVADA → AGUARDANDO_PAGAMENTO">
+      <documentation>
+        Estado final — pré-análise automática reprovada:
+          AnaliseLicenciamentoIsencaoED.situacaoIsencao = REPROVADA
+          AnaliseLicenciamentoIsencaoED.statusAnalise   = REPROVADO
+          LicenciamentoED.situacao                      = AGUARDANDO_PAGAMENTO (permanece)
+          Marco registrado: ANALISE_ISENCAO_REPROVADO
+          E-mail enviado via SOE PROCERGS.
+        Cidadão deve efetuar o pagamento da taxa de análise.
+      </documentation>
+      <incoming>SF_NotifReprovAuto_to_End</incoming>
+    </endEvent>
+
+    <!-- ============================================================== -->
+    <!-- CAMINHO MANUAL: ANÁLISE PELO ADM CBM-RS                        -->
+    <!-- ============================================================== -->
+
+    <userTask id="Task_ADM_ListarPendentes"
+              name="Listar Solicitações de Isenção&#xa;Pendentes de Análise"
+              camunda:assignee="${adm_cpf}">
+      <documentation>
+        Ator: Analista ADM CBM-RS.
+        Permissão: @Permissao(objeto="ISENCAOTAXA", acao="LISTAR").
+        Tela: Painel Administrativo → Isenções de Taxa → Lista de Pendentes.
+
+        Endpoint: GET /adm/analise-licenciamentos-isencao
+        Classe REST: AnaliseLicenciamentoIsencaoAdmRestImpl (JAX-RS @Path).
+        Método RN : AnaliseLicenciamentoIsencaoRN.lista(filtroDTO).
+        Filtro    : situacaoIsencao = TipoSituacaoIsencao.SOLICITADA.
+        Paginação : DTO com page/size.
+
+        Dados exibidos por solicitação:
+          - nrLicenciamento (número do licenciamento)
+          - RT: nome, CPF
+          - RU/Estabelecimento: nome, CNPJ/CPF, endereço
+          - dthSolicitacao, justificativa
+          - Comprovantes anexados (GET /licenciamentos/{id}/comprovante-isencao)
+          - Classificação de risco (risco do estabelecimento)
+          - Histórico de análises anteriores (se renovação)
+
+        Tabelas lidas:
+          CBM_ANALISE_LIC_ISENCAO, CBM_LICENCIAMENTO,
+          CBM_RESPONSAVEL_TECNICO, CBM_RESPONSAVEL_USO.
+
+        Nota: esta tarefa também é ativada quando o cidadão solicita
+        RENOVAÇÃO da isenção (fluxo de volta do GW_Renovacao).
+        Nesse caso, situacaoIsencao = SOLICITADA_RENOV.
+      </documentation>
+      <incoming>SF_PreAnalise_Nao</incoming>
+      <incoming>SF_GW_Renovacao_Sim</incoming>
+      <outgoing>SF_ListarPend_to_Comprovante</outgoing>
+    </userTask>
+
+    <userTask id="Task_RT_EnviarComprovante"
+              name="Enviar Comprovante de Isenção&#xa;(documento probatório — opcional)"
+              camunda:assignee="${rt_cpf}">
+      <documentation>
+        Ator: Cidadão / RT (ação opcional — pode ocorrer antes ou durante a análise).
+        Tela: Portal SOL → Licenciamento → Aba "Comprovante de Isenção".
+
+        Endpoint: POST /licenciamentos/{id}/comprovante-isencao
+        Classe REST: ComprovanteIsencaoRestImpl (JAX-RS @Path).
+        Método RN : ComprovanteIsencaoRN.incluirArquivo(idLicenciamento, InputStream, nomeArquivo).
+        Segurança : @AutorizaEnvolvido.
+
+        Nota: ComprovanteIsencaoRN NÃO usa @AppInterceptor.
+
+        Fluxo de upload no ArquivoRN:
+          1. Se já existe ComprovanteIsencaoED para o licenciamento:
+               ArquivoRN.removerArquivo(ed.getIdentificadorAlfresco())
+               → DELETE Alfresco: /nodes/{UUID}
+          2. ArquivoRN.incluirArquivo(inputStream, nomeArquivo, TipoArquivo.EDIFICACAO)
+               → POST Alfresco: /alfresco/api/-default-/public/alfresco/versions/1/nodes
+               → Autenticação: Basic Auth (credenciais de serviço)
+               → Retorna: { entry: { id: "{UUID}" } }
+               → nodeRef: "workspace://SpacesStore/{UUID}"
+          3. ComprovanteIsencaoED.identificadorAlfresco = nodeRef (@NotNull, max 150).
+          4. entityManager.persist(comprovanteIsencaoED).
+
+        Entidade: ComprovanteIsencaoED (@Entity).
+        Tabela  : CBM_COMPROVANTE_ISENCAO.
+        Campos  : ID, ID_LICENCIAMENTO (FK), IDENTIFICADOR_ALFRESCO (nodeRef),
+                  NOME_ARQUIVO, DTH_INCLUSAO.
+
+        IMPORTANTE: o arquivo binário NUNCA é armazenado no banco relacional.
+        Apenas o nodeRef Alfresco é persistido.
+
+        O ADM visualiza o comprovante via:
+          GET /comprovantes-isencao-fact/{id}/arquivo
+          → ArquivoRN.buscarArquivo(identificadorAlfresco) → InputStream → Response multipart
+      </documentation>
+      <incoming>SF_ListarPend_to_Comprovante</incoming>
+      <outgoing>SF_Comprovante_to_Upload</outgoing>
+    </userTask>
+
+    <serviceTask id="Task_Alf_UploadComprovante"
+                 name="Armazenar Comprovante no Alfresco&#xa;→ persistir nodeRef no BD"
+                 camunda:class="br.gov.rs.procergs.solcbm.rn.ArquivoRN">
+      <documentation>
+        Classe: ArquivoRN (EJB @Stateless).
+        Método: incluirArquivo(InputStream inputStream, String nomeArquivo, TipoArquivo tipoArquivo).
+
+        Integração Alfresco (ECM):
+          URL base: {alfresco.url}/alfresco/api/-default-/public/alfresco/versions/1/nodes
+          Autenticação: Basic Auth (usuário de serviço configurado no WildFly).
+          Content-Type: multipart/form-data.
+          Response JSON: { entry: { id: "{UUID}" } }.
+
+        nodeRef gerado: workspace://SpacesStore/{UUID}
+        (formato padrão Alfresco para identificação de nós)
+
+        Persistência:
+          ComprovanteIsencaoED.identificadorAlfresco = nodeRef.
+          Tabela: CBM_COMPROVANTE_ISENCAO, campo: IDENTIFICADOR_ALFRESCO.
+          @Column(name="IDENTIFICADOR_ALFRESCO", nullable=false, length=150)
+
+        Endpoints relacionados (ComprovanteIsencaoRestImpl):
+          GET    /comprovantes-isencao-fact         → lista comprovantes
+          POST   /comprovantes-isencao-fact         → upload (FACT)
+          PUT    /comprovantes-isencao-fact/{id}    → atualiza
+          DELETE /comprovantes-isencao-fact/{id}    → remove
+          GET    /comprovantes-isencao-fact/{id}/arquivo → download binário
+
+        Deleção do Alfresco (ao substituir comprovante):
+          ArquivoRN.removerArquivo(nodeRef)
+          → DELETE /alfresco/api/-default-/public/alfresco/versions/1/nodes/{UUID}
+      </documentation>
+      <incoming>SF_Comprovante_to_Upload</incoming>
+      <outgoing>SF_Upload_to_Analisar</outgoing>
+    </serviceTask>
+
+    <userTask id="Task_ADM_AnalisarIsencao"
+              name="Analisar Solicitação de Isenção&#xa;e Registrar Decisão (ADM)"
+              camunda:assignee="${adm_cpf}">
+      <documentation>
+        Ator: Analista ADM CBM-RS.
+        Permissão: @Permissao(objeto="ISENCAOTAXA", acao="REVISAR").
+        Tela: Painel Administrativo → Isenções de Taxa → Detalhe da Solicitação.
+
+        Endpoint: POST /adm/analise-licenciamentos-isencao
+        Classe REST: AnaliseLicenciamentoIsencaoAdmRestImpl.
+        DTO de entrada: AnaliseLicenciamentoIsencaoDTO
+          - idAnaliseLicenciamentoIsencao (Long)
+          - statusAnalise (StatusAnaliseLicenciamentoIsencao: APROVADO | REPROVADO)
+          - parecer (String — obrigatório em ambos os casos)
+          - justificativasNcs (List[JustificativaNcsIsencaoDTO])
+
+        Dados visualizados pelo ADM:
+          - Dados do licenciamento (nrLicenciamento, endereço, risco, area)
+          - RT (nome, CPF, registro profissional)
+          - RU/Estabelecimento (nome, CNPJ/CPF)
+          - Justificativa de isenção enviada pelo cidadão
+          - Comprovantes (PDFs do Alfresco via GET /comprovante-isencao)
+          - Histórico de análises anteriores (se renovação)
+          - NCS configurados (lista de ParametroNcsED)
+
+        Ações do ADM:
+          1. Seleciona StatusAnaliseLicenciamentoIsencao: APROVADO ou REPROVADO.
+          2. Preenche parecer/observação (campo texto obrigatório).
+          3. Avalia cada NCS: IND_APROVADO = S ou N.
+          4. Confirma a decisão (clique em "Registrar Análise").
+
+        Regras:
+          RN_P06A_10: Parecer obrigatório em ambos os casos.
+          RN_P06A_11: Decisão é irreversível após registro.
+          RN_P06A_12: Se renovação (situacaoIsencao = SOLICITADA_RENOV),
+                      marcos usados: ANALISE_ISENCAO_RENOV_APROVADO ou
+                                     ANALISE_ISENCAO_RENOV_REPROVADO.
+      </documentation>
+      <incoming>SF_Upload_to_Analisar</incoming>
+      <outgoing>SF_Analisar_to_RegDecisao</outgoing>
+    </userTask>
+
+    <!-- ============================================================== -->
+    <!-- TASK: Backend Registrar Decisão da Análise Manual              -->
+    <!-- ============================================================== -->
+    <serviceTask id="Task_BE_RegistrarDecisao"
+                 name="Registrar Decisão da Análise:&#xa;AnaliseLicenciamentoIsencaoRN.inclui()"
+                 camunda:class="br.gov.rs.procergs.solcbm.rn.AnaliseLicenciamentoIsencaoRN">
+      <documentation>
+        Classe: AnaliseLicenciamentoIsencaoRN (EJB @Stateless, @AppInterceptor).
+        Método: inclui(AnaliseLicenciamentoIsencaoDTO dto) — execução completa.
+
+        Sequência de operações do método inclui():
+          1. val.validarPendenteIsencao(dto.getIdLicenciamento()) — revalida estado.
+          2. buildED(dto):
+               ed.setAnalista(SessionMB.getUsuario().getCpf())
+               ed.setDthAnalise(Calendar.getInstance())
+               ed.setParecer(dto.getParecer())
+               ed.setStatusAnalise(dto.getStatusAnalise())
+               Persiste JustificativaNcsIsencaoED para cada NCS avaliado.
+          3. if (dto.getStatusAnalise() == REPROVADO):
+               ed.setSituacaoIsencao(TipoSituacaoIsencao.REPROVADA)
+               Licenciamento permanece em AGUARDANDO_PAGAMENTO.
+             else (APROVADO):
+               ed.setSituacaoIsencao(TipoSituacaoIsencao.APROVADA)
+               trocaEstadoLicenciamento(licenciamentoED):
+                 → AGUARDANDO_DISTRIBUICAO (via qualificador CDI adequado)
+          4. entityManager.merge(ed).
+          5. Auditoria Envers: CBM_ANALISE_LIC_ISENCAO_AUD.
+
+        JustificativaNcsIsencaoED:
+          Tabela: CBM_JUSTIFICATIVA_NCS_ISENCAO.
+          Campos: ID, ID_ANALISE_LIC_ISENCAO (FK), ID_PARAMETRO_NCS (FK),
+                  DESCRICAO_JUSTIFICATIVA, IND_APROVADO (S/N).
+
+        Injeções CDI (completas):
+          @Inject AnaliseLicenciamentoIsencaoRNVal val
+          @Inject @TrocaEstadoEnderecoRN     TrocaEstadoRN trocaEstadoEnderecoRN
+          @Inject @TrocaEstadoInviabilidadeRN TrocaEstadoRN trocaEstadoInviabilidadeRN
+          @Inject @TrocaEstadoPadraoRN        TrocaEstadoRN trocaEstadoPadraoRN
+          @Inject MarcoRN marcoRN
+          @Inject LicenciamentoAdmNotificacaoRN notificacaoRN
+          @Inject ParametroNcsBD parametroNcsBD
+          @Inject JustificativaNcsIsencaoBD justificativaNcsBD
+      </documentation>
+      <incoming>SF_Analisar_to_RegDecisao</incoming>
+      <outgoing>SF_RegDecisao_to_GW_Decisao</outgoing>
+    </serviceTask>
+
+    <exclusiveGateway id="GW_Decisao"
+                      name="Decisão da Análise Manual?">
+      <documentation>
+        Avalia statusAnalise registrado pelo ADM CBM-RS:
+        [APROVADO]  → AnaliseLicenciamentoIsencaoED.statusAnalise == APROVADO
+        [REPROVADO] → AnaliseLicenciamentoIsencaoED.statusAnalise == REPROVADO
+      </documentation>
+      <incoming>SF_RegDecisao_to_GW_Decisao</incoming>
+      <outgoing>SF_Decisao_Aprovado</outgoing>
+      <outgoing>SF_Decisao_Reprovado</outgoing>
+    </exclusiveGateway>
+
+    <!-- APROVADO manual -->
+    <serviceTask id="Task_BE_TrocaEstadoAprov"
+                 name="trocaEstadoLicenciamento()&#xa;→ AGUARDANDO_DISTRIBUICAO"
+                 camunda:class="br.gov.rs.procergs.solcbm.rn.AnaliseLicenciamentoIsencaoRN">
+      <documentation>
+        Lógica do método trocaEstadoLicenciamento(LicenciamentoED licenciamento):
+
+          if (licenciamento.hasEndereco() AND NOT licenciamento.isInviabilidade()):
+              trocaEstadoEnderecoRN.executar(licenciamento)
+          else if (licenciamento.isInviabilidade()):
+              trocaEstadoInviabilidadeRN.executar(licenciamento)
+          else:
+              trocaEstadoPadraoRN.executar(licenciamento)
+
+        Resultado: LicenciamentoED.situacao = SituacaoLicenciamento.AGUARDANDO_DISTRIBUICAO.
+        Tabela atualizada: CBM_LICENCIAMENTO (campo SITUACAO).
+
+        CDI qualificadores:
+          @TrocaEstadoEnderecoRN     → para licenciamentos com endereço confirmado
+          @TrocaEstadoInviabilidadeRN → para processos de inviabilidade
+          @TrocaEstadoPadraoRN       → caso padrão
+      </documentation>
+      <incoming>SF_Decisao_Aprovado</incoming>
+      <outgoing>SF_TrocaEstado_to_MarcoAprov</outgoing>
+    </serviceTask>
+
+    <serviceTask id="Task_BE_MarcoAprovManual"
+                 name="Registrar Marco ANALISE_ISENCAO_APROVADO&#xa;(ou ANALISE_ISENCAO_RENOV_APROVADO)"
+                 camunda:class="br.gov.rs.procergs.solcbm.rn.MarcoRN">
+      <documentation>
+        Classe: MarcoRN (EJB @Stateless).
+        Parâmetros:
+          tipo (normal)  = TipoMarco.ANALISE_ISENCAO_APROVADO
+          tipo (renovação) = TipoMarco.ANALISE_ISENCAO_RENOV_APROVADO
+          cpfUsuario     = SessionMB.getUsuario().getCpf() (CPF do analista ADM)
+
+        Tabela: CBM_MARCO_LICENCIAMENTO.
+
+        IsencaoTaxaReanaliseRN usa estes marcos para calcular:
+          PRAZO_CORRECAO = 30L dias (prazo cumulativo de ciência → correção).
+      </documentation>
+      <incoming>SF_TrocaEstado_to_MarcoAprov</incoming>
+      <outgoing>SF_MarcoAprov_to_NotifAprovManual</outgoing>
+    </serviceTask>
+
+    <serviceTask id="Task_SOE_NotifAprovManual"
+                 name="Notificar Aprovação de Isenção&#xa;(análise manual — SOE PROCERGS)"
+                 camunda:class="br.gov.rs.procergs.solcbm.rn.LicenciamentoAdmNotificacaoRN">
+      <documentation>
+        Classe: LicenciamentoAdmNotificacaoRN (EJB @Stateless).
+        Método: notificarIsencaoDeTaxaRevisada(Long idLicenciamento, Boolean aprovado).
+        Parâmetros: aprovado = true.
+
+        Template: "notificacao.email.template.licenciamento.isencao"
+        Assunto  : "notificacao.assunto.isencao.analisada"
+        Destinatários: RT e RU do licenciamento.
+        Integração: SOE PROCERGS (@SOEAuthRest, @Inject SoeEmailService).
+        Conteúdo: aprovação confirmada, licenciamento encaminhado para distribuição.
+      </documentation>
+      <incoming>SF_MarcoAprov_to_NotifAprovManual</incoming>
+      <outgoing>SF_NotifAprovManual_to_End</outgoing>
+    </serviceTask>
+
+    <endEvent id="End_P06A_AprovadoManual"
+              name="Isenção Concedida (análise manual):&#xa;APROVADA → AGUARDANDO_DISTRIBUICAO">
+      <documentation>
+        Estado final — análise manual aprovada:
+          AnaliseLicenciamentoIsencaoED.situacaoIsencao = APROVADA
+          AnaliseLicenciamentoIsencaoED.statusAnalise   = APROVADO
+          LicenciamentoED.situacao                      = AGUARDANDO_DISTRIBUICAO
+          Marco: ANALISE_ISENCAO_APROVADO (ou ANALISE_ISENCAO_RENOV_APROVADO)
+          E-mail enviado via SOE PROCERGS.
+      </documentation>
+      <incoming>SF_NotifAprovManual_to_End</incoming>
+    </endEvent>
+
+    <!-- REPROVADO manual -->
+    <serviceTask id="Task_BE_SituacaoReprovada"
+                 name="Atualizar: situacaoIsencao = REPROVADA&#xa;Licenciamento permanece em AGUARDANDO_PAGAMENTO"
+                 camunda:class="br.gov.rs.procergs.solcbm.rn.AnaliseLicenciamentoIsencaoRN">
+      <documentation>
+        Classe: AnaliseLicenciamentoIsencaoRN — ramo de reprovação manual.
+
+        Operações:
+          1. ed.setSituacaoIsencao(TipoSituacaoIsencao.REPROVADA).
+          2. ed.setStatusAnalise(StatusAnaliseLicenciamentoIsencao.REPROVADO).
+          3. ed.setParecer(dto.getParecer()) — motivo detalhado obrigatório.
+          4. ed.setDthAnalise(Calendar.getInstance()).
+          5. ed.setAnalista(SessionMB.getUsuario().getCpf()).
+          6. LicenciamentoED.situacao permanece = AGUARDANDO_PAGAMENTO.
+             (NÃO chama trocaEstadoLicenciamento).
+          7. entityManager.merge(ed).
+          8. Auditoria Envers: CBM_ANALISE_LIC_ISENCAO_AUD.
+
+        IsencaoTaxaReanaliseRN:
+          PRAZO_CORRECAO = 30L dias.
+          Calcula cumulativamente: soma dos intervalos
+            (dthCiencia → dthCorrecao → dthConclusao) para controle de prazo.
+      </documentation>
+      <incoming>SF_Decisao_Reprovado</incoming>
+      <outgoing>SF_Reprovado_to_MarcoReprov</outgoing>
+    </serviceTask>
+
+    <serviceTask id="Task_BE_MarcoReprovManual"
+                 name="Registrar Marco ANALISE_ISENCAO_REPROVADO&#xa;(ou ANALISE_ISENCAO_RENOV_REPROVADO)"
+                 camunda:class="br.gov.rs.procergs.solcbm.rn.MarcoRN">
+      <documentation>
+        Classe: MarcoRN (EJB @Stateless).
+        Parâmetros:
+          tipo (normal)  = TipoMarco.ANALISE_ISENCAO_REPROVADO
+          tipo (renovação) = TipoMarco.ANALISE_ISENCAO_RENOV_REPROVADO
+          cpfUsuario     = SessionMB.getUsuario().getCpf()
+        Tabela: CBM_MARCO_LICENCIAMENTO.
+      </documentation>
+      <incoming>SF_Reprovado_to_MarcoReprov</incoming>
+      <outgoing>SF_MarcoReprov_to_NotifReprovManual</outgoing>
+    </serviceTask>
+
+    <serviceTask id="Task_SOE_NotifReprovManual"
+                 name="Notificar Reprovação de Isenção&#xa;(análise manual — SOE PROCERGS)"
+                 camunda:class="br.gov.rs.procergs.solcbm.rn.LicenciamentoAdmNotificacaoRN">
+      <documentation>
+        Classe: LicenciamentoAdmNotificacaoRN.
+        Método: notificarIsencaoDeTaxaRevisada(Long idLicenciamento, Boolean aprovado).
+        Parâmetros: aprovado = false.
+        Template: "notificacao.email.template.licenciamento.isencao"
+        Assunto  : "notificacao.assunto.isencao.analisada"
+        Conteúdo: reprovação com parecer do ADM, orientação para pagar taxa,
+                  informação sobre possibilidade de renovação (30 dias).
+      </documentation>
+      <incoming>SF_MarcoReprov_to_NotifReprovManual</incoming>
+      <outgoing>SF_NotifReprovManual_to_GW_Renov</outgoing>
+    </serviceTask>
+
+    <exclusiveGateway id="GW_Renovacao"
+                      name="Cidadão Solicita&#xa;Renovação da Isenção?">
+      <documentation>
+        O cidadão/RT pode apresentar novos documentos e solicitar nova análise.
+
+        Endpoint de renovação (RT):
+          PUT /adm/analise-licenciamentos-isencao/{id}
+          Classe: AnaliseLicenciamentoIsencaoAdmRestImpl.
+          Método RN: AnaliseFactIsencaoRN.atualizaSolicitacaoIsencao().
+          Ao renovar: situacaoIsencao = TipoSituacaoIsencao.SOLICITADA_RENOV.
+
+        Regras:
+          RN_P06A_20: Renovação permitida somente se licenciamento ainda em
+                      AGUARDANDO_PAGAMENTO.
+          RN_P06A_21: Prazo máximo: IsencaoTaxaReanaliseRN.PRAZO_CORRECAO = 30L dias.
+          RN_P06A_22: Cálculo cumulativo de dias utilizados.
+
+        [Sim] → Retorna ao ciclo de análise (nova iteração — Task_ADM_ListarPendentes).
+        [Não] → Processo encerrado; cidadão deve pagar a taxa normalmente.
+      </documentation>
+      <incoming>SF_NotifReprovManual_to_GW_Renov</incoming>
+      <outgoing>SF_GW_Renovacao_Sim</outgoing>
+      <outgoing>SF_GW_Renovacao_Nao</outgoing>
+    </exclusiveGateway>
+
+    <endEvent id="End_P06A_ReprovadoManual"
+              name="Isenção Negada (sem renovação):&#xa;REPROVADA → cidadão paga taxa">
+      <documentation>
+        Estado final — análise manual reprovada, sem renovação:
+          AnaliseLicenciamentoIsencaoED.situacaoIsencao = REPROVADA
+          AnaliseLicenciamentoIsencaoED.statusAnalise   = REPROVADO
+          LicenciamentoED.situacao                      = AGUARDANDO_PAGAMENTO (permanece)
+          Marco: ANALISE_ISENCAO_REPROVADO (ou ANALISE_ISENCAO_RENOV_REPROVADO)
+          Cidadão não optou por renovação — deve pagar a taxa de análise.
+      </documentation>
+      <incoming>SF_GW_Renovacao_Nao</incoming>
+    </endEvent>
+
+    <!-- ============================================================== -->
+    <!-- SEQUENCE FLOWS — P06-A                                          -->
+    <!-- ============================================================== -->
+    <sequenceFlow id="SF_Start_to_Solicitar"       sourceRef="Start_P06A"             targetRef="Task_RT_SolicitarIsencao" />
+    <sequenceFlow id="SF_Solicitar_to_Validar"     sourceRef="Task_RT_SolicitarIsencao" targetRef="Task_BE_ValidarEstado" />
+    <sequenceFlow id="SF_Validar_to_GW_Estado"     sourceRef="Task_BE_ValidarEstado"   targetRef="GW_EstadoValido" />
+    <sequenceFlow id="SF_Estado_Sim"               name="Sim — elegível"               sourceRef="GW_EstadoValido"         targetRef="Task_BE_CriarAnalise">
+      <conditionExpression xsi:type="tFormalExpression">${licenciamento.situacao == 'AGUARDANDO_PAGAMENTO' and not isencaoAtiva}</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="SF_Estado_Nao"               name="Não — HTTP 406"               sourceRef="GW_EstadoValido"         targetRef="End_P06A_EstadoInvalido">
+      <conditionExpression xsi:type="tFormalExpression">${licenciamento.situacao != 'AGUARDANDO_PAGAMENTO' or isencaoAtiva}</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="SF_CriarAnalise_to_Marco"    sourceRef="Task_BE_CriarAnalise"    targetRef="Task_BE_MarcoSolicit" />
+    <sequenceFlow id="SF_Marco_to_GW_PreAnalise"   sourceRef="Task_BE_MarcoSolicit"    targetRef="GW_PreAnalise" />
+    <sequenceFlow id="SF_PreAnalise_Sim"           name="Sim — automático (APROVA_ISENCAOTAXA_PREANALISE=S)" sourceRef="GW_PreAnalise" targetRef="Task_BE_AvaliarNCS">
+      <conditionExpression xsi:type="tFormalExpression">${parametroPreAnalise == true}</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="SF_PreAnalise_Nao"           name="Não — análise manual pelo ADM" sourceRef="GW_PreAnalise"          targetRef="Task_ADM_ListarPendentes">
+      <conditionExpression xsi:type="tFormalExpression">${parametroPreAnalise == false}</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="SF_AvaliarNCS_to_GW"         sourceRef="Task_BE_AvaliarNCS"      targetRef="GW_NCSAprovado" />
+    <sequenceFlow id="SF_NCS_Aprovado"             name="NCS aprovado"                 sourceRef="GW_NCSAprovado"          targetRef="Task_BE_AprovarAuto">
+      <conditionExpression xsi:type="tFormalExpression">${statusAnalise == 'APROVADO'}</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="SF_NCS_Reprovado"            name="NCS reprovado"                sourceRef="GW_NCSAprovado"          targetRef="Task_BE_ReprovarAuto">
+      <conditionExpression xsi:type="tFormalExpression">${statusAnalise == 'REPROVADO'}</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="SF_AprovarAuto_to_Marco"     sourceRef="Task_BE_AprovarAuto"     targetRef="Task_BE_MarcoAprovAuto" />
+    <sequenceFlow id="SF_MarcoAprovAuto_to_Notif"  sourceRef="Task_BE_MarcoAprovAuto"  targetRef="Task_SOE_NotifAprovAuto" />
+    <sequenceFlow id="SF_NotifAprovAuto_to_End"    sourceRef="Task_SOE_NotifAprovAuto" targetRef="End_P06A_AprovadoAuto" />
+    <sequenceFlow id="SF_ReprovarAuto_to_Marco"    sourceRef="Task_BE_ReprovarAuto"    targetRef="Task_BE_MarcoReprovAuto" />
+    <sequenceFlow id="SF_MarcoReprovAuto_to_Notif" sourceRef="Task_BE_MarcoReprovAuto" targetRef="Task_SOE_NotifReprovAuto" />
+    <sequenceFlow id="SF_NotifReprovAuto_to_End"   sourceRef="Task_SOE_NotifReprovAuto" targetRef="End_P06A_ReprovadoAuto" />
+    <sequenceFlow id="SF_ListarPend_to_Comprovante" sourceRef="Task_ADM_ListarPendentes" targetRef="Task_RT_EnviarComprovante" />
+    <sequenceFlow id="SF_Comprovante_to_Upload"    sourceRef="Task_RT_EnviarComprovante" targetRef="Task_Alf_UploadComprovante" />
+    <sequenceFlow id="SF_Upload_to_Analisar"       sourceRef="Task_Alf_UploadComprovante" targetRef="Task_ADM_AnalisarIsencao" />
+    <sequenceFlow id="SF_Analisar_to_RegDecisao"   sourceRef="Task_ADM_AnalisarIsencao" targetRef="Task_BE_RegistrarDecisao" />
+    <sequenceFlow id="SF_RegDecisao_to_GW_Decisao" sourceRef="Task_BE_RegistrarDecisao" targetRef="GW_Decisao" />
+    <sequenceFlow id="SF_Decisao_Aprovado"         name="APROVADO"                     sourceRef="GW_Decisao"              targetRef="Task_BE_TrocaEstadoAprov">
+      <conditionExpression xsi:type="tFormalExpression">${statusAnalise == 'APROVADO'}</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="SF_Decisao_Reprovado"        name="REPROVADO"                    sourceRef="GW_Decisao"              targetRef="Task_BE_SituacaoReprovada">
+      <conditionExpression xsi:type="tFormalExpression">${statusAnalise == 'REPROVADO'}</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="SF_TrocaEstado_to_MarcoAprov" sourceRef="Task_BE_TrocaEstadoAprov" targetRef="Task_BE_MarcoAprovManual" />
+    <sequenceFlow id="SF_MarcoAprov_to_NotifAprovManual" sourceRef="Task_BE_MarcoAprovManual" targetRef="Task_SOE_NotifAprovManual" />
+    <sequenceFlow id="SF_NotifAprovManual_to_End"  sourceRef="Task_SOE_NotifAprovManual" targetRef="End_P06A_AprovadoManual" />
+    <sequenceFlow id="SF_Reprovado_to_MarcoReprov" sourceRef="Task_BE_SituacaoReprovada" targetRef="Task_BE_MarcoReprovManual" />
+    <sequenceFlow id="SF_MarcoReprov_to_NotifReprovManual" sourceRef="Task_BE_MarcoReprovManual" targetRef="Task_SOE_NotifReprovManual" />
+    <sequenceFlow id="SF_NotifReprovManual_to_GW_Renov" sourceRef="Task_SOE_NotifReprovManual" targetRef="GW_Renovacao" />
+    <sequenceFlow id="SF_GW_Renovacao_Sim"         name="Sim — nova tentativa (SOLICITADA_RENOV)" sourceRef="GW_Renovacao" targetRef="Task_ADM_ListarPendentes">
+      <conditionExpression xsi:type="tFormalExpression">${cidadaoSolicitaRenovacao == true}</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="SF_GW_Renovacao_Nao"         name="Não — encerrado"              sourceRef="GW_Renovacao"            targetRef="End_P06A_ReprovadoManual">
+      <conditionExpression xsi:type="tFormalExpression">${cidadaoSolicitaRenovacao == false}</conditionExpression>
+    </sequenceFlow>
+
+  </process>
+
+  <!-- ================================================================ -->
+  <!-- PROCESSO P06-B: ISENÇÃO DE TAXA DE FACT                          -->
+  <!-- ================================================================ -->
+  <process id="Process_P06B"
+           name="P06-B: Isenção de Taxa de FACT"
+           isExecutable="false">
+
+    <laneSet id="LaneSet_P06B">
+      <lane id="Lane_RT_B" name="Cidadão / RT">
+        <flowNodeRef>Start_P06B</flowNodeRef>
+        <flowNodeRef>Task_RTB_SolicitarIsencaoFact</flowNodeRef>
+        <flowNodeRef>End_P06B_AprovadoFact</flowNodeRef>
+      </lane>
+      <lane id="Lane_BE_B" name="Sistema SOL Backend (EJB/JAX-RS)">
+        <flowNodeRef>Task_BEB_CriarAnaliseFact</flowNodeRef>
+        <flowNodeRef>Task_BEB_MarcoSolicitFact</flowNodeRef>
+        <flowNodeRef>Task_BEB_RegistrarDecisaoFact</flowNodeRef>
+        <flowNodeRef>GW_DecisaoFact</flowNodeRef>
+        <flowNodeRef>Task_BEB_AprovarFact</flowNodeRef>
+        <flowNodeRef>Task_BEB_GerarNumeroFact</flowNodeRef>
+        <flowNodeRef>Task_BEB_MarcoAprovFact</flowNodeRef>
+        <flowNodeRef>Task_BEB_ReprovarFact</flowNodeRef>
+        <flowNodeRef>Task_BEB_MarcoReprovFact</flowNodeRef>
+      </lane>
+      <lane id="Lane_ADM_B" name="ADM CBM-RS (Analista)">
+        <flowNodeRef>Task_ADMB_ListarPendentesFact</flowNodeRef>
+        <flowNodeRef>Task_ADMB_AnalisarIsencaoFact</flowNodeRef>
+        <flowNodeRef>End_P06B_ReprovadoFact</flowNodeRef>
+      </lane>
+      <lane id="Lane_AlfSOE_B" name="Alfresco / SOE PROCERGS">
+        <flowNodeRef>Task_SOEB_NotifAprovFact</flowNodeRef>
+        <flowNodeRef>Task_SOEB_NotifReprovFact</flowNodeRef>
+      </lane>
+    </laneSet>
+
+    <!-- START EVENT P06-B -->
+    <startEvent id="Start_P06B"
+                name="FACT com taxa pendente&#xa;— cidadão solicita isenção">
+      <documentation>
+        Pré-condição: FactED existe e cidadão deseja isenção da taxa do FACT.
+        (FACT = Formulário de Atendimento e Consulta Técnica)
+
+        Endpoint acionado:
+          POST /facts/{id}/solicitacaoIsencao
+          Classe: AnaliseFactIsencaoRestImpl (JAX-RS @Path)
+
+        Segurança:
+          @Permissao(desabilitada=true) — não requer permissão explícita no menu;
+          acesso controlado pela lógica interna do RN.
+
+        FactED (tabela CBM_FACT):
+          Campos relevantes: ID, NR_FACT, SITUACAO (StatusFact enum),
+          IND_ISENCAO (S/N via SimNaoBooleanConverter).
+
+        Diferença do P06-A:
+          - Não há pré-análise automática para FACT.
+          - Análise sempre é manual pelo ADM CBM-RS.
+          - Não há mecanismo de renovação após reprovação (decisão final).
+      </documentation>
+      <outgoing>SF_StartB_to_Solicitar</outgoing>
+    </startEvent>
+
+    <userTask id="Task_RTB_SolicitarIsencaoFact"
+              name="Solicitar Isenção de&#xa;Taxa do FACT"
+              camunda:assignee="${rt_cpf}">
+      <documentation>
+        Ator: Cidadão / Responsável Técnico (RT).
+        Tela: Portal SOL → FACT → Aba "Isenção de Taxa".
+
+        Endpoint: POST /facts/{id}/solicitacaoIsencao
+        Classe REST: AnaliseFactIsencaoRestImpl.
+        Método RN : AnaliseFactIsencaoRN.incluiCidadao(AnaliseFactIsencaoDTO dto).
+        Segurança : @Permissao(desabilitada=true).
+
+        DTO de entrada: AnaliseFactIsencaoDTO
+          - idFact (Long)
+          - justificativaIsencao (String — obrigatório)
+
+        Regras de negócio:
+          RN_P06B_01: FACT deve existir no banco (CBM_FACT).
+          RN_P06B_02: Não deve existir AnaliseFactIsencaoED ativa
+                      (statusAnalise = SOLICITADA) para o mesmo FACT.
+          RN_P06B_03: Apenas um pedido de isenção ativo por FACT.
+
+        AnaliseFactIsencaoRN.incluiCidadao():
+          - Cria AnaliseFactIsencaoED:
+              statusAnalise  = StatusAnaliseFactIsencao.SOLICITADA
+              dthSolicitacao = Calendar.getInstance()
+              fact           = FactED (por idFact)
+              analista       = null
+          - entityManager.persist(analiseFactIsencaoED).
+          - Auditoria Envers → CBM_ANALISE_FACT_ISENCAO_AUD.
+
+        Endpoints relacionados para visualização de comprovantes:
+          GET    /comprovantes-isencao-fact       → lista comprovantes do FACT
+          POST   /comprovantes-isencao-fact       → upload comprovante
+          GET    /retornos-solicitacao-fact/fact/{idFact} → retornos FACT
+          Classe: RetornosSolicitacaoFactRestImpl
+      </documentation>
+      <incoming>SF_StartB_to_Solicitar</incoming>
+      <outgoing>SF_SolicitarB_to_Criar</outgoing>
+    </userTask>
+
+    <serviceTask id="Task_BEB_CriarAnaliseFact"
+                 name="Criar AnaliseFactIsencaoED&#xa;statusAnalise = SOLICITADA"
+                 camunda:class="br.gov.rs.procergs.solcbm.rn.AnaliseFactIsencaoRN">
+      <documentation>
+        Classe: AnaliseFactIsencaoRN (EJB @Stateless, @AppInterceptor).
+        Método: incluiCidadao(AnaliseFactIsencaoDTO dto).
+
+        Entidade criada: AnaliseFactIsencaoED (@Entity @Audited).
+        Tabela: CBM_ANALISE_FACT_ISENCAO.
+        Campos:
+          ID (sequence)
+          ID_FACT (FK → CBM_FACT)
+          STATUS_ANALISE = 'SOLICITADA'
+          DTH_SOLICITACAO = SYSDATE
+          ANALISTA_CPF = null
+          DTH_ANALISE = null
+          JUSTIFICATIVA_ISENCAO = dto.getJustificativaIsencao()
+
+        Auditoria Envers → CBM_ANALISE_FACT_ISENCAO_AUD.
+
+        Outros métodos de AnaliseFactIsencaoRN:
+          lista()                    → GET /adm/analises-fact-isencao (ADM)
+          inclui()                   → POST /adm/analises-fact-isencao (ADM analisa)
+          atualizaSolicitacaoIsencao() → PUT para atualização pelo cidadão
+          buscarPorFact(idFact)      → busca análise por idFact
+
+        JustificativaNcsFactIsencaoED (avaliação de NCS para FACT):
+          Tabela: CBM_JUSTIFICATIVA_NCS_FACT_ISENCAO
+          Nota: @ManyToOne fetch=EAGER (diferente da versão de licenciamento que é LAZY)
+          Campos: ID, ID_ANALISE_FACT_ISENCAO (FK), ID_PARAMETRO_NCS (FK),
+                  DESCRICAO_JUSTIFICATIVA, IND_APROVADO (S/N).
+      </documentation>
+      <incoming>SF_SolicitarB_to_Criar</incoming>
+      <outgoing>SF_CriarFact_to_Marco</outgoing>
+    </serviceTask>
+
+    <serviceTask id="Task_BEB_MarcoSolicitFact"
+                 name="Registrar Marco&#xa;SOLICITACAO_ISENCAO_FACT"
+                 camunda:class="br.gov.rs.procergs.solcbm.rn.MarcoRN">
+      <documentation>
+        Classe: MarcoRN (EJB @Stateless).
+        Parâmetros:
+          tipo       = TipoMarco.SOLICITACAO_ISENCAO_FACT
+          cpfUsuario = SessionMB.getUsuario().getCpf() (ou sistema)
+        Tabela: CBM_MARCO_LICENCIAMENTO (ou tabela de marcos do FACT).
+        Propósito: rastreio da data/hora da solicitação de isenção do FACT.
+      </documentation>
+      <incoming>SF_CriarFact_to_Marco</incoming>
+      <outgoing>SF_MarcoFact_to_ListarPend</outgoing>
+    </serviceTask>
+
+    <userTask id="Task_ADMB_ListarPendentesFact"
+              name="Listar FACTs com Isenção&#xa;Pendente de Análise"
+              camunda:assignee="${adm_cpf}">
+      <documentation>
+        Ator: Analista ADM CBM-RS.
+        Permissão: @Permissao(objeto="ISENCAOTAXA", acao="LISTAR").
+        Tela: Painel Administrativo → Isenções FACT → Lista de Pendentes.
+
+        Endpoint: GET /adm/analises-fact-isencao
+        Classe REST: AnaliseFactIsencaoAdmRestImpl (JAX-RS @Path).
+        Método RN : AnaliseFactIsencaoRN.lista(filtroDTO).
+        Filtro    : statusAnalise = StatusAnaliseFactIsencao.SOLICITADA.
+
+        Dados exibidos por solicitação:
+          - nrFact (número do FACT — pode ser null antes da aprovação)
+          - RT: nome, CPF
+          - Estabelecimento: CNPJ/CPF
+          - dthSolicitacao, justificativaIsencao
+          - Comprovantes: GET /comprovantes-isencao-fact
+          - Retornos FACT: GET /retornos-solicitacao-fact/fact/{idFact}
+
+        Tabelas lidas: CBM_ANALISE_FACT_ISENCAO, CBM_FACT, CBM_RESPONSAVEL_TECNICO.
+      </documentation>
+      <incoming>SF_MarcoFact_to_ListarPend</incoming>
+      <outgoing>SF_ListarPendFact_to_Analisar</outgoing>
+    </userTask>
+
+    <userTask id="Task_ADMB_AnalisarIsencaoFact"
+              name="Analisar Isenção FACT&#xa;e Registrar Decisão (ADM)"
+              camunda:assignee="${adm_cpf}">
+      <documentation>
+        Ator: Analista ADM CBM-RS.
+        Permissão: @Permissao(objeto="ISENCAOTAXA", acao="REVISAR").
+        Tela: Painel Administrativo → Isenções FACT → Detalhe.
+
+        Endpoint: POST /adm/analises-fact-isencao
+        Classe REST: AnaliseFactIsencaoAdmRestImpl.
+        DTO de entrada: AnaliseFactIsencaoDTO
+          - idAnaliseFactIsencao (Long)
+          - statusAnalise (StatusAnaliseFactIsencao: APROVADO | REPROVADO)
+          - parecer (String — obrigatório)
+          - justificativasNcs (List[JustificativaNcsFactIsencaoDTO])
+
+        Dados analisados:
+          - Dados do FACT (tipo, área, endereço do estabelecimento)
+          - RT (nome, CPF, registro profissional)
+          - Justificativa de isenção enviada
+          - Comprovantes (PDF do Alfresco)
+          - Retornos de solicitação FACT (histórico)
+          - NCS avaliados: JustificativaNcsFactIsencaoED (fetch=EAGER)
+
+        Ações do ADM:
+          1. Seleciona StatusAnaliseFactIsencao: APROVADO ou REPROVADO.
+          2. Preenche parecer (obrigatório).
+          3. Avalia NCS (IND_APROVADO = S/N).
+          4. Confirma a decisão.
+
+        Regras:
+          RN_P06B_10: Parecer obrigatório.
+          RN_P06B_11: Decisão final — NÃO há renovação para isenção de FACT.
+      </documentation>
+      <incoming>SF_ListarPendFact_to_Analisar</incoming>
+      <outgoing>SF_AnalisarFact_to_RegDecisao</outgoing>
+    </userTask>
+
+    <serviceTask id="Task_BEB_RegistrarDecisaoFact"
+                 name="Registrar Decisão FACT:&#xa;AnaliseFactIsencaoRN.inclui()"
+                 camunda:class="br.gov.rs.procergs.solcbm.rn.AnaliseFactIsencaoRN">
+      <documentation>
+        Classe: AnaliseFactIsencaoRN (EJB @Stateless, @AppInterceptor).
+        Método: inclui(AnaliseFactIsencaoDTO dto).
+
+        Sequência completa do método inclui():
+          1. buscarPorFact(dto.getIdFact()) — busca AnaliseFactIsencaoED.
+          2. Valida: statusAnalise == SOLICITADA (evita double-submit).
+          3. ed.setAnalista(SessionMB.getUsuario().getCpf()).
+          4. ed.setDthAnalise(Calendar.getInstance()).
+          5. ed.setStatusAnalise(dto.getStatusAnalise()).
+          6. Persiste JustificativaNcsFactIsencaoED para cada NCS.
+
+          Se REPROVADO:
+            a. ed.setStatusAnalise(StatusAnaliseFactIsencao.REPROVADO).
+            b. factED.setIsencao(false) → SimNaoBooleanConverter → 'N'.
+            c. factED.setSituacao(StatusFact.ISENCAO_REJEITADA).
+            d. entityManager.merge(factED).
+
+          Se APROVADO:
+            a. ed.setStatusAnalise(StatusAnaliseFactIsencao.APROVADO).
+            b. factED.setIsencao(true) → SimNaoBooleanConverter → 'S'.
+            c. geraNumeroFactRN.gerarNumero(dto.getIdFact())
+                 → factED.setNrFact(numeroGerado).
+            d. factED.setSituacao(StatusFact.AGUARDANDO_DISTRIBUICAO).
+            e. entityManager.merge(factED).
+
+          7. entityManager.merge(ed).
+          8. Auditoria Envers: CBM_ANALISE_FACT_ISENCAO_AUD, CBM_FACT_AUD.
+
+        SimNaoBooleanConverter:
+          @Converter(autoApply=false)
+          implements AttributeConverter&lt;Boolean, String&gt;
+          convertToDatabaseColumn: true → 'S', false → 'N'
+          convertToEntityAttribute: 'S' → true, outros → false
+
+        reprovarSolicitacaoIsencaoDeTaxaDeAnalise():
+          Método específico para reanalise de solicitação (recurso administrativo).
+          Mantém FACT em AGUARDANDO_PAGAMENTO_ISENCAO se cidadão recorre.
+          vs ISENCAO_REJEITADA para decisão final do ADM (este método usa inclui()).
+
+        Injeções CDI:
+          @Inject AnaliseFactIsencaoBD analiseFactIsencaoBD
+          @Inject FactBD factBD
+          @Inject GeraNumeroFactRN geraNumeroFactRN
+          @Inject MarcoRN marcoRN
+          @Inject LicenciamentoAdmNotificacaoRN notificacaoRN
+      </documentation>
+      <incoming>SF_AnalisarFact_to_RegDecisao</incoming>
+      <outgoing>SF_RegDecisaoFact_to_GW</outgoing>
+    </serviceTask>
+
+    <exclusiveGateway id="GW_DecisaoFact"
+                      name="Decisão da Análise FACT?">
+      <documentation>
+        [APROVADO]  → statusAnalise == StatusAnaliseFactIsencao.APROVADO
+        [REPROVADO] → statusAnalise == StatusAnaliseFactIsencao.REPROVADO
+      </documentation>
+      <incoming>SF_RegDecisaoFact_to_GW</incoming>
+      <outgoing>SF_DecisaoFact_Aprovado</outgoing>
+      <outgoing>SF_DecisaoFact_Reprovado</outgoing>
+    </exclusiveGateway>
+
+    <!-- APROVADO FACT -->
+    <serviceTask id="Task_BEB_AprovarFact"
+                 name="Aprovar Isenção FACT:&#xa;FactED.isencao = true ('S')"
+                 camunda:class="br.gov.rs.procergs.solcbm.rn.AnaliseFactIsencaoRN">
+      <documentation>
+        Ramo de aprovação (dentro de AnaliseFactIsencaoRN.inclui()):
+          factED.setIsencao(true)
+          → campo IND_ISENCAO = 'S' (SimNaoBooleanConverter)
+          → Tabela: CBM_FACT, campo: IND_ISENCAO.
+
+        @Convert(converter = SimNaoBooleanConverter.class)
+        @Column(name = "IND_ISENCAO")
+        private Boolean isencao;
+      </documentation>
+      <incoming>SF_DecisaoFact_Aprovado</incoming>
+      <outgoing>SF_AprovarFact_to_Gerar</outgoing>
+    </serviceTask>
+
+    <serviceTask id="Task_BEB_GerarNumeroFact"
+                 name="GeraNumeroFactRN.gerarNumero()&#xa;→ FactED.nrFact + AGUARDANDO_DISTRIBUICAO"
+                 camunda:class="br.gov.rs.procergs.solcbm.rn.GeraNumeroFactRN">
+      <documentation>
+        Classe: GeraNumeroFactRN (EJB @Stateless).
+        Método: gerarNumero(Long idFact).
+
+        Operações:
+          1. Gera próximo número sequencial do FACT
+             (Oracle sequence ou MAX(nrFact)+1, conforme implementação).
+          2. Formata o número FACT conforme padrão CBM-RS.
+          3. factED.setNrFact(numeroGerado).
+          4. factED.setSituacao(StatusFact.AGUARDANDO_DISTRIBUICAO).
+          5. entityManager.merge(factED).
+
+        Tabela: CBM_FACT.
+        Campos: NR_FACT (número gerado), SITUACAO = 'AGUARDANDO_DISTRIBUICAO'.
+
+        StatusFact relevantes para P06-B:
+          AGUARDANDO_PAGAMENTO_ISENCAO → estado anterior (isenção pendente)
+          AGUARDANDO_DISTRIBUICAO      → estado após aprovação (NrFact gerado)
+          ISENCAO_REJEITADA            → estado após reprovação
+
+        Regras:
+          RN_P06B_20: Número FACT é permanente — após gerado, não pode ser alterado.
+          RN_P06B_21: NrFact gerado APENAS após aprovação da isenção de taxa.
+      </documentation>
+      <incoming>SF_AprovarFact_to_Gerar</incoming>
+      <outgoing>SF_GerarNumero_to_Marco</outgoing>
+    </serviceTask>
+
+    <serviceTask id="Task_BEB_MarcoAprovFact"
+                 name="Registrar Marcos:&#xa;NRO_FACT + ANALISE_ISENCAOFACT_APROVADO"
+                 camunda:class="br.gov.rs.procergs.solcbm.rn.MarcoRN">
+      <documentation>
+        Classe: MarcoRN (EJB @Stateless).
+        Dois marcos registrados sequencialmente:
+
+        1. TipoMarco.NRO_FACT
+             Registra a geração do número do FACT.
+             cpfUsuario = SessionMB.getUsuario().getCpf()
+
+        2. TipoMarco.ANALISE_ISENCAOFACT_APROVADO
+             Registra a aprovação da isenção de taxa do FACT.
+             cpfUsuario = SessionMB.getUsuario().getCpf()
+
+        Tabela: CBM_MARCO_LICENCIAMENTO (ou tabela de marcos do FACT).
+        Usados em relatórios e auditoria CBM-RS.
+      </documentation>
+      <incoming>SF_GerarNumero_to_Marco</incoming>
+      <outgoing>SF_MarcoAprovFact_to_Notif</outgoing>
+    </serviceTask>
+
+    <serviceTask id="Task_SOEB_NotifAprovFact"
+                 name="Notificar Aprovação de Isenção FACT&#xa;(e-mail via SOE PROCERGS)"
+                 camunda:class="br.gov.rs.procergs.solcbm.rn.LicenciamentoAdmNotificacaoRN">
+      <documentation>
+        Classe: LicenciamentoAdmNotificacaoRN (EJB @Stateless).
+        Método: notificarIsencaoDeTaxaFact(Long idFact, Boolean aprovado).
+        Parâmetros: aprovado = true.
+
+        Integração: SOE PROCERGS via @Inject SoeEmailService (@SOEAuthRest).
+        Destinatários: RT solicitante do FACT.
+
+        Conteúdo do e-mail:
+          - Número do FACT gerado (nrFact)
+          - Resultado: APROVADO
+          - Próximo passo: FACT encaminhado para distribuição
+          - Link para o portal SOL
+      </documentation>
+      <incoming>SF_MarcoAprovFact_to_Notif</incoming>
+      <outgoing>SF_NotifAprovFact_to_End</outgoing>
+    </serviceTask>
+
+    <endEvent id="End_P06B_AprovadoFact"
+              name="Isenção FACT Concedida:&#xa;NrFact gerado → AGUARDANDO_DISTRIBUICAO">
+      <documentation>
+        Estado final — isenção de FACT aprovada:
+          AnaliseFactIsencaoED.statusAnalise = APROVADO
+          FactED.isencao                     = true ('S')
+          FactED.nrFact                      = número gerado por GeraNumeroFactRN
+          FactED.situacao                    = StatusFact.AGUARDANDO_DISTRIBUICAO
+          Marcos: NRO_FACT + ANALISE_ISENCAOFACT_APROVADO
+          E-mail enviado via SOE PROCERGS.
+      </documentation>
+      <incoming>SF_NotifAprovFact_to_End</incoming>
+    </endEvent>
+
+    <!-- REPROVADO FACT -->
+    <serviceTask id="Task_BEB_ReprovarFact"
+                 name="Reprovar Isenção FACT:&#xa;FactED.isencao = false → ISENCAO_REJEITADA"
+                 camunda:class="br.gov.rs.procergs.solcbm.rn.AnaliseFactIsencaoRN">
+      <documentation>
+        Ramo de reprovação (dentro de AnaliseFactIsencaoRN.inclui()):
+          1. ed.setStatusAnalise(StatusAnaliseFactIsencao.REPROVADO).
+          2. factED.setIsencao(false) → IND_ISENCAO = 'N' (SimNaoBooleanConverter).
+          3. factED.setSituacao(StatusFact.ISENCAO_REJEITADA).
+          4. entityManager.merge(factED).
+
+        Tabela: CBM_FACT.
+        Campos: IND_ISENCAO = 'N', SITUACAO = 'ISENCAO_REJEITADA'.
+
+        Regras:
+          RN_P06B_30: Após rejeição, FACT retorna à fila de pagamento normal.
+          RN_P06B_31: Sem renovação para isenção de FACT (diferente do P06-A).
+
+        reprovarSolicitacaoIsencaoDeTaxaDeAnalise():
+          Método distinto para recurso administrativo — mantém em
+          AGUARDANDO_PAGAMENTO_ISENCAO. Este fluxo usa inclui() (decisão final).
+      </documentation>
+      <incoming>SF_DecisaoFact_Reprovado</incoming>
+      <outgoing>SF_ReprovarFact_to_Marco</outgoing>
+    </serviceTask>
+
+    <serviceTask id="Task_BEB_MarcoReprovFact"
+                 name="Registrar Marco&#xa;ANALISE_ISENCAOFACT_REPROVADO"
+                 camunda:class="br.gov.rs.procergs.solcbm.rn.MarcoRN">
+      <documentation>
+        Classe: MarcoRN (EJB @Stateless).
+        Parâmetros:
+          tipo       = TipoMarco.ANALISE_ISENCAOFACT_REPROVADO
+          cpfUsuario = SessionMB.getUsuario().getCpf()
+        Tabela: CBM_MARCO_LICENCIAMENTO (ou tabela de marcos do FACT).
+      </documentation>
+      <incoming>SF_ReprovarFact_to_Marco</incoming>
+      <outgoing>SF_MarcoReprovFact_to_Notif</outgoing>
+    </serviceTask>
+
+    <serviceTask id="Task_SOEB_NotifReprovFact"
+                 name="Notificar Reprovação de Isenção FACT&#xa;(e-mail via SOE PROCERGS)"
+                 camunda:class="br.gov.rs.procergs.solcbm.rn.LicenciamentoAdmNotificacaoRN">
+      <documentation>
+        Classe: LicenciamentoAdmNotificacaoRN.
+        Método: notificarIsencaoDeTaxaFact(Long idFact, Boolean aprovado).
+        Parâmetros: aprovado = false.
+
+        Conteúdo: reprovação da isenção, parecer do ADM,
+        orientação para efetuar o pagamento da taxa do FACT.
+        Nota: não há renovação para isenção de FACT.
+      </documentation>
+      <incoming>SF_MarcoReprovFact_to_Notif</incoming>
+      <outgoing>SF_NotifReprovFact_to_End</outgoing>
+    </serviceTask>
+
+    <endEvent id="End_P06B_ReprovadoFact"
+              name="Isenção FACT Negada:&#xa;ISENCAO_REJEITADA → pagar taxa">
+      <documentation>
+        Estado final — isenção de FACT reprovada:
+          AnaliseFactIsencaoED.statusAnalise = REPROVADO
+          FactED.isencao                     = false ('N')
+          FactED.situacao                    = StatusFact.ISENCAO_REJEITADA
+          Marco: ANALISE_ISENCAOFACT_REPROVADO
+          Cidadão deve pagar a taxa do FACT. Decisão final — sem renovação.
+      </documentation>
+      <incoming>SF_NotifReprovFact_to_End</incoming>
+    </endEvent>
+
+    <!-- ============================================================== -->
+    <!-- SEQUENCE FLOWS — P06-B                                          -->
+    <!-- ============================================================== -->
+    <sequenceFlow id="SF_StartB_to_Solicitar"         sourceRef="Start_P06B"                  targetRef="Task_RTB_SolicitarIsencaoFact" />
+    <sequenceFlow id="SF_SolicitarB_to_Criar"         sourceRef="Task_RTB_SolicitarIsencaoFact" targetRef="Task_BEB_CriarAnaliseFact" />
+    <sequenceFlow id="SF_CriarFact_to_Marco"          sourceRef="Task_BEB_CriarAnaliseFact"    targetRef="Task_BEB_MarcoSolicitFact" />
+    <sequenceFlow id="SF_MarcoFact_to_ListarPend"     sourceRef="Task_BEB_MarcoSolicitFact"    targetRef="Task_ADMB_ListarPendentesFact" />
+    <sequenceFlow id="SF_ListarPendFact_to_Analisar"  sourceRef="Task_ADMB_ListarPendentesFact" targetRef="Task_ADMB_AnalisarIsencaoFact" />
+    <sequenceFlow id="SF_AnalisarFact_to_RegDecisao"  sourceRef="Task_ADMB_AnalisarIsencaoFact" targetRef="Task_BEB_RegistrarDecisaoFact" />
+    <sequenceFlow id="SF_RegDecisaoFact_to_GW"        sourceRef="Task_BEB_RegistrarDecisaoFact" targetRef="GW_DecisaoFact" />
+    <sequenceFlow id="SF_DecisaoFact_Aprovado"        name="APROVADO"                          sourceRef="GW_DecisaoFact"              targetRef="Task_BEB_AprovarFact">
+      <conditionExpression xsi:type="tFormalExpression">${statusAnaliseFact == 'APROVADO'}</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="SF_DecisaoFact_Reprovado"       name="REPROVADO"                         sourceRef="GW_DecisaoFact"              targetRef="Task_BEB_ReprovarFact">
+      <conditionExpression xsi:type="tFormalExpression">${statusAnaliseFact == 'REPROVADO'}</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="SF_AprovarFact_to_Gerar"        sourceRef="Task_BEB_AprovarFact"         targetRef="Task_BEB_GerarNumeroFact" />
+    <sequenceFlow id="SF_GerarNumero_to_Marco"        sourceRef="Task_BEB_GerarNumeroFact"     targetRef="Task_BEB_MarcoAprovFact" />
+    <sequenceFlow id="SF_MarcoAprovFact_to_Notif"     sourceRef="Task_BEB_MarcoAprovFact"      targetRef="Task_SOEB_NotifAprovFact" />
+    <sequenceFlow id="SF_NotifAprovFact_to_End"       sourceRef="Task_SOEB_NotifAprovFact"     targetRef="End_P06B_AprovadoFact" />
+    <sequenceFlow id="SF_ReprovarFact_to_Marco"       sourceRef="Task_BEB_ReprovarFact"        targetRef="Task_BEB_MarcoReprovFact" />
+    <sequenceFlow id="SF_MarcoReprovFact_to_Notif"    sourceRef="Task_BEB_MarcoReprovFact"     targetRef="Task_SOEB_NotifReprovFact" />
+    <sequenceFlow id="SF_NotifReprovFact_to_End"      sourceRef="Task_SOEB_NotifReprovFact"    targetRef="End_P06B_ReprovadoFact" />
+
+  </process>
+
+  <!-- ================================================================ -->
+  <!-- BPMN DI — DIAGRAM INTERCHANGE (Camunda Modeler 5.x)              -->
+  <!-- ================================================================ -->
+  <bpmndi:BPMNDiagram id="BPMNDiagram_P06">
+    <bpmndi:BPMNPlane id="BPMNPlane_P06" bpmnElement="Collaboration_P06">
+
+      <!-- ============================================================ -->
+      <!-- POOL P06-A: x=150 y=80 w=2820 h=720                         -->
+      <!-- Lane RT    : y=80  h=130                                     -->
+      <!-- Lane BE    : y=210 h=200                                     -->
+      <!-- Lane ADM   : y=410 h=130                                     -->
+      <!-- Lane AlfSOE: y=540 h=260                                     -->
+      <!-- ============================================================ -->
+      <bpmndi:BPMNShape id="Participant_P06A_di" bpmnElement="Participant_P06A" isHorizontal="true">
+        <omgdc:Bounds x="150" y="80" width="2820" height="720" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_RT_A_di" bpmnElement="Lane_RT_A" isHorizontal="true">
+        <omgdc:Bounds x="180" y="80" width="2790" height="130" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_BE_A_di" bpmnElement="Lane_BE_A" isHorizontal="true">
+        <omgdc:Bounds x="180" y="210" width="2790" height="200" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_ADM_A_di" bpmnElement="Lane_ADM_A" isHorizontal="true">
+        <omgdc:Bounds x="180" y="410" width="2790" height="130" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_AlfSOE_A_di" bpmnElement="Lane_AlfSOE_A" isHorizontal="true">
+        <omgdc:Bounds x="180" y="540" width="2790" height="260" />
+      </bpmndi:BPMNShape>
+
+      <!-- Lane RT (y=80..210, center=145) -->
+      <bpmndi:BPMNShape id="Start_P06A_di" bpmnElement="Start_P06A">
+        <omgdc:Bounds x="262" y="130" width="30" height="30" />
+        <bpmndi:BPMNLabel><omgdc:Bounds x="235" y="167" width="85" height="40" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_RT_SolicitarIsencao_di" bpmnElement="Task_RT_SolicitarIsencao">
+        <omgdc:Bounds x="340" y="105" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_RT_EnviarComprovante_di" bpmnElement="Task_RT_EnviarComprovante">
+        <omgdc:Bounds x="1390" y="105" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="End_P06A_AprovadoAuto_di" bpmnElement="End_P06A_AprovadoAuto">
+        <omgdc:Bounds x="1952" y="130" width="30" height="30" />
+        <bpmndi:BPMNLabel><omgdc:Bounds x="1920" y="167" width="95" height="54" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="End_P06A_AprovadoManual_di" bpmnElement="End_P06A_AprovadoManual">
+        <omgdc:Bounds x="2622" y="130" width="30" height="30" />
+        <bpmndi:BPMNLabel><omgdc:Bounds x="2590" y="167" width="95" height="54" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- Lane BE (y=210..410, center=310) -->
+      <bpmndi:BPMNShape id="Task_BE_ValidarEstado_di" bpmnElement="Task_BE_ValidarEstado">
+        <omgdc:Bounds x="520" y="270" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="GW_EstadoValido_di" bpmnElement="GW_EstadoValido" isMarkerVisible="true">
+        <omgdc:Bounds x="695" y="285" width="50" height="50" />
+        <bpmndi:BPMNLabel><omgdc:Bounds x="658" y="342" width="125" height="40" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_BE_CriarAnalise_di" bpmnElement="Task_BE_CriarAnalise">
+        <omgdc:Bounds x="800" y="270" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_BE_MarcoSolicit_di" bpmnElement="Task_BE_MarcoSolicit">
+        <omgdc:Bounds x="980" y="270" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="GW_PreAnalise_di" bpmnElement="GW_PreAnalise" isMarkerVisible="true">
+        <omgdc:Bounds x="1155" y="285" width="50" height="50" />
+        <bpmndi:BPMNLabel><omgdc:Bounds x="1113" y="342" width="136" height="40" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <!-- Auto path - upper BE -->
+      <bpmndi:BPMNShape id="Task_BE_AvaliarNCS_di" bpmnElement="Task_BE_AvaliarNCS">
+        <omgdc:Bounds x="1260" y="250" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="GW_NCSAprovado_di" bpmnElement="GW_NCSAprovado" isMarkerVisible="true">
+        <omgdc:Bounds x="1435" y="265" width="50" height="50" />
+        <bpmndi:BPMNLabel><omgdc:Bounds x="1405" y="322" width="112" height="40" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_BE_AprovarAuto_di" bpmnElement="Task_BE_AprovarAuto">
+        <omgdc:Bounds x="1550" y="240" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_BE_MarcoAprovAuto_di" bpmnElement="Task_BE_MarcoAprovAuto">
+        <omgdc:Bounds x="1730" y="240" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <!-- Auto path - lower BE -->
+      <bpmndi:BPMNShape id="Task_BE_ReprovarAuto_di" bpmnElement="Task_BE_ReprovarAuto">
+        <omgdc:Bounds x="1550" y="340" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_BE_MarcoReprovAuto_di" bpmnElement="Task_BE_MarcoReprovAuto">
+        <omgdc:Bounds x="1730" y="340" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <!-- Manual path - BE -->
+      <bpmndi:BPMNShape id="Task_BE_RegistrarDecisao_di" bpmnElement="Task_BE_RegistrarDecisao">
+        <omgdc:Bounds x="1900" y="270" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="GW_Decisao_di" bpmnElement="GW_Decisao" isMarkerVisible="true">
+        <omgdc:Bounds x="2075" y="285" width="50" height="50" />
+        <bpmndi:BPMNLabel><omgdc:Bounds x="2048" y="342" width="106" height="28" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_BE_TrocaEstadoAprov_di" bpmnElement="Task_BE_TrocaEstadoAprov">
+        <omgdc:Bounds x="2180" y="250" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_BE_MarcoAprovManual_di" bpmnElement="Task_BE_MarcoAprovManual">
+        <omgdc:Bounds x="2360" y="250" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_BE_SituacaoReprovada_di" bpmnElement="Task_BE_SituacaoReprovada">
+        <omgdc:Bounds x="2180" y="340" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_BE_MarcoReprovManual_di" bpmnElement="Task_BE_MarcoReprovManual">
+        <omgdc:Bounds x="2360" y="340" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="GW_Renovacao_di" bpmnElement="GW_Renovacao" isMarkerVisible="true">
+        <omgdc:Bounds x="2555" y="445" width="50" height="50" />
+        <bpmndi:BPMNLabel><omgdc:Bounds x="2518" y="502" width="126" height="40" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- Lane ADM (y=410..540, center=475) -->
+      <bpmndi:BPMNShape id="End_P06A_EstadoInvalido_di" bpmnElement="End_P06A_EstadoInvalido">
+        <omgdc:Bounds x="702" y="455" width="30" height="30" />
+        <bpmndi:BPMNLabel><omgdc:Bounds x="668" y="492" width="100" height="40" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_ADM_ListarPendentes_di" bpmnElement="Task_ADM_ListarPendentes">
+        <omgdc:Bounds x="1260" y="435" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_ADM_AnalisarIsencao_di" bpmnElement="Task_ADM_AnalisarIsencao">
+        <omgdc:Bounds x="1710" y="435" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="End_P06A_ReprovadoAuto_di" bpmnElement="End_P06A_ReprovadoAuto">
+        <omgdc:Bounds x="1952" y="455" width="30" height="30" />
+        <bpmndi:BPMNLabel><omgdc:Bounds x="1920" y="492" width="95" height="54" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="End_P06A_ReprovadoManual_di" bpmnElement="End_P06A_ReprovadoManual">
+        <omgdc:Bounds x="2712" y="455" width="30" height="30" />
+        <bpmndi:BPMNLabel><omgdc:Bounds x="2680" y="492" width="95" height="54" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- Lane AlfSOE (y=540..800, center=670) -->
+      <bpmndi:BPMNShape id="Task_Alf_UploadComprovante_di" bpmnElement="Task_Alf_UploadComprovante">
+        <omgdc:Bounds x="1390" y="620" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_SOE_NotifAprovAuto_di" bpmnElement="Task_SOE_NotifAprovAuto">
+        <omgdc:Bounds x="1860" y="560" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_SOE_NotifReprovAuto_di" bpmnElement="Task_SOE_NotifReprovAuto">
+        <omgdc:Bounds x="1860" y="660" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_SOE_NotifAprovManual_di" bpmnElement="Task_SOE_NotifAprovManual">
+        <omgdc:Bounds x="2540" y="560" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_SOE_NotifReprovManual_di" bpmnElement="Task_SOE_NotifReprovManual">
+        <omgdc:Bounds x="2540" y="660" width="120" height="80" />
+      </bpmndi:BPMNShape>
+
+      <!-- ============================================================ -->
+      <!-- EDGES P06-A                                                   -->
+      <!-- ============================================================ -->
+      <bpmndi:BPMNEdge id="SF_Start_to_Solicitar_di" bpmnElement="SF_Start_to_Solicitar">
+        <omgdi:waypoint x="292" y="145" /><omgdi:waypoint x="340" y="145" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_Solicitar_to_Validar_di" bpmnElement="SF_Solicitar_to_Validar">
+        <omgdi:waypoint x="400" y="145" /><omgdi:waypoint x="460" y="145" /><omgdi:waypoint x="460" y="310" /><omgdi:waypoint x="520" y="310" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_Validar_to_GW_Estado_di" bpmnElement="SF_Validar_to_GW_Estado">
+        <omgdi:waypoint x="640" y="310" /><omgdi:waypoint x="695" y="310" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_Estado_Sim_di" bpmnElement="SF_Estado_Sim">
+        <omgdi:waypoint x="745" y="310" /><omgdi:waypoint x="800" y="310" />
+        <bpmndi:BPMNLabel><omgdc:Bounds x="752" y="292" width="40" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_Estado_Nao_di" bpmnElement="SF_Estado_Nao">
+        <omgdi:waypoint x="720" y="335" /><omgdi:waypoint x="720" y="455" />
+        <bpmndi:BPMNLabel><omgdc:Bounds x="725" y="388" width="58" height="28" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_CriarAnalise_to_Marco_di" bpmnElement="SF_CriarAnalise_to_Marco">
+        <omgdi:waypoint x="920" y="310" /><omgdi:waypoint x="980" y="310" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_Marco_to_GW_PreAnalise_di" bpmnElement="SF_Marco_to_GW_PreAnalise">
+        <omgdi:waypoint x="1100" y="310" /><omgdi:waypoint x="1155" y="310" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_PreAnalise_Sim_di" bpmnElement="SF_PreAnalise_Sim">
+        <omgdi:waypoint x="1180" y="285" /><omgdi:waypoint x="1180" y="290" /><omgdi:waypoint x="1260" y="290" />
+        <bpmndi:BPMNLabel><omgdc:Bounds x="1185" y="266" width="70" height="28" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_PreAnalise_Nao_di" bpmnElement="SF_PreAnalise_Nao">
+        <omgdi:waypoint x="1180" y="335" /><omgdi:waypoint x="1180" y="475" /><omgdi:waypoint x="1260" y="475" />
+        <bpmndi:BPMNLabel><omgdc:Bounds x="1185" y="394" width="70" height="40" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <!-- Auto path -->
+      <bpmndi:BPMNEdge id="SF_AvaliarNCS_to_GW_di" bpmnElement="SF_AvaliarNCS_to_GW">
+        <omgdi:waypoint x="1380" y="290" /><omgdi:waypoint x="1435" y="290" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_NCS_Aprovado_di" bpmnElement="SF_NCS_Aprovado">
+        <omgdi:waypoint x="1460" y="265" /><omgdi:waypoint x="1460" y="280" /><omgdi:waypoint x="1550" y="280" />
+        <bpmndi:BPMNLabel><omgdc:Bounds x="1468" y="248" width="52" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_NCS_Reprovado_di" bpmnElement="SF_NCS_Reprovado">
+        <omgdi:waypoint x="1460" y="315" /><omgdi:waypoint x="1460" y="380" /><omgdi:waypoint x="1550" y="380" />
+        <bpmndi:BPMNLabel><omgdc:Bounds x="1468" y="340" width="60" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_AprovarAuto_to_Marco_di" bpmnElement="SF_AprovarAuto_to_Marco">
+        <omgdi:waypoint x="1670" y="280" /><omgdi:waypoint x="1730" y="280" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_MarcoAprovAuto_to_Notif_di" bpmnElement="SF_MarcoAprovAuto_to_Notif">
+        <omgdi:waypoint x="1790" y="280" /><omgdi:waypoint x="1820" y="280" /><omgdi:waypoint x="1820" y="600" /><omgdi:waypoint x="1860" y="600" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_NotifAprovAuto_to_End_di" bpmnElement="SF_NotifAprovAuto_to_End">
+        <omgdi:waypoint x="1980" y="600" /><omgdi:waypoint x="2020" y="600" /><omgdi:waypoint x="2020" y="145" /><omgdi:waypoint x="1952" y="145" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_ReprovarAuto_to_Marco_di" bpmnElement="SF_ReprovarAuto_to_Marco">
+        <omgdi:waypoint x="1670" y="380" /><omgdi:waypoint x="1730" y="380" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_MarcoReprovAuto_to_Notif_di" bpmnElement="SF_MarcoReprovAuto_to_Notif">
+        <omgdi:waypoint x="1790" y="380" /><omgdi:waypoint x="1820" y="380" /><omgdi:waypoint x="1820" y="700" /><omgdi:waypoint x="1860" y="700" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_NotifReprovAuto_to_End_di" bpmnElement="SF_NotifReprovAuto_to_End">
+        <omgdi:waypoint x="1980" y="700" /><omgdi:waypoint x="2010" y="700" /><omgdi:waypoint x="2010" y="470" /><omgdi:waypoint x="1952" y="470" />
+      </bpmndi:BPMNEdge>
+      <!-- Manual path -->
+      <bpmndi:BPMNEdge id="SF_ListarPend_to_Comprovante_di" bpmnElement="SF_ListarPend_to_Comprovante">
+        <omgdi:waypoint x="1320" y="435" /><omgdi:waypoint x="1320" y="145" /><omgdi:waypoint x="1390" y="145" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_Comprovante_to_Upload_di" bpmnElement="SF_Comprovante_to_Upload">
+        <omgdi:waypoint x="1450" y="185" /><omgdi:waypoint x="1450" y="620" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_Upload_to_Analisar_di" bpmnElement="SF_Upload_to_Analisar">
+        <omgdi:waypoint x="1510" y="660" /><omgdi:waypoint x="1770" y="660" /><omgdi:waypoint x="1770" y="515" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_Analisar_to_RegDecisao_di" bpmnElement="SF_Analisar_to_RegDecisao">
+        <omgdi:waypoint x="1770" y="435" /><omgdi:waypoint x="1770" y="310" /><omgdi:waypoint x="1900" y="310" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_RegDecisao_to_GW_Decisao_di" bpmnElement="SF_RegDecisao_to_GW_Decisao">
+        <omgdi:waypoint x="2020" y="310" /><omgdi:waypoint x="2075" y="310" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_Decisao_Aprovado_di" bpmnElement="SF_Decisao_Aprovado">
+        <omgdi:waypoint x="2100" y="285" /><omgdi:waypoint x="2100" y="290" /><omgdi:waypoint x="2180" y="290" />
+        <bpmndi:BPMNLabel><omgdc:Bounds x="2108" y="268" width="60" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_Decisao_Reprovado_di" bpmnElement="SF_Decisao_Reprovado">
+        <omgdi:waypoint x="2100" y="335" /><omgdi:waypoint x="2100" y="380" /><omgdi:waypoint x="2180" y="380" />
+        <bpmndi:BPMNLabel><omgdc:Bounds x="2108" y="350" width="60" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_TrocaEstado_to_MarcoAprov_di" bpmnElement="SF_TrocaEstado_to_MarcoAprov">
+        <omgdi:waypoint x="2300" y="290" /><omgdi:waypoint x="2360" y="290" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_MarcoAprov_to_NotifAprovManual_di" bpmnElement="SF_MarcoAprov_to_NotifAprovManual">
+        <omgdi:waypoint x="2420" y="290" /><omgdi:waypoint x="2490" y="290" /><omgdi:waypoint x="2490" y="600" /><omgdi:waypoint x="2540" y="600" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_NotifAprovManual_to_End_di" bpmnElement="SF_NotifAprovManual_to_End">
+        <omgdi:waypoint x="2660" y="600" /><omgdi:waypoint x="2700" y="600" /><omgdi:waypoint x="2700" y="145" /><omgdi:waypoint x="2652" y="145" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_Reprovado_to_MarcoReprov_di" bpmnElement="SF_Reprovado_to_MarcoReprov">
+        <omgdi:waypoint x="2300" y="380" /><omgdi:waypoint x="2360" y="380" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_MarcoReprov_to_NotifReprovManual_di" bpmnElement="SF_MarcoReprov_to_NotifReprovManual">
+        <omgdi:waypoint x="2420" y="380" /><omgdi:waypoint x="2490" y="380" /><omgdi:waypoint x="2490" y="700" /><omgdi:waypoint x="2540" y="700" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_NotifReprovManual_to_GW_Renov_di" bpmnElement="SF_NotifReprovManual_to_GW_Renov">
+        <omgdi:waypoint x="2600" y="700" /><omgdi:waypoint x="2630" y="700" /><omgdi:waypoint x="2630" y="495" /><omgdi:waypoint x="2605" y="470" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_GW_Renovacao_Sim_di" bpmnElement="SF_GW_Renovacao_Sim">
+        <omgdi:waypoint x="2555" y="470" /><omgdi:waypoint x="1320" y="470" /><omgdi:waypoint x="1320" y="435" />
+        <bpmndi:BPMNLabel><omgdc:Bounds x="1830" y="452" width="90" height="28" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_GW_Renovacao_Nao_di" bpmnElement="SF_GW_Renovacao_Nao">
+        <omgdi:waypoint x="2605" y="470" /><omgdi:waypoint x="2712" y="470" />
+        <bpmndi:BPMNLabel><omgdc:Bounds x="2630" y="452" width="50" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- ============================================================ -->
+      <!-- POOL P06-B: x=150 y=880 w=2200 h=480                        -->
+      <!-- Lane RT    : y=880  h=120                                    -->
+      <!-- Lane BE    : y=1000 h=160                                    -->
+      <!-- Lane ADM   : y=1160 h=120                                    -->
+      <!-- Lane AlfSOE: y=1280 h=80                                     -->
+      <!-- ============================================================ -->
+      <bpmndi:BPMNShape id="Participant_P06B_di" bpmnElement="Participant_P06B" isHorizontal="true">
+        <omgdc:Bounds x="150" y="880" width="2200" height="480" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_RT_B_di" bpmnElement="Lane_RT_B" isHorizontal="true">
+        <omgdc:Bounds x="180" y="880" width="2170" height="120" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_BE_B_di" bpmnElement="Lane_BE_B" isHorizontal="true">
+        <omgdc:Bounds x="180" y="1000" width="2170" height="160" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_ADM_B_di" bpmnElement="Lane_ADM_B" isHorizontal="true">
+        <omgdc:Bounds x="180" y="1160" width="2170" height="120" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_AlfSOE_B_di" bpmnElement="Lane_AlfSOE_B" isHorizontal="true">
+        <omgdc:Bounds x="180" y="1280" width="2170" height="80" />
+      </bpmndi:BPMNShape>
+
+      <!-- Lane RT_B (center y=940) -->
+      <bpmndi:BPMNShape id="Start_P06B_di" bpmnElement="Start_P06B">
+        <omgdc:Bounds x="262" y="925" width="30" height="30" />
+        <bpmndi:BPMNLabel><omgdc:Bounds x="235" y="962" width="85" height="40" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_RTB_SolicitarIsencaoFact_di" bpmnElement="Task_RTB_SolicitarIsencaoFact">
+        <omgdc:Bounds x="340" y="900" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="End_P06B_AprovadoFact_di" bpmnElement="End_P06B_AprovadoFact">
+        <omgdc:Bounds x="2072" y="925" width="30" height="30" />
+        <bpmndi:BPMNLabel><omgdc:Bounds x="2040" y="962" width="95" height="54" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- Lane BE_B (center y=1080) -->
+      <bpmndi:BPMNShape id="Task_BEB_CriarAnaliseFact_di" bpmnElement="Task_BEB_CriarAnaliseFact">
+        <omgdc:Bounds x="520" y="1040" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_BEB_MarcoSolicitFact_di" bpmnElement="Task_BEB_MarcoSolicitFact">
+        <omgdc:Bounds x="700" y="1040" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_BEB_RegistrarDecisaoFact_di" bpmnElement="Task_BEB_RegistrarDecisaoFact">
+        <omgdc:Bounds x="1180" y="1040" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="GW_DecisaoFact_di" bpmnElement="GW_DecisaoFact" isMarkerVisible="true">
+        <omgdc:Bounds x="1355" y="1055" width="50" height="50" />
+        <bpmndi:BPMNLabel><omgdc:Bounds x="1325" y="1112" width="112" height="28" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_BEB_AprovarFact_di" bpmnElement="Task_BEB_AprovarFact">
+        <omgdc:Bounds x="1460" y="1020" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_BEB_GerarNumeroFact_di" bpmnElement="Task_BEB_GerarNumeroFact">
+        <omgdc:Bounds x="1630" y="1020" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_BEB_MarcoAprovFact_di" bpmnElement="Task_BEB_MarcoAprovFact">
+        <omgdc:Bounds x="1800" y="1020" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_BEB_ReprovarFact_di" bpmnElement="Task_BEB_ReprovarFact">
+        <omgdc:Bounds x="1460" y="1110" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_BEB_MarcoReprovFact_di" bpmnElement="Task_BEB_MarcoReprovFact">
+        <omgdc:Bounds x="1630" y="1110" width="120" height="80" />
+      </bpmndi:BPMNShape>
+
+      <!-- Lane ADM_B (center y=1220) -->
+      <bpmndi:BPMNShape id="Task_ADMB_ListarPendentesFact_di" bpmnElement="Task_ADMB_ListarPendentesFact">
+        <omgdc:Bounds x="880" y="1180" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_ADMB_AnalisarIsencaoFact_di" bpmnElement="Task_ADMB_AnalisarIsencaoFact">
+        <omgdc:Bounds x="1050" y="1180" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="End_P06B_ReprovadoFact_di" bpmnElement="End_P06B_ReprovadoFact">
+        <omgdc:Bounds x="2072" y="1205" width="30" height="30" />
+        <bpmndi:BPMNLabel><omgdc:Bounds x="2040" y="1242" width="95" height="54" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- Lane AlfSOE_B (center y=1320) -->
+      <bpmndi:BPMNShape id="Task_SOEB_NotifAprovFact_di" bpmnElement="Task_SOEB_NotifAprovFact">
+        <omgdc:Bounds x="1970" y="1290" width="120" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_SOEB_NotifReprovFact_di" bpmnElement="Task_SOEB_NotifReprovFact">
+        <omgdc:Bounds x="1800" y="1290" width="120" height="60" />
+      </bpmndi:BPMNShape>
+
+      <!-- ============================================================ -->
+      <!-- EDGES P06-B                                                   -->
+      <!-- ============================================================ -->
+      <bpmndi:BPMNEdge id="SF_StartB_to_Solicitar_di" bpmnElement="SF_StartB_to_Solicitar">
+        <omgdi:waypoint x="292" y="940" /><omgdi:waypoint x="340" y="940" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_SolicitarB_to_Criar_di" bpmnElement="SF_SolicitarB_to_Criar">
+        <omgdi:waypoint x="400" y="940" /><omgdi:waypoint x="460" y="940" /><omgdi:waypoint x="460" y="1080" /><omgdi:waypoint x="520" y="1080" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_CriarFact_to_Marco_di" bpmnElement="SF_CriarFact_to_Marco">
+        <omgdi:waypoint x="640" y="1080" /><omgdi:waypoint x="700" y="1080" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_MarcoFact_to_ListarPend_di" bpmnElement="SF_MarcoFact_to_ListarPend">
+        <omgdi:waypoint x="760" y="1080" /><omgdi:waypoint x="820" y="1080" /><omgdi:waypoint x="820" y="1220" /><omgdi:waypoint x="880" y="1220" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_ListarPendFact_to_Analisar_di" bpmnElement="SF_ListarPendFact_to_Analisar">
+        <omgdi:waypoint x="1000" y="1220" /><omgdi:waypoint x="1050" y="1220" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_AnalisarFact_to_RegDecisao_di" bpmnElement="SF_AnalisarFact_to_RegDecisao">
+        <omgdi:waypoint x="1110" y="1180" /><omgdi:waypoint x="1110" y="1080" /><omgdi:waypoint x="1180" y="1080" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_RegDecisaoFact_to_GW_di" bpmnElement="SF_RegDecisaoFact_to_GW">
+        <omgdi:waypoint x="1300" y="1080" /><omgdi:waypoint x="1355" y="1080" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_DecisaoFact_Aprovado_di" bpmnElement="SF_DecisaoFact_Aprovado">
+        <omgdi:waypoint x="1380" y="1055" /><omgdi:waypoint x="1380" y="1060" /><omgdi:waypoint x="1460" y="1060" />
+        <bpmndi:BPMNLabel><omgdc:Bounds x="1388" y="1038" width="60" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_DecisaoFact_Reprovado_di" bpmnElement="SF_DecisaoFact_Reprovado">
+        <omgdi:waypoint x="1380" y="1105" /><omgdi:waypoint x="1380" y="1150" /><omgdi:waypoint x="1460" y="1150" />
+        <bpmndi:BPMNLabel><omgdc:Bounds x="1388" y="1120" width="60" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_AprovarFact_to_Gerar_di" bpmnElement="SF_AprovarFact_to_Gerar">
+        <omgdi:waypoint x="1580" y="1060" /><omgdi:waypoint x="1630" y="1060" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_GerarNumero_to_Marco_di" bpmnElement="SF_GerarNumero_to_Marco">
+        <omgdi:waypoint x="1750" y="1060" /><omgdi:waypoint x="1800" y="1060" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_MarcoAprovFact_to_Notif_di" bpmnElement="SF_MarcoAprovFact_to_Notif">
+        <omgdi:waypoint x="1860" y="1060" /><omgdi:waypoint x="1910" y="1060" /><omgdi:waypoint x="1910" y="1320" /><omgdi:waypoint x="1970" y="1320" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_NotifAprovFact_to_End_di" bpmnElement="SF_NotifAprovFact_to_End">
+        <omgdi:waypoint x="2090" y="1320" /><omgdi:waypoint x="2140" y="1320" /><omgdi:waypoint x="2140" y="940" /><omgdi:waypoint x="2102" y="940" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_ReprovarFact_to_Marco_di" bpmnElement="SF_ReprovarFact_to_Marco">
+        <omgdi:waypoint x="1580" y="1150" /><omgdi:waypoint x="1630" y="1150" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_MarcoReprovFact_to_Notif_di" bpmnElement="SF_MarcoReprovFact_to_Notif">
+        <omgdi:waypoint x="1750" y="1150" /><omgdi:waypoint x="1780" y="1150" /><omgdi:waypoint x="1780" y="1320" /><omgdi:waypoint x="1800" y="1320" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_NotifReprovFact_to_End_di" bpmnElement="SF_NotifReprovFact_to_End">
+        <omgdi:waypoint x="1920" y="1320" /><omgdi:waypoint x="1950" y="1320" /><omgdi:waypoint x="1950" y="1220" /><omgdi:waypoint x="2072" y="1220" />
+      </bpmndi:BPMNEdge>
+
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</definitions>

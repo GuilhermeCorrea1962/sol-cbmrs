@@ -1,0 +1,904 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  id="Definitions_P08"
+                  targetNamespace="http://cbmrs.sol.p08"
+                  exporter="Camunda Modeler"
+                  exporterVersion="5.0.0">
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       P08 — Emissão e Aceite do PRPCI
+       Stack Atual: Java EE · WildFly · JAX-RS · CDI · JPA/Hibernate · EJB
+       Dois sub-processos:
+         P08-A: RT faz upload do PRPCI  (AGUARDANDO_PRPCI → ALVARA_VIGENTE)
+         P08-B: RU/Prop concede aceite  (AGUARDANDO_ACEITE_PRPCI → ALVARA_VIGENTE)
+  ═══════════════════════════════════════════════════════════════════════ -->
+
+  <bpmn:collaboration id="Collab_P08">
+    <bpmn:documentation>
+      Colaboração P08 — Emissão e Aceite do PRPCI (SOL CBM-RS).
+      Dois pools independentes disparados a partir de TrocaEstado CDI do P07:
+        Pool A: TrocaEstadoLicenciamentoEmVistoriaParaAguardandoPrpci
+        Pool B: TrocaEstadoLicenciamentoEmVistoriaParaAguardandoAceitePrpci
+      Stack: Java EE (JAX-RS, CDI, JPA, EJB @Stateless), Alfresco ECM, SOE PROCERGS.
+    </bpmn:documentation>
+    <bpmn:participant id="Pool_P08A" name="P08-A — Upload PRPCI pelo RT (Vistoria Normal)" processRef="Process_P08A" />
+    <bpmn:participant id="Pool_P08B" name="P08-B — Aceite do PRPCI pelo RU/Proprietário (Renovação)" processRef="Process_P08B" />
+  </bpmn:collaboration>
+
+  <!-- ═══════════════════════════════════════════════════
+       PROCESSO P08-A: Upload PRPCI pelo RT
+  ═══════════════════════════════════════════════════ -->
+  <bpmn:process id="Process_P08A" name="P08-A Upload PRPCI" isExecutable="false">
+
+    <bpmn:laneSet id="LaneSet_P08A">
+      <bpmn:lane id="Lane_RT_A" name="Cidadão / RT">
+        <bpmn:documentation>
+          Responsável Técnico autenticado via SOE PROCERGS (Implicit Flow OIDC).
+          Acessa o painel do licenciamento em situação AGUARDANDO_PRPCI.
+          Seleciona arquivo PDF do PRPCI e submete via formulário multipart.
+          Endpoint REST: PUT /prpci/{idLic}  (Content-Type: multipart/form-data, chave "file")
+          Segurança: @AutorizaEnvolvido + @Permissao(objeto="PRPCI", acao="INCLUIR")
+        </bpmn:documentation>
+        <bpmn:flowNodeRef>Start_AguardandoPrpci</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>UT_UploadPrpci</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_BE_A" name="Sistema SOL Backend">
+        <bpmn:documentation>
+          Backend Java EE (WildFly/JBoss).
+          Camadas: PrpciRestImpl (JAX-RS) → PrpciRN (@Stateless EJB) → PrpciBD (JPA) → PrpciED (@Entity).
+          Integração Alfresco: ArquivoRN.incluir() → nodeRef gravado em ArquivoED.identificadorAlfresco.
+          TrocaEstado CDI: @Qualifier AGUARDANDO_PRPCI_PARA_ALVARA_VIGENTE.
+        </bpmn:documentation>
+        <bpmn:flowNodeRef>ST_ValidarUpload</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>GW_UploadValido</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>ST_IncluirArquivoAlfresco</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>ST_CriarPrpciED</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>ST_TrocaEstadoNormal</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>End_AlvaraVigenteNormal</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+
+    <!-- START P08-A -->
+    <bpmn:startEvent id="Start_AguardandoPrpci" name="Licenciamento em AGUARDANDO_PRPCI">
+      <bpmn:documentation>
+        Disparado quando TrocaEstadoLicenciamentoEmVistoriaParaAguardandoPrpci é executada (P07 → P08).
+        Situação anterior: EM_VISTORIA.
+        Ações da TrocaEstado de entrada:
+          - Fecha período ativo da SituacaoLicenciamento (DT_FIM = sysdate)
+          - Abre novo período AGUARDANDO_PRPCI (DT_INICIO = sysdate)
+          - Dispara notificação e-mail ao RT: "PRPCI disponível para upload"
+        Tabela: CBM_LICENCIAMENTO — campo SIT_LICENCIAMENTO = 'AGUARDANDO_PRPCI'
+        Enum: SituacaoLicenciamento.AGUARDANDO_PRPCI
+      </bpmn:documentation>
+      <bpmn:outgoing>Flow_Start_A_To_Upload</bpmn:outgoing>
+    </bpmn:startEvent>
+
+    <!-- UserTask: RT faz upload -->
+    <bpmn:userTask id="UT_UploadPrpci" name="RT seleciona e envia arquivo PRPCI (PDF)">
+      <bpmn:documentation>
+        Interface Angular: tela de detalhe do licenciamento, aba "PRPCI".
+        RT seleciona arquivo PDF do PRPCI via input file e clica em "Enviar PRPCI".
+        Frontend chama: PUT /prpci/{idLic}  (multipart/form-data, campo "file")
+        Headers necessários: Authorization: Bearer {token_SOE}, Content-Type: multipart/form-data
+        Pré-condição: situação == AGUARDANDO_PRPCI  (validada em PrpciRNVal.validaIncluiPrpci)
+        Roles permitidas: RT envolvido no licenciamento (@AutorizaEnvolvido)
+        Resultado: FormDataBodyPart processado em PrpciRestImpl.inclui()
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_Start_A_To_Upload</bpmn:incoming>
+      <bpmn:incoming>Flow_GW_Nao_Reupload</bpmn:incoming>
+      <bpmn:outgoing>Flow_Upload_To_Validar</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <!-- ServiceTask: Validar upload -->
+    <bpmn:serviceTask id="ST_ValidarUpload" name="Validar arquivo e situação do licenciamento" camunda:class="br.gov.rs.bombeiros.sol.rn.prpci.PrpciRNVal">
+      <bpmn:documentation>
+        Classe: PrpciRNVal  (EJB @Stateless, injetada em PrpciRN)
+        Método: validaIncluiPrpci(LicenciamentoED licenciamento, InputStream arquivo)
+        Validações executadas:
+          RN01 — Situação == AGUARDANDO_PRPCI
+                 if (!SituacaoLicenciamento.AGUARDANDO_PRPCI.equals(lic.getSituacao()))
+                   throw new SolNegocioException("Situação inválida para upload de PRPCI");
+          RN02 — Arquivo não nulo e tamanho > 0
+                 if (arquivo == null || arquivo.available() == 0)
+                   throw new SolNegocioException("Arquivo PRPCI inválido ou vazio");
+          RN03 — Extensão/MIME = application/pdf
+                 Validação do Content-Type no FormDataBodyPart
+          RN04 — Licenciamento possui vistoria concluída (VistoriaED status CONCLUIDA)
+                 SELECT v FROM VistoriaED v WHERE v.licenciamento = :lic AND v.situacao = 'CONCLUIDA'
+        Injeção CDI: @Inject PrpciRNVal prpciRNVal  (dentro de PrpciRN)
+        Exceção: SolNegocioException → HTTP 422 (JAX-RS ExceptionMapper)
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_Upload_To_Validar</bpmn:incoming>
+      <bpmn:outgoing>Flow_Validar_To_GW</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- Gateway: Upload válido? -->
+    <bpmn:exclusiveGateway id="GW_UploadValido" name="Arquivo e situação válidos?">
+      <bpmn:documentation>
+        Decisão baseada no resultado de PrpciRNVal.validaIncluiPrpci().
+        Sim: nenhuma SolNegocioException lançada → fluxo segue para Alfresco.
+        Não: SolNegocioException capturada → mensagem de erro exibida ao RT
+             → RT corrige e reenvia o arquivo (loop-back para UT_UploadPrpci).
+        Variável de processo: arquivoValido (Boolean)
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_Validar_To_GW</bpmn:incoming>
+      <bpmn:outgoing>Flow_GW_Valido_Sim</bpmn:outgoing>
+      <bpmn:outgoing>Flow_GW_Nao_Reupload</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <!-- ServiceTask: Incluir arquivo no Alfresco -->
+    <bpmn:serviceTask id="ST_IncluirArquivoAlfresco" name="Armazenar PRPCI no Alfresco ECM (TipoArquivo.EDIFICACAO)" camunda:class="br.gov.rs.bombeiros.sol.rn.arquivo.ArquivoRN">
+      <bpmn:documentation>
+        Classe: ArquivoRN  (@Stateless EJB, injetada em PrpciRN)
+        Método: incluir(InputStream conteudo, String nomeArquivo, TipoArquivo tipo, LicenciamentoED lic)
+        TipoArquivo usado: TipoArquivo.EDIFICACAO
+          grp:organizacao = "CBM"
+          grp:familia     = "Documentos de Edificação"
+          grp:categoria   = "Licenciamento"
+          grp:subcategoria= "Documentos"
+        Protocolo Alfresco: CMIS (AtomPub) via Apache Chemistry OpenCMIS
+        Retorno: ArquivoED com campo identificadorAlfresco = nodeRef
+                 Formato nodeRef: "workspace://SpacesStore/{UUID}"
+                 Coluna BD: CBM_ARQUIVO.IDENTIFICADOR_ALFRESCO (VARCHAR2 150 NOT NULL)
+        Entidade criada: ArquivoED (@Entity @Audited, tabela CBM_ARQUIVO)
+          Campos populados:
+            - ID_ARQUIVO (sequence SEQ_CBM_ARQUIVO)
+            - NOM_ARQUIVO (nome do arquivo PDF)
+            - IDENTIFICADOR_ALFRESCO (nodeRef retornado pelo Alfresco)
+            - ID_LICENCIAMENTO (FK → CBM_LICENCIAMENTO)
+        Auditoria: tabela CBM_ARQUIVO_AUD gerada pelo Hibernate Envers
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_GW_Valido_Sim</bpmn:incoming>
+      <bpmn:outgoing>Flow_Arquivo_To_Prpci</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- ServiceTask: Criar PrpciED -->
+    <bpmn:serviceTask id="ST_CriarPrpciED" name="Persistir PrpciED (CBM_PRPCI) com FK para ArquivoED" camunda:class="br.gov.rs.bombeiros.sol.rn.prpci.PrpciRN">
+      <bpmn:documentation>
+        Classe: PrpciRN  (@Stateless EJB, @Interceptors(SegurancaEnvolvidoInterceptor.class))
+        Método: inclui(LicenciamentoED licenciamento, ArquivoED arquivo)
+        Segurança: @Permissao(objeto="PRPCI", acao="INCLUIR")  — verificada antes da execução
+        Operações:
+          1. new PrpciED()
+          2. prpci.setLicenciamento(licenciamento)
+          3. prpci.setArquivo(arquivo)           — FK ID_ARQUIVO → CBM_ARQUIVO
+          4. prpci.setDataInclusao(Calendar.getInstance())
+          5. em.persist(prpci)                   — INSERT em CBM_PRPCI
+        Tabela: CBM_PRPCI
+          ID_PRPCI      NUMBER (sequence SEQ_CBM_PRPCI)
+          ID_LICENCIAMENTO NUMBER FK CBM_LICENCIAMENTO
+          ID_ARQUIVO    NUMBER FK CBM_ARQUIVO
+          DT_INCLUSAO   DATE
+        Query Hibernate (NamedQuery "PrpciED.porLicenciamento"):
+          SELECT p FROM PrpciED p
+          JOIN FETCH p.licenciamento l
+          JOIN FETCH l.localizacao loc
+          JOIN FETCH l.solicitante s
+          WHERE l.id = :idLicenciamento
+          ORDER BY p.dataInclusao DESC
+        Retorno: PrpciED persistido (com ID gerado)
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_Arquivo_To_Prpci</bpmn:incoming>
+      <bpmn:outgoing>Flow_Prpci_To_Troca</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- ServiceTask: TrocaEstado AGUARDANDO_PRPCI → ALVARA_VIGENTE -->
+    <bpmn:serviceTask id="ST_TrocaEstadoNormal" name="TrocaEstado: AGUARDANDO_PRPCI → ALVARA_VIGENTE&#10;(Marcos: UPLOAD_PRPCI + LIBERACAO_APPCI)" camunda:class="br.gov.rs.bombeiros.sol.rn.licenciamento.troca.TrocaEstadoLicenciamentoAguardandoPrpciParaAlvaraVigente">
+      <bpmn:documentation>
+        Classe: TrocaEstadoLicenciamentoAguardandoPrpciParaAlvaraVigente
+        Qualificador CDI: @TrocaEstadoLicenciamentoEnum(AGUARDANDO_PRPCI_PARA_ALVARA_VIGENTE)
+        Interface: TrocaEstadoLicenciamento (CDI Event)
+        Ações executadas em ordem:
+          1. Fecha período AGUARDANDO_PRPCI:
+             UPDATE CBM_SIT_LICENCIAMENTO
+             SET DT_FIM = SYSDATE
+             WHERE ID_LICENCIAMENTO = :id AND SIT_LICENCIAMENTO = 'AGUARDANDO_PRPCI' AND DT_FIM IS NULL
+          2. Abre período ALVARA_VIGENTE:
+             INSERT INTO CBM_SIT_LICENCIAMENTO (ID_LIC, SIT_LICENCIAMENTO, DT_INICIO)
+             VALUES (:id, 'ALVARA_VIGENTE', SYSDATE)
+          3. Atualiza CBM_LICENCIAMENTO.SIT_LICENCIAMENTO = 'ALVARA_VIGENTE'
+          4. Registra Marco UPLOAD_PRPCI:
+             INSERT INTO CBM_MARCO_LICENCIAMENTO (ID_LIC, TP_MARCO, DT_MARCO, ID_ARQUIVO)
+             VALUES (:id, 'UPLOAD_PRPCI', SYSDATE, :idArquivoPrpci)
+             TipoMarco.UPLOAD_PRPCI — linha 62 de TipoMarco.java
+             OBS: se PrpciED.arquivo == null → ID_ARQUIVO permanece NULL (PRPCI sem upload de arquivo)
+          5. Cria APPCI (AppciED):
+             new AppciED() com indVersaoVigente='S', indRenovacao='N'
+             INSERT INTO CBM_APPCI (ID_LIC, IND_VERSAO_VIGENTE, IND_RENOVACAO, DT_EMISSAO)
+             VALUES (:id, 'S', 'N', SYSDATE)
+          6. Registra Marco LIBERACAO_APPCI:
+             INSERT INTO CBM_MARCO_LICENCIAMENTO (ID_LIC, TP_MARCO, DT_MARCO)
+             VALUES (:id, 'LIBERACAO_APPCI', SYSDATE)
+             TipoMarco.LIBERACAO_APPCI — linha 52 de TipoMarco.java
+        Resultado final: licenciamento em ALVARA_VIGENTE, APPCI gerado, dois marcos registrados.
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_Prpci_To_Troca</bpmn:incoming>
+      <bpmn:outgoing>Flow_Troca_To_End_Normal</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- End P08-A: Alvará Vigente (Normal) -->
+    <bpmn:endEvent id="End_AlvaraVigenteNormal" name="Licenciamento em ALVARA_VIGENTE&#10;(APPCI emitido — vistoria normal)">
+      <bpmn:documentation>
+        Estado final P08-A: ALVARA_VIGENTE.
+        Situação CBM_LICENCIAMENTO.SIT_LICENCIAMENTO = 'ALVARA_VIGENTE'
+        Enum: SituacaoLicenciamento.ALVARA_VIGENTE
+        APPCI criado em CBM_APPCI (indVersaoVigente='S', indRenovacao='N').
+        Marcos registrados: UPLOAD_PRPCI e LIBERACAO_APPCI em CBM_MARCO_LICENCIAMENTO.
+        RT pode agora baixar o APPCI pelo frontend Angular.
+        RT recebe notificação e-mail: "APPCI disponível para download".
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_Troca_To_End_Normal</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <!-- ── SEQUENCE FLOWS P08-A ── -->
+    <bpmn:sequenceFlow id="Flow_Start_A_To_Upload" sourceRef="Start_AguardandoPrpci" targetRef="UT_UploadPrpci" />
+
+    <bpmn:sequenceFlow id="Flow_Upload_To_Validar" sourceRef="UT_UploadPrpci" targetRef="ST_ValidarUpload">
+      <bpmn:documentation>Transição da raia RT (Lane_RT_A) para a raia Backend (Lane_BE_A). Corresponde à chamada HTTP PUT /prpci/{idLic} acionada pelo Angular.</bpmn:documentation>
+    </bpmn:sequenceFlow>
+
+    <bpmn:sequenceFlow id="Flow_Validar_To_GW" sourceRef="ST_ValidarUpload" targetRef="GW_UploadValido" />
+
+    <bpmn:sequenceFlow id="Flow_GW_Valido_Sim" name="Sim — arquivo válido" sourceRef="GW_UploadValido" targetRef="ST_IncluirArquivoAlfresco">
+      <bpmn:documentation>PrpciRNVal.validaIncluiPrpci() não lançou SolNegocioException. Prossegue para gravar no Alfresco ECM.</bpmn:documentation>
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${arquivoValido == true}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+
+    <bpmn:sequenceFlow id="Flow_GW_Nao_Reupload" name="Não — RT corrige e reenvia" sourceRef="GW_UploadValido" targetRef="UT_UploadPrpci">
+      <bpmn:documentation>
+        SolNegocioException lançada por PrpciRNVal.
+        Frontend Angular exibe mensagem de erro ao RT.
+        Loop-back: retorna para UT_UploadPrpci para nova tentativa.
+        Waypoints explícitos para evitar sobreposição com elementos do Backend:
+          (530,365) → (530,190) → (375,190) → (375,155)
+        O fluxo sobe pelo lado esquerdo, cruza o limite de raia em y≈190 e retorna ao UserTask.
+      </bpmn:documentation>
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${arquivoValido == false}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+
+    <bpmn:sequenceFlow id="Flow_Arquivo_To_Prpci" sourceRef="ST_IncluirArquivoAlfresco" targetRef="ST_CriarPrpciED" />
+    <bpmn:sequenceFlow id="Flow_Prpci_To_Troca"  sourceRef="ST_CriarPrpciED"          targetRef="ST_TrocaEstadoNormal" />
+    <bpmn:sequenceFlow id="Flow_Troca_To_End_Normal" sourceRef="ST_TrocaEstadoNormal" targetRef="End_AlvaraVigenteNormal" />
+
+  </bpmn:process>
+
+  <!-- ═══════════════════════════════════════════════════
+       PROCESSO P08-B: Aceite PRPCI pelo RU/Proprietário
+  ═══════════════════════════════════════════════════ -->
+  <bpmn:process id="Process_P08B" name="P08-B Aceite PRPCI Renovação" isExecutable="false">
+
+    <bpmn:laneSet id="LaneSet_P08B">
+      <bpmn:lane id="Lane_RU_B" name="RU / Proprietário">
+        <bpmn:documentation>
+          Responsável pelo Uso (RU) ou Proprietário do imóvel, autenticado via SOE PROCERGS.
+          Perfis autorizados para aceite (@AutorizaEnvolvido):
+            isRU || isProcuradorRU || isProprietarioPF || isProcuradorProprietario
+          Acessa painel do licenciamento em situação AGUARDANDO_ACEITE_PRPCI.
+          Realiza aceite eletrônico do PRPCI (termo digital).
+          Endpoint REST: PUT /prpci/{idLic}/termo/{idVistoria}/aceite-prpci
+        </bpmn:documentation>
+        <bpmn:flowNodeRef>Start_AguardandoAceitePrpci</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>UT_AcessarPainel</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>UT_ConcederAceite</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_BE_B" name="Sistema SOL Backend">
+        <bpmn:documentation>
+          Backend Java EE (WildFly/JBoss).
+          Camadas: PrpciRestImpl → PrpciCidadaoRN (@Stateless) → PrpciBD (JPA) → VistoriaED.
+          Verificação de permissão: PrpciCidadaoRN.verificaPermissoesUsuario()
+          TrocaEstado CDI: @Qualifier AGUARDANDO_ACEITE_PRPCI_PARA_ALVARA_VIGENTE
+        </bpmn:documentation>
+        <bpmn:flowNodeRef>ST_ConsultarPermissao</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>GW_PodeAceitar</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>End_SemPermissao</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>ST_ValidarAceite</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>GW_AceiteValido</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>End_ErroAceite</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>ST_RegistrarAceiteVistoria</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>ST_TrocaEstadoRenovacao</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>End_AlvaraVigenteRenovacao</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+
+    <!-- START P08-B -->
+    <bpmn:startEvent id="Start_AguardandoAceitePrpci" name="Licenciamento em AGUARDANDO_ACEITE_PRPCI">
+      <bpmn:documentation>
+        Disparado quando TrocaEstadoLicenciamentoEmVistoriaParaAguardandoAceitePrpci é executada (P07 → P08-B).
+        Situação anterior: EM_VISTORIA (vistoria do tipo VISTORIA_RENOVACAO).
+        Ações da TrocaEstado de entrada:
+          - Fecha período EM_VISTORIA (DT_FIM = sysdate)
+          - Abre novo período AGUARDANDO_ACEITE_PRPCI (DT_INICIO = sysdate)
+          - Dispara notificação e-mail ao RU/Proprietário:
+            "PRPCI disponível para aceite — Renovação APPCI"
+        Tabela: CBM_LICENCIAMENTO — campo SIT_LICENCIAMENTO = 'AGUARDANDO_ACEITE_PRPCI'
+        Enum: SituacaoLicenciamento.AGUARDANDO_ACEITE_PRPCI
+        Diferença de P08-A: neste fluxo não há upload de arquivo — o aceite é eletrônico.
+      </bpmn:documentation>
+      <bpmn:outgoing>Flow_Start_B_To_Painel</bpmn:outgoing>
+    </bpmn:startEvent>
+
+    <!-- UserTask: RU acessa painel -->
+    <bpmn:userTask id="UT_AcessarPainel" name="RU/Proprietário acessa painel do licenciamento">
+      <bpmn:documentation>
+        Interface Angular: tela de detalhe do licenciamento, aba "Aceite PRPCI".
+        Sistema exibe botão "Verificar se posso dar aceite" e depois "Aceitar PRPCI".
+        Frontend chama GET /prpci/{idLic}/pode-aceite-prpci para verificar elegibilidade.
+        Roles permitidas: isRU || isProcuradorRU || isProprietarioPF || isProcuradorProprietario
+        Segurança REST: @AutorizaEnvolvido + SegurancaEnvolvidoInterceptor.
+        O usuário deve estar autenticado no SOE PROCERGS (token OIDC ativo).
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_Start_B_To_Painel</bpmn:incoming>
+      <bpmn:outgoing>Flow_Painel_To_Consulta</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <!-- ServiceTask: Consultar permissão de aceite -->
+    <bpmn:serviceTask id="ST_ConsultarPermissao" name="Verificar elegibilidade para aceite do PRPCI" camunda:class="br.gov.rs.bombeiros.sol.rn.prpci.PrpciCidadaoRN">
+      <bpmn:documentation>
+        Classe: PrpciCidadaoRN  (@Stateless EJB)
+        Método: verificaPermissoesUsuario(Long idLicenciamento, UsuarioSOE usuario)
+        Endpoint correspondente: GET /prpci/{idLic}/pode-aceite-prpci
+        Retorno: PrpciPodeAceiteDTO { podeAceitar: boolean, motivo: String }
+        Lógica de verificação (todas as condições devem ser verdadeiras):
+          Condição 1 — Papel do usuário:
+            boolean isRU              = licenciamento.getResponsavelUso().getCpf().equals(usuario.getCpf());
+            boolean isProcuradorRU    = licenciamento.getProcuradores().stream()
+                                          .anyMatch(p -> p.isRU() && p.getCpf().equals(usuario.getCpf()));
+            boolean isProprietarioPF  = licenciamento.getProprietarios().stream()
+                                          .anyMatch(p -> p.isPF() && p.getCpf().equals(usuario.getCpf()));
+            boolean isProcuradorProp  = licenciamento.getProcuradores().stream()
+                                          .anyMatch(p -> p.isProprietario() && p.getCpf().equals(usuario.getCpf()));
+            if (!(isRU || isProcuradorRU || isProprietarioPF || isProcuradorProp))
+              return new PrpciPodeAceiteDTO(false, "Usuário não possui papel para aceite");
+          Condição 2 — Situação do licenciamento:
+            if (!SituacaoLicenciamento.AGUARDANDO_ACEITE_PRPCI.equals(licenciamento.getSituacao()))
+              return new PrpciPodeAceiteDTO(false, "Situação inválida para aceite");
+          Condição 3 — Existe APPCI gerado:
+            List&lt;AppciED&gt; appcis = prpciBD.buscarAppcis(idLicenciamento);
+            if (appcis.isEmpty())
+              return new PrpciPodeAceiteDTO(false, "Nenhum APPCI disponível para aceite");
+        SQL (PrpciBD.buscarAppcis):
+          SELECT a FROM AppciED a WHERE a.licenciamento.id = :idLic
+          AND a.indVersaoVigente = 'S'
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_Painel_To_Consulta</bpmn:incoming>
+      <bpmn:outgoing>Flow_Consulta_To_GW</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- Gateway: Pode aceitar? -->
+    <bpmn:exclusiveGateway id="GW_PodeAceitar" name="Usuário habilitado para aceite?">
+      <bpmn:documentation>
+        Decisão baseada no retorno de PrpciCidadaoRN.verificaPermissoesUsuario().
+        Sim: PrpciPodeAceiteDTO.podeAceitar == true → fluxo sobe para RU realizar aceite.
+        Não: PrpciPodeAceiteDTO.podeAceitar == false → End_SemPermissao (HTTP 403 Forbidden).
+        Variável de processo: podeAceitar (Boolean)
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_Consulta_To_GW</bpmn:incoming>
+      <bpmn:outgoing>Flow_GW_Pode_Nao</bpmn:outgoing>
+      <bpmn:outgoing>Flow_GW_Pode_Sim</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <!-- End: Sem permissão (Error) -->
+    <bpmn:endEvent id="End_SemPermissao" name="Aceite negado — usuário sem permissão (HTTP 403)">
+      <bpmn:documentation>
+        Usuário não possui papel (RU/Procurador/Proprietário) ou situação inválida.
+        PrpciCidadaoRN lança SolNegocioException("Sem permissão para aceite do PRPCI").
+        JAX-RS ExceptionMapper → HTTP 403 Forbidden.
+        Frontend Angular exibe mensagem de erro ao usuário.
+        Licenciamento permanece em AGUARDANDO_ACEITE_PRPCI.
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_GW_Pode_Nao</bpmn:incoming>
+      <bpmn:errorEventDefinition id="ErrorDef_SemPermissao" errorRef="Error_SemPermissao" />
+    </bpmn:endEvent>
+
+    <!-- UserTask: RU concede aceite -->
+    <bpmn:userTask id="UT_ConcederAceite" name="RU/Proprietário lê e confirma termo de aceite do PRPCI">
+      <bpmn:documentation>
+        Interface Angular: modal/tela de aceite eletrônico.
+        Exibe o conteúdo do PRPCI (PDF embutido ou link para download).
+        Exibe termo: "Declaro ciência e aceite do PRPCI para fins de renovação do APPCI".
+        Botão "Confirmar Aceite" → chama: PUT /prpci/{idLic}/termo/{idVistoria}/aceite-prpci
+        Body JSON: {}  (sem payload — o aceite é implícito pelo usuário autenticado)
+        Headers: Authorization: Bearer {token_SOE}, Content-Type: application/json
+        Pré-condição: podeAceitar == true (verificado em ST_ConsultarPermissao)
+        Segurança REST: @AutorizaEnvolvido (@Permissao(objeto="PRPCI", acao="INCLUIR"))
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_GW_Pode_Sim</bpmn:incoming>
+      <bpmn:outgoing>Flow_Aceite_To_Validar</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <!-- ServiceTask: Validar aceite -->
+    <bpmn:serviceTask id="ST_ValidarAceite" name="Validar dados do aceite (PrpciRNVal)" camunda:class="br.gov.rs.bombeiros.sol.rn.prpci.PrpciRNVal">
+      <bpmn:documentation>
+        Classe: PrpciRNVal  (@Stateless EJB)
+        Método: validaAceitePrpci(LicenciamentoED licenciamento, VistoriaED vistoria)
+        Validações:
+          RN05 — Situação == AGUARDANDO_ACEITE_PRPCI
+          RN06 — VistoriaED não nula e pertence ao licenciamento
+          RN07 — VistoriaED.aceitePrpci == null (ainda não aceito — SimNaoBooleanConverter: null/'N')
+                 Campo BD: CBM_VISTORIA.IND_ACEITE_PRPCI CHAR(1) — null = não aceito, 'S' = aceito
+          RN08 — Usuário atual é elegível (mesma verificação de GW_PodeAceitar)
+        SimNaoBooleanConverter: Boolean true → 'S', false/'N'/null → false
+          @Converter(autoApply=false) na coluna IND_ACEITE_PRPCI
+        Exceção: SolNegocioException → HTTP 422
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_Aceite_To_Validar</bpmn:incoming>
+      <bpmn:outgoing>Flow_ValidarAceite_To_GW</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- Gateway: Aceite válido? -->
+    <bpmn:exclusiveGateway id="GW_AceiteValido" name="Dados do aceite válidos?">
+      <bpmn:documentation>
+        Sim: PrpciRNVal.validaAceitePrpci() OK → prossegue para registrar aceite na VistoriaED.
+        Não: SolNegocioException lançada → End_ErroAceite (HTTP 422).
+        Variável de processo: aceiteValido (Boolean)
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_ValidarAceite_To_GW</bpmn:incoming>
+      <bpmn:outgoing>Flow_GW_Aceite_Sim</bpmn:outgoing>
+      <bpmn:outgoing>Flow_GW_Aceite_Nao</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <!-- End: Erro aceite (Error) -->
+    <bpmn:endEvent id="End_ErroAceite" name="Erro na validação do aceite (HTTP 422)">
+      <bpmn:documentation>
+        Validação do aceite falhou (dados inválidos ou aceite já concedido).
+        SolNegocioException → JAX-RS ExceptionMapper → HTTP 422 Unprocessable Entity.
+        Frontend Angular exibe mensagem de erro ao usuário.
+        Nenhuma alteração de estado persistida.
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_GW_Aceite_Nao</bpmn:incoming>
+      <bpmn:errorEventDefinition id="ErrorDef_ErroAceite" errorRef="Error_ValidacaoAceite" />
+    </bpmn:endEvent>
+
+    <!-- ServiceTask: Registrar aceite na VistoriaED -->
+    <bpmn:serviceTask id="ST_RegistrarAceiteVistoria" name="Registrar aceite na VistoriaED (IND_ACEITE_PRPCI='S')" camunda:class="br.gov.rs.bombeiros.sol.rn.vistoria.VistoriaRN">
+      <bpmn:documentation>
+        Classe: VistoriaRN (ou PrpciCidadaoRN.aceitePrpci() — método principal)
+        Classe: PrpciCidadaoRN  (@Stateless EJB)
+        Método: aceitePrpci(Long idLicenciamento, Long idVistoria, UsuarioSOE usuario)
+        Segurança: @Permissao(objeto="PRPCI", acao="INCLUIR")
+        Endpoint correspondente: PUT /prpci/{idLic}/termo/{idVistoria}/aceite-prpci
+        Operações na VistoriaED:
+          1. vistoria.setAceitePrpci(true)
+             → CBM_VISTORIA.IND_ACEITE_PRPCI = 'S'  (SimNaoBooleanConverter)
+          2. vistoria.setNroIntUsuarioAceitePrpci(usuario.getNroInterno())
+             → CBM_VISTORIA.NRO_INT_USUARIO_ACEITE_PRPCI = {nro_interno_SOE}
+          3. vistoria.setDtAceitePrpci(Calendar.getInstance())
+             → CBM_VISTORIA.DT_ACEITE_PRPCI = SYSDATE
+          4. em.merge(vistoria)
+             → UPDATE CBM_VISTORIA SET IND_ACEITE_PRPCI='S',
+               NRO_INT_USUARIO_ACEITE_PRPCI=:nroInt,
+               DT_ACEITE_PRPCI=SYSDATE
+               WHERE ID_VISTORIA = :idVistoria
+        Tabela: CBM_VISTORIA (campos de aceite PRPCI):
+          IND_ACEITE_PRPCI            CHAR(1)    -- 'S'/'N'/null
+          NRO_INT_USUARIO_ACEITE_PRPCI NUMBER     -- nro interno SOE do usuário
+          DT_ACEITE_PRPCI             DATE
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_GW_Aceite_Sim</bpmn:incoming>
+      <bpmn:outgoing>Flow_Registrar_To_Troca</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- ServiceTask: TrocaEstado AGUARDANDO_ACEITE_PRPCI → ALVARA_VIGENTE -->
+    <bpmn:serviceTask id="ST_TrocaEstadoRenovacao" name="TrocaEstado: AGUARDANDO_ACEITE_PRPCI → ALVARA_VIGENTE&#10;(Marcos: ACEITE_PRPCI + LIBERACAO_RENOV_APPCI)" camunda:class="br.gov.rs.bombeiros.sol.rn.licenciamento.troca.TrocaEstadoLicenciamentoAguardandoAceitePrpciParaAlvaraVigenteRN">
+      <bpmn:documentation>
+        Classe: TrocaEstadoLicenciamentoAguardandoAceitePrpciParaAlvaraVigenteRN
+        Qualificador CDI: @TrocaEstadoLicenciamentoEnum(AGUARDANDO_ACEITE_PRPCI_PARA_ALVARA_VIGENTE)
+        Interface: TrocaEstadoLicenciamento (CDI Event)
+        Ações executadas em ordem:
+          1. Fecha período AGUARDANDO_ACEITE_PRPCI:
+             UPDATE CBM_SIT_LICENCIAMENTO
+             SET DT_FIM = SYSDATE
+             WHERE ID_LICENCIAMENTO = :id AND SIT_LICENCIAMENTO = 'AGUARDANDO_ACEITE_PRPCI' AND DT_FIM IS NULL
+          2. Abre período ALVARA_VIGENTE:
+             INSERT INTO CBM_SIT_LICENCIAMENTO (ID_LIC, SIT_LICENCIAMENTO, DT_INICIO)
+             VALUES (:id, 'ALVARA_VIGENTE', SYSDATE)
+          3. Atualiza CBM_LICENCIAMENTO.SIT_LICENCIAMENTO = 'ALVARA_VIGENTE'
+          4. Registra Marco ACEITE_PRPCI:
+             INSERT INTO CBM_MARCO_LICENCIAMENTO (ID_LIC, TP_MARCO, DT_MARCO)
+             VALUES (:id, 'ACEITE_PRPCI', SYSDATE)
+             TipoMarco.ACEITE_PRPCI — linha 114 de TipoMarco.java
+          5. Cria APPCI de renovação (AppciED):
+             new AppciED() com indVersaoVigente='S', indRenovacao='S'
+             INSERT INTO CBM_APPCI (ID_LIC, IND_VERSAO_VIGENTE, IND_RENOVACAO, DT_EMISSAO)
+             VALUES (:id, 'S', 'S', SYSDATE)
+             OBS: indRenovacao='S' distingue APPCI de renovação de APPCI normal
+          6. Registra Marco LIBERACAO_RENOV_APPCI:
+             INSERT INTO CBM_MARCO_LICENCIAMENTO (ID_LIC, TP_MARCO, DT_MARCO)
+             VALUES (:id, 'LIBERACAO_RENOV_APPCI', SYSDATE)
+             TipoMarco.LIBERACAO_RENOV_APPCI — linha 115 de TipoMarco.java
+        Resultado final: licenciamento em ALVARA_VIGENTE, APPCI de renovação emitido.
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_Registrar_To_Troca</bpmn:incoming>
+      <bpmn:outgoing>Flow_Troca_To_End_B</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- End P08-B: Alvará Vigente (Renovação) -->
+    <bpmn:endEvent id="End_AlvaraVigenteRenovacao" name="Licenciamento em ALVARA_VIGENTE&#10;(APPCI renovação emitido)">
+      <bpmn:documentation>
+        Estado final P08-B: ALVARA_VIGENTE.
+        Situação CBM_LICENCIAMENTO.SIT_LICENCIAMENTO = 'ALVARA_VIGENTE'
+        APPCI de renovação criado: CBM_APPCI (indVersaoVigente='S', indRenovacao='S').
+        Marcos registrados: ACEITE_PRPCI e LIBERACAO_RENOV_APPCI em CBM_MARCO_LICENCIAMENTO.
+        Vistoria atualizada: CBM_VISTORIA.IND_ACEITE_PRPCI='S'.
+        RU/Proprietário recebe notificação e-mail: "APPCI de renovação disponível".
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_Troca_To_End_B</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <!-- ── SEQUENCE FLOWS P08-B ── -->
+    <bpmn:sequenceFlow id="Flow_Start_B_To_Painel"   sourceRef="Start_AguardandoAceitePrpci" targetRef="UT_AcessarPainel" />
+
+    <bpmn:sequenceFlow id="Flow_Painel_To_Consulta"  sourceRef="UT_AcessarPainel" targetRef="ST_ConsultarPermissao">
+      <bpmn:documentation>Transição da raia RU (Lane_RU_B) para a raia Backend (Lane_BE_B). Chama GET /prpci/{idLic}/pode-aceite-prpci.</bpmn:documentation>
+    </bpmn:sequenceFlow>
+
+    <bpmn:sequenceFlow id="Flow_Consulta_To_GW"      sourceRef="ST_ConsultarPermissao" targetRef="GW_PodeAceitar" />
+
+    <bpmn:sequenceFlow id="Flow_GW_Pode_Nao" name="Não — sem permissão" sourceRef="GW_PodeAceitar" targetRef="End_SemPermissao">
+      <bpmn:documentation>Usuário não habilitado para aceite. PrpciCidadaoRN.verificaPermissoesUsuario() retornou podeAceitar=false.</bpmn:documentation>
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${podeAceitar == false}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+
+    <bpmn:sequenceFlow id="Flow_GW_Pode_Sim" name="Sim — habilita aceite" sourceRef="GW_PodeAceitar" targetRef="UT_ConcederAceite">
+      <bpmn:documentation>
+        Usuário habilitado para aceite. Fluxo sobe do Backend (Lane_BE_B) para a raia RU (Lane_RU_B).
+        Waypoints explícitos para cruzar o limite de raias sem sobreposição:
+          (580,965) → (715,965) → (715,735)
+        Move para a direita até x=715, depois sobe cruzando o limite de raia em y≈770.
+      </bpmn:documentation>
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${podeAceitar == true}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+
+    <bpmn:sequenceFlow id="Flow_Aceite_To_Validar"    sourceRef="UT_ConcederAceite" targetRef="ST_ValidarAceite">
+      <bpmn:documentation>Transição da raia RU para a raia Backend. Chama PUT /prpci/{idLic}/termo/{idVistoria}/aceite-prpci.</bpmn:documentation>
+    </bpmn:sequenceFlow>
+
+    <bpmn:sequenceFlow id="Flow_ValidarAceite_To_GW"  sourceRef="ST_ValidarAceite"  targetRef="GW_AceiteValido" />
+
+    <bpmn:sequenceFlow id="Flow_GW_Aceite_Sim" name="Sim — aceite válido" sourceRef="GW_AceiteValido" targetRef="ST_RegistrarAceiteVistoria">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${aceiteValido == true}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+
+    <bpmn:sequenceFlow id="Flow_GW_Aceite_Nao" name="Não — dados inválidos" sourceRef="GW_AceiteValido" targetRef="End_ErroAceite">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${aceiteValido == false}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+
+    <bpmn:sequenceFlow id="Flow_Registrar_To_Troca"   sourceRef="ST_RegistrarAceiteVistoria" targetRef="ST_TrocaEstadoRenovacao" />
+    <bpmn:sequenceFlow id="Flow_Troca_To_End_B"        sourceRef="ST_TrocaEstadoRenovacao"    targetRef="End_AlvaraVigenteRenovacao" />
+
+  </bpmn:process>
+
+  <!-- ═══════════════════════════════
+       ERROS GLOBAIS
+  ═══════════════════════════════ -->
+  <bpmn:error id="Error_SemPermissao"    name="SemPermissaoAceite"  errorCode="SEM_PERMISSAO_ACEITE_PRPCI" />
+  <bpmn:error id="Error_ValidacaoAceite" name="ErroValidacaoAceite" errorCode="ERRO_VALIDACAO_ACEITE_PRPCI" />
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       DIAGRAM INTERCHANGE
+  ═══════════════════════════════════════════════════════════════════ -->
+  <bpmndi:BPMNDiagram id="BPMNDiagram_P08">
+    <bpmndi:BPMNPlane id="BPMNPlane_P08" bpmnElement="Collab_P08">
+
+      <!-- ── POOL P08-A ── -->
+      <bpmndi:BPMNShape id="Shape_Pool_P08A" bpmnElement="Pool_P08A" isHorizontal="true">
+        <dc:Bounds x="150" y="60" width="1550" height="520" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="160" y="290" width="30" height="200" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Shape_Lane_RT_A" bpmnElement="Lane_RT_A" isHorizontal="true">
+        <dc:Bounds x="180" y="60" width="1520" height="130" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="185" y="110" width="30" height="60" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Shape_Lane_BE_A" bpmnElement="Lane_BE_A" isHorizontal="true">
+        <dc:Bounds x="180" y="190" width="1520" height="390" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="185" y="360" width="30" height="140" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- START P08-A -->
+      <bpmndi:BPMNShape id="Shape_Start_AguardandoPrpci" bpmnElement="Start_AguardandoPrpci">
+        <dc:Bounds x="210" y="107" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="188" y="148" width="80" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- UT: Upload PRPCI (Lane RT) -->
+      <bpmndi:BPMNShape id="Shape_UT_UploadPrpci" bpmnElement="UT_UploadPrpci">
+        <dc:Bounds x="300" y="95" width="150" height="60" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+
+      <!-- ST: Validar Upload (Lane BE) -->
+      <bpmndi:BPMNShape id="Shape_ST_ValidarUpload" bpmnElement="ST_ValidarUpload">
+        <dc:Bounds x="300" y="355" width="150" height="60" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+
+      <!-- GW: Upload válido? -->
+      <bpmndi:BPMNShape id="Shape_GW_UploadValido" bpmnElement="GW_UploadValido" isMarkerVisible="true">
+        <dc:Bounds x="510" y="365" width="40" height="40" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="490" y="410" width="80" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- ST: Incluir Arquivo Alfresco -->
+      <bpmndi:BPMNShape id="Shape_ST_IncluirArquivoAlfresco" bpmnElement="ST_IncluirArquivoAlfresco">
+        <dc:Bounds x="610" y="350" width="170" height="70" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+
+      <!-- ST: Criar PrpciED -->
+      <bpmndi:BPMNShape id="Shape_ST_CriarPrpciED" bpmnElement="ST_CriarPrpciED">
+        <dc:Bounds x="840" y="355" width="150" height="60" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+
+      <!-- ST: TrocaEstado Normal -->
+      <bpmndi:BPMNShape id="Shape_ST_TrocaEstadoNormal" bpmnElement="ST_TrocaEstadoNormal">
+        <dc:Bounds x="1050" y="345" width="200" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+
+      <!-- END: AlvaraVigenteNormal -->
+      <bpmndi:BPMNShape id="Shape_End_AlvaraVigenteNormal" bpmnElement="End_AlvaraVigenteNormal">
+        <dc:Bounds x="1310" y="367" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1288" y="408" width="80" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- ── EDGES P08-A ── -->
+
+      <bpmndi:BPMNEdge id="Edge_Flow_Start_A_To_Upload" bpmnElement="Flow_Start_A_To_Upload">
+        <di:waypoint x="246" y="125" />
+        <di:waypoint x="300" y="125" />
+      </bpmndi:BPMNEdge>
+
+      <!-- Upload → Validar: RT lane → BE lane (vertical crossing) -->
+      <bpmndi:BPMNEdge id="Edge_Flow_Upload_To_Validar" bpmnElement="Flow_Upload_To_Validar">
+        <di:waypoint x="375" y="155" />
+        <di:waypoint x="375" y="355" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_Flow_Validar_To_GW" bpmnElement="Flow_Validar_To_GW">
+        <di:waypoint x="450" y="385" />
+        <di:waypoint x="510" y="385" />
+      </bpmndi:BPMNEdge>
+
+      <!-- GW Sim → Alfresco -->
+      <bpmndi:BPMNEdge id="Edge_Flow_GW_Valido_Sim" bpmnElement="Flow_GW_Valido_Sim">
+        <di:waypoint x="550" y="385" />
+        <di:waypoint x="610" y="385" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="556" y="364" width="50" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW Não → loop-back para UT_UploadPrpci (waypoints explícitos) -->
+      <bpmndi:BPMNEdge id="Edge_Flow_GW_Nao_Reupload" bpmnElement="Flow_GW_Nao_Reupload">
+        <di:waypoint x="530" y="365" />
+        <di:waypoint x="530" y="190" />
+        <di:waypoint x="375" y="190" />
+        <di:waypoint x="375" y="155" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="538" y="270" width="90" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_Flow_Arquivo_To_Prpci" bpmnElement="Flow_Arquivo_To_Prpci">
+        <di:waypoint x="780" y="385" />
+        <di:waypoint x="840" y="385" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_Flow_Prpci_To_Troca" bpmnElement="Flow_Prpci_To_Troca">
+        <di:waypoint x="990" y="385" />
+        <di:waypoint x="1050" y="385" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_Flow_Troca_To_End_Normal" bpmnElement="Flow_Troca_To_End_Normal">
+        <di:waypoint x="1250" y="385" />
+        <di:waypoint x="1310" y="385" />
+      </bpmndi:BPMNEdge>
+
+      <!-- ══════════════════════════════════════════
+           POOL P08-B
+      ══════════════════════════════════════════ -->
+      <bpmndi:BPMNShape id="Shape_Pool_P08B" bpmnElement="Pool_P08B" isHorizontal="true">
+        <dc:Bounds x="150" y="640" width="1550" height="520" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="160" y="870" width="30" height="200" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Shape_Lane_RU_B" bpmnElement="Lane_RU_B" isHorizontal="true">
+        <dc:Bounds x="180" y="640" width="1520" height="130" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="185" y="690" width="30" height="60" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Shape_Lane_BE_B" bpmnElement="Lane_BE_B" isHorizontal="true">
+        <dc:Bounds x="180" y="770" width="1520" height="390" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="185" y="940" width="30" height="140" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- START P08-B -->
+      <bpmndi:BPMNShape id="Shape_Start_AguardandoAceitePrpci" bpmnElement="Start_AguardandoAceitePrpci">
+        <dc:Bounds x="210" y="687" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="188" y="728" width="80" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- UT: Acessar painel (Lane RU) -->
+      <bpmndi:BPMNShape id="Shape_UT_AcessarPainel" bpmnElement="UT_AcessarPainel">
+        <dc:Bounds x="300" y="675" width="150" height="60" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+
+      <!-- ST: Consultar permissão (Lane BE) -->
+      <bpmndi:BPMNShape id="Shape_ST_ConsultarPermissao" bpmnElement="ST_ConsultarPermissao">
+        <dc:Bounds x="300" y="930" width="150" height="60" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+
+      <!-- GW: Pode aceitar? -->
+      <bpmndi:BPMNShape id="Shape_GW_PodeAceitar" bpmnElement="GW_PodeAceitar" isMarkerVisible="true">
+        <dc:Bounds x="540" y="945" width="40" height="40" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="520" y="990" width="80" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- END: Sem permissão (Error) -->
+      <bpmndi:BPMNShape id="Shape_End_SemPermissao" bpmnElement="End_SemPermissao">
+        <dc:Bounds x="540" y="1055" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="515" y="1096" width="86" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- UT: Conceder aceite (Lane RU) -->
+      <bpmndi:BPMNShape id="Shape_UT_ConcederAceite" bpmnElement="UT_ConcederAceite">
+        <dc:Bounds x="640" y="675" width="150" height="60" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+
+      <!-- ST: Validar aceite (Lane BE) -->
+      <bpmndi:BPMNShape id="Shape_ST_ValidarAceite" bpmnElement="ST_ValidarAceite">
+        <dc:Bounds x="640" y="930" width="160" height="60" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+
+      <!-- GW: Aceite válido? -->
+      <bpmndi:BPMNShape id="Shape_GW_AceiteValido" bpmnElement="GW_AceiteValido" isMarkerVisible="true">
+        <dc:Bounds x="860" y="945" width="40" height="40" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="840" y="990" width="80" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- END: Erro aceite (Error) -->
+      <bpmndi:BPMNShape id="Shape_End_ErroAceite" bpmnElement="End_ErroAceite">
+        <dc:Bounds x="860" y="1055" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="835" y="1096" width="86" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- ST: Registrar aceite vistoria -->
+      <bpmndi:BPMNShape id="Shape_ST_RegistrarAceiteVistoria" bpmnElement="ST_RegistrarAceiteVistoria">
+        <dc:Bounds x="960" y="925" width="180" height="70" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+
+      <!-- ST: TrocaEstado Renovação -->
+      <bpmndi:BPMNShape id="Shape_ST_TrocaEstadoRenovacao" bpmnElement="ST_TrocaEstadoRenovacao">
+        <dc:Bounds x="1200" y="920" width="200" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+
+      <!-- END: AlvaraVigenteRenovacao -->
+      <bpmndi:BPMNShape id="Shape_End_AlvaraVigenteRenovacao" bpmnElement="End_AlvaraVigenteRenovacao">
+        <dc:Bounds x="1462" y="947" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1440" y="988" width="80" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- ── EDGES P08-B ── -->
+
+      <bpmndi:BPMNEdge id="Edge_Flow_Start_B_To_Painel" bpmnElement="Flow_Start_B_To_Painel">
+        <di:waypoint x="246" y="705" />
+        <di:waypoint x="300" y="705" />
+      </bpmndi:BPMNEdge>
+
+      <!-- Painel → Consulta: RU lane → BE lane -->
+      <bpmndi:BPMNEdge id="Edge_Flow_Painel_To_Consulta" bpmnElement="Flow_Painel_To_Consulta">
+        <di:waypoint x="375" y="735" />
+        <di:waypoint x="375" y="930" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_Flow_Consulta_To_GW" bpmnElement="Flow_Consulta_To_GW">
+        <di:waypoint x="450" y="960" />
+        <di:waypoint x="540" y="965" />
+      </bpmndi:BPMNEdge>
+
+      <!-- GW Não → End SemPermissao (para baixo) -->
+      <bpmndi:BPMNEdge id="Edge_Flow_GW_Pode_Nao" bpmnElement="Flow_GW_Pode_Nao">
+        <di:waypoint x="560" y="985" />
+        <di:waypoint x="560" y="1055" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="568" y="1010" width="70" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW Sim → UT_ConcederAceite: BE lane → RU lane (cross-lane, waypoints explícitos) -->
+      <bpmndi:BPMNEdge id="Edge_Flow_GW_Pode_Sim" bpmnElement="Flow_GW_Pode_Sim">
+        <di:waypoint x="580" y="965" />
+        <di:waypoint x="715" y="965" />
+        <di:waypoint x="715" y="735" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="620" y="944" width="80" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- Aceite → Validar: RU lane → BE lane -->
+      <bpmndi:BPMNEdge id="Edge_Flow_Aceite_To_Validar" bpmnElement="Flow_Aceite_To_Validar">
+        <di:waypoint x="720" y="735" />
+        <di:waypoint x="720" y="930" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_Flow_ValidarAceite_To_GW" bpmnElement="Flow_ValidarAceite_To_GW">
+        <di:waypoint x="800" y="960" />
+        <di:waypoint x="860" y="965" />
+      </bpmndi:BPMNEdge>
+
+      <!-- GW Aceite Sim → Registrar -->
+      <bpmndi:BPMNEdge id="Edge_Flow_GW_Aceite_Sim" bpmnElement="Flow_GW_Aceite_Sim">
+        <di:waypoint x="900" y="965" />
+        <di:waypoint x="960" y="960" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="906" y="944" width="50" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW Aceite Não → End_ErroAceite -->
+      <bpmndi:BPMNEdge id="Edge_Flow_GW_Aceite_Nao" bpmnElement="Flow_GW_Aceite_Nao">
+        <di:waypoint x="880" y="985" />
+        <di:waypoint x="880" y="1055" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="888" y="1010" width="70" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_Flow_Registrar_To_Troca" bpmnElement="Flow_Registrar_To_Troca">
+        <di:waypoint x="1140" y="960" />
+        <di:waypoint x="1200" y="960" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_Flow_Troca_To_End_B" bpmnElement="Flow_Troca_To_End_B">
+        <di:waypoint x="1400" y="960" />
+        <di:waypoint x="1462" y="965" />
+      </bpmndi:BPMNEdge>
+
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</bpmn:definitions>

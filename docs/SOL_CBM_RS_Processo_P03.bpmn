@@ -1,0 +1,252 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI"
+             xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+             targetNamespace="http://solcbm.procergs.rs.gov.br/bpmn"
+             id="definitions_P03">
+
+  <!-- ================================================================ -->
+  <!-- PROCESSO 03 – WIZARD DE NOVA SOLICITAÇÃO DE LICENCIAMENTO        -->
+  <!-- Cidadão percorre 7 etapas guiadas:                               -->
+  <!--   Etapa 1: Tipo de Atividade / Enquadramento                     -->
+  <!--   Etapa 2: Dados do Estabelecimento / Empresa                    -->
+  <!--   Etapa 3: Responsável Técnico (PPCI + PSPCIM)                   -->
+  <!--   Etapa 4: Endereço / Localização                                -->
+  <!--   Etapa 5: Dados da Edificação (área, pavimentos, etc.)          -->
+  <!--   Etapa 6: Documentos Obrigatórios (upload)                      -->
+  <!--   Etapa 7: Revisão, Aceite e Confirmação                         -->
+  <!-- Após submissão: aguarda aceite do RT → resultado análise ADM:    -->
+  <!--   CA  = Conformidade Atendida (emite APPCI → Alvará)             -->
+  <!--   NCA = Não Conformidade – necessita vistoria                    -->
+  <!--   CIA = Conformidade Inatendida (arquivado / inviabilidade)      -->
+  <!-- ================================================================ -->
+  <process id="Proc_03" name="03 - Wizard de Nova Solicitação de Licenciamento" isExecutable="false">
+
+    <startEvent id="P03_Start" name="Cidadão Inicia&#10;Nova Solicitação">
+      <outgoing>P03_sf01</outgoing>
+    </startEvent>
+
+    <userTask id="P03_T01" name="Etapa 1: Selecionar&#10;Tipo de Atividade">
+      <incoming>P03_sf01</incoming>
+      <outgoing>P03_sf02</outgoing>
+    </userTask>
+
+    <userTask id="P03_T02" name="Etapa 2: Dados do&#10;Estabelecimento/Empresa">
+      <incoming>P03_sf02</incoming>
+      <outgoing>P03_sf03</outgoing>
+    </userTask>
+
+    <userTask id="P03_T03" name="Etapa 3: Vincular&#10;Responsável Técnico (RT)">
+      <incoming>P03_sf03</incoming>
+      <outgoing>P03_sf04</outgoing>
+    </userTask>
+
+    <userTask id="P03_T04" name="Etapa 4: Informar&#10;Endereço / Localização">
+      <incoming>P03_sf04</incoming>
+      <outgoing>P03_sf05</outgoing>
+    </userTask>
+
+    <userTask id="P03_T05" name="Etapa 5: Dados da&#10;Edificação (Área/Pavimentos)">
+      <incoming>P03_sf05</incoming>
+      <outgoing>P03_sf06</outgoing>
+    </userTask>
+
+    <userTask id="P03_T06" name="Etapa 6: Upload de&#10;Documentos Obrigatórios">
+      <incoming>P03_sf06</incoming>
+      <outgoing>P03_sf07</outgoing>
+    </userTask>
+
+    <userTask id="P03_T07" name="Etapa 7: Revisão,&#10;Aceite e Confirmação">
+      <incoming>P03_sf07</incoming>
+      <outgoing>P03_sf08</outgoing>
+    </userTask>
+
+    <serviceTask id="P03_T08" name="Submeter Solicitação&#10;(Status: RASCUNHO → AGUARDANDO_ACEITE)">
+      <incoming>P03_sf08</incoming>
+      <outgoing>P03_sf09</outgoing>
+    </serviceTask>
+
+    <userTask id="P03_T09" name="RT: Revisar e Aceitar&#10;a Solicitação">
+      <incoming>P03_sf09</incoming>
+      <outgoing>P03_sf10</outgoing>
+    </userTask>
+
+    <exclusiveGateway id="P03_GW01" name="RT&#10;Aceitou?">
+      <incoming>P03_sf10</incoming>
+      <outgoing>P03_sf11</outgoing>
+      <outgoing>P03_sf12</outgoing>
+    </exclusiveGateway>
+
+    <endEvent id="P03_EndRecusado" name="Solicitação&#10;Recusada pelo RT">
+      <incoming>P03_sf11</incoming>
+    </endEvent>
+
+    <serviceTask id="P03_T10" name="Aguardar Análise ADM&#10;(Status: NCA / EM_ANALISE)">
+      <incoming>P03_sf12</incoming>
+      <outgoing>P03_sf13</outgoing>
+    </serviceTask>
+
+    <exclusiveGateway id="P03_GW02" name="Resultado da&#10;Análise Técnica?">
+      <incoming>P03_sf13</incoming>
+      <outgoing>P03_sf14</outgoing>
+      <outgoing>P03_sf15</outgoing>
+      <outgoing>P03_sf16</outgoing>
+    </exclusiveGateway>
+
+    <endEvent id="P03_EndCA" name="CA – Conformidade&#10;Atendida (APPCI Emitido)">
+      <incoming>P03_sf14</incoming>
+    </endEvent>
+
+    <endEvent id="P03_EndNCA" name="NCA – Necessita&#10;Vistoria (Proc_07)">
+      <incoming>P03_sf15</incoming>
+    </endEvent>
+
+    <endEvent id="P03_EndCIA" name="CIA – Conformidade&#10;Inatendida / Arquivado">
+      <incoming>P03_sf16</incoming>
+    </endEvent>
+
+    <sequenceFlow id="P03_sf01" sourceRef="P03_Start"   targetRef="P03_T01"/>
+    <sequenceFlow id="P03_sf02" sourceRef="P03_T01"     targetRef="P03_T02"/>
+    <sequenceFlow id="P03_sf03" sourceRef="P03_T02"     targetRef="P03_T03"/>
+    <sequenceFlow id="P03_sf04" sourceRef="P03_T03"     targetRef="P03_T04"/>
+    <sequenceFlow id="P03_sf05" sourceRef="P03_T04"     targetRef="P03_T05"/>
+    <sequenceFlow id="P03_sf06" sourceRef="P03_T05"     targetRef="P03_T06"/>
+    <sequenceFlow id="P03_sf07" sourceRef="P03_T06"     targetRef="P03_T07"/>
+    <sequenceFlow id="P03_sf08" sourceRef="P03_T07"     targetRef="P03_T08"/>
+    <sequenceFlow id="P03_sf09" sourceRef="P03_T08"     targetRef="P03_T09"/>
+    <sequenceFlow id="P03_sf10" sourceRef="P03_T09"     targetRef="P03_GW01"/>
+    <sequenceFlow id="P03_sf11" name="Não"              sourceRef="P03_GW01" targetRef="P03_EndRecusado"/>
+    <sequenceFlow id="P03_sf12" name="Sim"              sourceRef="P03_GW01" targetRef="P03_T10"/>
+    <sequenceFlow id="P03_sf13" sourceRef="P03_T10"     targetRef="P03_GW02"/>
+    <sequenceFlow id="P03_sf14" name="CA"               sourceRef="P03_GW02" targetRef="P03_EndCA"/>
+    <sequenceFlow id="P03_sf15" name="NCA (Vistoria)"   sourceRef="P03_GW02" targetRef="P03_EndNCA"/>
+    <sequenceFlow id="P03_sf16" name="CIA (Arquivo)"    sourceRef="P03_GW02" targetRef="P03_EndCIA"/>
+  </process>
+
+  <bpmndi:BPMNDiagram id="diagram_P03">
+    <bpmndi:BPMNPlane id="plane_P03" bpmnElement="Proc_03">
+      <!-- Main flow: y=260, x increments ~180px -->
+      <bpmndi:BPMNShape id="shape_P03_Start" bpmnElement="P03_Start">
+        <omgdc:Bounds x="62" y="242" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P03_T01" bpmnElement="P03_T01">
+        <omgdc:Bounds x="150" y="220" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P03_T02" bpmnElement="P03_T02">
+        <omgdc:Bounds x="330" y="220" width="150" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P03_T03" bpmnElement="P03_T03">
+        <omgdc:Bounds x="520" y="220" width="150" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P03_T04" bpmnElement="P03_T04">
+        <omgdc:Bounds x="710" y="220" width="150" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P03_T05" bpmnElement="P03_T05">
+        <omgdc:Bounds x="900" y="220" width="160" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P03_T06" bpmnElement="P03_T06">
+        <omgdc:Bounds x="1110" y="220" width="160" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P03_T07" bpmnElement="P03_T07">
+        <omgdc:Bounds x="1320" y="220" width="160" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P03_T08" bpmnElement="P03_T08">
+        <omgdc:Bounds x="1530" y="220" width="180" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P03_T09" bpmnElement="P03_T09">
+        <omgdc:Bounds x="1760" y="220" width="160" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P03_GW01" bpmnElement="P03_GW01" isMarkerVisible="true">
+        <omgdc:Bounds x="1975" y="235" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P03_EndRecusado" bpmnElement="P03_EndRecusado">
+        <omgdc:Bounds x="1982" y="102" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P03_T10" bpmnElement="P03_T10">
+        <omgdc:Bounds x="2085" y="220" width="170" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P03_GW02" bpmnElement="P03_GW02" isMarkerVisible="true">
+        <omgdc:Bounds x="2315" y="235" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P03_EndCA" bpmnElement="P03_EndCA">
+        <omgdc:Bounds x="2422" y="102" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P03_EndNCA" bpmnElement="P03_EndNCA">
+        <omgdc:Bounds x="2422" y="242" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P03_EndCIA" bpmnElement="P03_EndCIA">
+        <omgdc:Bounds x="2422" y="382" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNEdge id="edge_P03_sf01" bpmnElement="P03_sf01">
+        <omgdi:waypoint x="98"   y="260"/>
+        <omgdi:waypoint x="150"  y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P03_sf02" bpmnElement="P03_sf02">
+        <omgdi:waypoint x="290"  y="260"/>
+        <omgdi:waypoint x="330"  y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P03_sf03" bpmnElement="P03_sf03">
+        <omgdi:waypoint x="480"  y="260"/>
+        <omgdi:waypoint x="520"  y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P03_sf04" bpmnElement="P03_sf04">
+        <omgdi:waypoint x="670"  y="260"/>
+        <omgdi:waypoint x="710"  y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P03_sf05" bpmnElement="P03_sf05">
+        <omgdi:waypoint x="860"  y="260"/>
+        <omgdi:waypoint x="900"  y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P03_sf06" bpmnElement="P03_sf06">
+        <omgdi:waypoint x="1060" y="260"/>
+        <omgdi:waypoint x="1110" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P03_sf07" bpmnElement="P03_sf07">
+        <omgdi:waypoint x="1270" y="260"/>
+        <omgdi:waypoint x="1320" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P03_sf08" bpmnElement="P03_sf08">
+        <omgdi:waypoint x="1480" y="260"/>
+        <omgdi:waypoint x="1530" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P03_sf09" bpmnElement="P03_sf09">
+        <omgdi:waypoint x="1710" y="260"/>
+        <omgdi:waypoint x="1760" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P03_sf10" bpmnElement="P03_sf10">
+        <omgdi:waypoint x="1920" y="260"/>
+        <omgdi:waypoint x="1975" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P03_sf11" bpmnElement="P03_sf11">
+        <omgdi:waypoint x="2000" y="235"/>
+        <omgdi:waypoint x="2000" y="138"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P03_sf12" bpmnElement="P03_sf12">
+        <omgdi:waypoint x="2025" y="260"/>
+        <omgdi:waypoint x="2085" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P03_sf13" bpmnElement="P03_sf13">
+        <omgdi:waypoint x="2255" y="260"/>
+        <omgdi:waypoint x="2315" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P03_sf14" bpmnElement="P03_sf14">
+        <omgdi:waypoint x="2340" y="235"/>
+        <omgdi:waypoint x="2340" y="120"/>
+        <omgdi:waypoint x="2422" y="120"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P03_sf15" bpmnElement="P03_sf15">
+        <omgdi:waypoint x="2365" y="260"/>
+        <omgdi:waypoint x="2422" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P03_sf16" bpmnElement="P03_sf16">
+        <omgdi:waypoint x="2340" y="285"/>
+        <omgdi:waypoint x="2340" y="400"/>
+        <omgdi:waypoint x="2422" y="400"/>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</definitions>

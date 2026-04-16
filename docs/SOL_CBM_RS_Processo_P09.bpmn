@@ -1,0 +1,258 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI"
+             xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+             targetNamespace="http://solcbm.procergs.rs.gov.br/bpmn"
+             id="definitions_P09">
+
+  <!-- ================================================================ -->
+  <!-- PROCESSO 09 – TROCA DE ENVOLVIDOS (RT)                           -->
+  <!-- Permite substituir o Responsável Técnico (PPCI ou PSPCIM) em     -->
+  <!-- licenciamentos ativos. Fluxo:                                    -->
+  <!--   Validar tipo de licenciamento (somente PPCI/PSPCIM) →          -->
+  <!--   Cidadão seleciona novo RT no sistema →                         -->
+  <!--   Paralelo: RT atual autoriza saída + Novo RT autoriza entrada → -->
+  <!--   Sistema efetua a troca ou, se cancelada, mantém RT atual       -->
+  <!-- ================================================================ -->
+  <process id="Proc_09" name="09 - Troca de Envolvidos (RT)" isExecutable="false">
+
+    <startEvent id="P09_Start" name="Solicitação de&#10;Troca de RT Iniciada">
+      <outgoing>P09_sf01</outgoing>
+    </startEvent>
+
+    <serviceTask id="P09_T01" name="Validar Tipo de Licenciamento&#10;(PPCI ou PSPCIM apenas)">
+      <incoming>P09_sf01</incoming>
+      <outgoing>P09_sf02</outgoing>
+    </serviceTask>
+
+    <exclusiveGateway id="P09_GW01" name="Tipo&#10;Permitido?">
+      <incoming>P09_sf02</incoming>
+      <outgoing>P09_sf03</outgoing>
+      <outgoing>P09_sf04</outgoing>
+    </exclusiveGateway>
+
+    <endEvent id="P09_EndErr" name="Erro: Tipo de&#10;Licenciamento Inválido (403)">
+      <incoming>P09_sf03</incoming>
+      <errorEventDefinition id="P09_ErrDef"/>
+    </endEvent>
+
+    <userTask id="P09_T02" name="Cidadão Seleciona&#10;Novo RT no Sistema">
+      <incoming>P09_sf04</incoming>
+      <outgoing>P09_sf05</outgoing>
+    </userTask>
+
+    <serviceTask id="P09_T03" name="Verificar Habilitação do&#10;Novo RT (CREA/CFT)">
+      <incoming>P09_sf05</incoming>
+      <outgoing>P09_sf06</outgoing>
+    </serviceTask>
+
+    <exclusiveGateway id="P09_GW02" name="Novo RT&#10;Habilitado?">
+      <incoming>P09_sf06</incoming>
+      <outgoing>P09_sf07</outgoing>
+      <outgoing>P09_sf08</outgoing>
+    </exclusiveGateway>
+
+    <endEvent id="P09_EndRTInvalido" name="Erro: Novo RT&#10;Sem Habilitação">
+      <incoming>P09_sf07</incoming>
+      <errorEventDefinition id="P09_ErrDef2"/>
+    </endEvent>
+
+    <parallelGateway id="P09_PGW01" name="Solicitar&#10;Autorizações em Paralelo">
+      <incoming>P09_sf08</incoming>
+      <outgoing>P09_sf09</outgoing>
+      <outgoing>P09_sf10</outgoing>
+    </parallelGateway>
+
+    <userTask id="P09_T04" name="RT Atual: Autorizar&#10;Saída do Processo">
+      <incoming>P09_sf09</incoming>
+      <outgoing>P09_sf11</outgoing>
+    </userTask>
+
+    <userTask id="P09_T05" name="Novo RT: Autorizar&#10;Entrada no Processo">
+      <incoming>P09_sf10</incoming>
+      <outgoing>P09_sf12</outgoing>
+    </userTask>
+
+    <parallelGateway id="P09_PGW02" name="Ambos&#10;Autorizaram?">
+      <incoming>P09_sf11</incoming>
+      <incoming>P09_sf12</incoming>
+      <outgoing>P09_sf13</outgoing>
+    </parallelGateway>
+
+    <exclusiveGateway id="P09_GW03" name="Troca&#10;Confirmada?">
+      <incoming>P09_sf13</incoming>
+      <outgoing>P09_sf14</outgoing>
+      <outgoing>P09_sf15</outgoing>
+    </exclusiveGateway>
+
+    <serviceTask id="P09_T06" name="Efetivar Troca de RT&#10;e Notificar Envolvidos">
+      <incoming>P09_sf14</incoming>
+      <outgoing>P09_sf16</outgoing>
+    </serviceTask>
+
+    <serviceTask id="P09_T07" name="Cancelar Troca e&#10;Manter RT Atual">
+      <incoming>P09_sf15</incoming>
+      <outgoing>P09_sf17</outgoing>
+    </serviceTask>
+
+    <endEvent id="P09_EndEfetivado" name="Troca Efetivada&#10;com Sucesso">
+      <incoming>P09_sf16</incoming>
+    </endEvent>
+
+    <endEvent id="P09_EndCancelado" name="Troca Cancelada&#10;– RT Mantido">
+      <incoming>P09_sf17</incoming>
+    </endEvent>
+
+    <sequenceFlow id="P09_sf01"  sourceRef="P09_Start"   targetRef="P09_T01"/>
+    <sequenceFlow id="P09_sf02"  sourceRef="P09_T01"     targetRef="P09_GW01"/>
+    <sequenceFlow id="P09_sf03"  name="Não"              sourceRef="P09_GW01"  targetRef="P09_EndErr"/>
+    <sequenceFlow id="P09_sf04"  name="Sim"              sourceRef="P09_GW01"  targetRef="P09_T02"/>
+    <sequenceFlow id="P09_sf05"  sourceRef="P09_T02"     targetRef="P09_T03"/>
+    <sequenceFlow id="P09_sf06"  sourceRef="P09_T03"     targetRef="P09_GW02"/>
+    <sequenceFlow id="P09_sf07"  name="Não"              sourceRef="P09_GW02"  targetRef="P09_EndRTInvalido"/>
+    <sequenceFlow id="P09_sf08"  name="Sim"              sourceRef="P09_GW02"  targetRef="P09_PGW01"/>
+    <sequenceFlow id="P09_sf09"  sourceRef="P09_PGW01"   targetRef="P09_T04"/>
+    <sequenceFlow id="P09_sf10"  sourceRef="P09_PGW01"   targetRef="P09_T05"/>
+    <sequenceFlow id="P09_sf11"  sourceRef="P09_T04"     targetRef="P09_PGW02"/>
+    <sequenceFlow id="P09_sf12"  sourceRef="P09_T05"     targetRef="P09_PGW02"/>
+    <sequenceFlow id="P09_sf13"  sourceRef="P09_PGW02"   targetRef="P09_GW03"/>
+    <sequenceFlow id="P09_sf14"  name="Sim"              sourceRef="P09_GW03"  targetRef="P09_T06"/>
+    <sequenceFlow id="P09_sf15"  name="Não (cancelar)"   sourceRef="P09_GW03"  targetRef="P09_T07"/>
+    <sequenceFlow id="P09_sf16"  sourceRef="P09_T06"     targetRef="P09_EndEfetivado"/>
+    <sequenceFlow id="P09_sf17"  sourceRef="P09_T07"     targetRef="P09_EndCancelado"/>
+  </process>
+
+  <bpmndi:BPMNDiagram id="diagram_P09">
+    <bpmndi:BPMNPlane id="plane_P09" bpmnElement="Proc_09">
+      <bpmndi:BPMNShape id="shape_P09_Start" bpmnElement="P09_Start">
+        <omgdc:Bounds x="102" y="242" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P09_T01" bpmnElement="P09_T01">
+        <omgdc:Bounds x="200" y="220" width="180" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P09_GW01" bpmnElement="P09_GW01" isMarkerVisible="true">
+        <omgdc:Bounds x="435" y="235" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P09_EndErr" bpmnElement="P09_EndErr" isMarkerVisible="true">
+        <omgdc:Bounds x="442" y="102" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P09_T02" bpmnElement="P09_T02">
+        <omgdc:Bounds x="545" y="220" width="160" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P09_T03" bpmnElement="P09_T03">
+        <omgdc:Bounds x="755" y="220" width="170" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P09_GW02" bpmnElement="P09_GW02" isMarkerVisible="true">
+        <omgdc:Bounds x="980" y="235" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P09_EndRTInvalido" bpmnElement="P09_EndRTInvalido" isMarkerVisible="true">
+        <omgdc:Bounds x="987" y="102" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P09_PGW01" bpmnElement="P09_PGW01">
+        <omgdc:Bounds x="1090" y="235" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P09_T04" bpmnElement="P09_T04">
+        <omgdc:Bounds x="1200" y="140" width="160" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P09_T05" bpmnElement="P09_T05">
+        <omgdc:Bounds x="1200" y="340" width="160" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P09_PGW02" bpmnElement="P09_PGW02">
+        <omgdc:Bounds x="1420" y="235" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P09_GW03" bpmnElement="P09_GW03" isMarkerVisible="true">
+        <omgdc:Bounds x="1530" y="235" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P09_T06" bpmnElement="P09_T06">
+        <omgdc:Bounds x="1640" y="140" width="170" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P09_T07" bpmnElement="P09_T07">
+        <omgdc:Bounds x="1640" y="340" width="170" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P09_EndEfetivado" bpmnElement="P09_EndEfetivado">
+        <omgdc:Bounds x="1872" y="162" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P09_EndCancelado" bpmnElement="P09_EndCancelado">
+        <omgdc:Bounds x="1872" y="362" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNEdge id="edge_P09_sf01" bpmnElement="P09_sf01">
+        <omgdi:waypoint x="138" y="260"/>
+        <omgdi:waypoint x="200" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P09_sf02" bpmnElement="P09_sf02">
+        <omgdi:waypoint x="380" y="260"/>
+        <omgdi:waypoint x="435" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P09_sf03" bpmnElement="P09_sf03">
+        <omgdi:waypoint x="460" y="235"/>
+        <omgdi:waypoint x="460" y="138"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P09_sf04" bpmnElement="P09_sf04">
+        <omgdi:waypoint x="485" y="260"/>
+        <omgdi:waypoint x="545" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P09_sf05" bpmnElement="P09_sf05">
+        <omgdi:waypoint x="705" y="260"/>
+        <omgdi:waypoint x="755" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P09_sf06" bpmnElement="P09_sf06">
+        <omgdi:waypoint x="925" y="260"/>
+        <omgdi:waypoint x="980" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P09_sf07" bpmnElement="P09_sf07">
+        <omgdi:waypoint x="1005" y="235"/>
+        <omgdi:waypoint x="1005" y="138"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P09_sf08" bpmnElement="P09_sf08">
+        <omgdi:waypoint x="1030" y="260"/>
+        <omgdi:waypoint x="1090" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P09_sf09" bpmnElement="P09_sf09">
+        <omgdi:waypoint x="1115" y="235"/>
+        <omgdi:waypoint x="1115" y="180"/>
+        <omgdi:waypoint x="1200" y="180"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P09_sf10" bpmnElement="P09_sf10">
+        <omgdi:waypoint x="1115" y="285"/>
+        <omgdi:waypoint x="1115" y="380"/>
+        <omgdi:waypoint x="1200" y="380"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P09_sf11" bpmnElement="P09_sf11">
+        <omgdi:waypoint x="1360" y="180"/>
+        <omgdi:waypoint x="1445" y="180"/>
+        <omgdi:waypoint x="1445" y="235"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P09_sf12" bpmnElement="P09_sf12">
+        <omgdi:waypoint x="1360" y="380"/>
+        <omgdi:waypoint x="1445" y="380"/>
+        <omgdi:waypoint x="1445" y="285"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P09_sf13" bpmnElement="P09_sf13">
+        <omgdi:waypoint x="1470" y="260"/>
+        <omgdi:waypoint x="1530" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P09_sf14" bpmnElement="P09_sf14">
+        <omgdi:waypoint x="1555" y="235"/>
+        <omgdi:waypoint x="1555" y="180"/>
+        <omgdi:waypoint x="1640" y="180"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P09_sf15" bpmnElement="P09_sf15">
+        <omgdi:waypoint x="1555" y="285"/>
+        <omgdi:waypoint x="1555" y="380"/>
+        <omgdi:waypoint x="1640" y="380"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P09_sf16" bpmnElement="P09_sf16">
+        <omgdi:waypoint x="1810" y="180"/>
+        <omgdi:waypoint x="1872" y="180"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P09_sf17" bpmnElement="P09_sf17">
+        <omgdi:waypoint x="1810" y="380"/>
+        <omgdi:waypoint x="1872" y="380"/>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</definitions>

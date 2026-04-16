@@ -1,0 +1,191 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI"
+             xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+             targetNamespace="http://solcbm.procergs.rs.gov.br/bpmn"
+             id="definitions_P04">
+
+  <!-- ================================================================ -->
+  <!-- PROCESSO 04 – ANÁLISE TÉCNICA ADMINISTRATIVA (ADM)               -->
+  <!-- Solicitação entra em AGUARDANDO_DISTRIBUICAO →                   -->
+  <!-- coordenador distribui para analista → EM_ANALISE →               -->
+  <!-- analista registra parecer:                                        -->
+  <!--   CA  = Conformidade Atendida → emite APPCI → AGUARDANDO_PRPCI   -->
+  <!--   NCS = Não Conformidade Simples → RT corrige e resubmete         -->
+  <!--   CIA = Conformidade Inatendida Arquivo → arquiva / inviabilidade -->
+  <!-- ================================================================ -->
+  <process id="Proc_04" name="04 - Análise Técnica Administrativa (ADM)" isExecutable="false">
+
+    <startEvent id="P04_Start" name="Solicitação em&#10;AGUARDANDO_DISTRIBUICAO">
+      <outgoing>P04_sf01</outgoing>
+    </startEvent>
+
+    <userTask id="P04_T01" name="Coordenador Valida&#10;e Distribui para Analista">
+      <incoming>P04_sf01</incoming>
+      <outgoing>P04_sf02</outgoing>
+    </userTask>
+
+    <exclusiveGateway id="P04_GW01" name="Distribuição&#10;Válida?">
+      <incoming>P04_sf02</incoming>
+      <outgoing>P04_sf03</outgoing>
+      <outgoing>P04_sf04</outgoing>
+    </exclusiveGateway>
+
+    <endEvent id="P04_EndErr" name="Erro: Distribuição&#10;Inválida">
+      <incoming>P04_sf03</incoming>
+      <errorEventDefinition id="P04_ErrDef"/>
+    </endEvent>
+
+    <serviceTask id="P04_T02" name="Atualizar Status:&#10;EM_ANALISE">
+      <incoming>P04_sf04</incoming>
+      <outgoing>P04_sf05</outgoing>
+    </serviceTask>
+
+    <userTask id="P04_T03" name="Analista Examina&#10;Documentação e Projeto">
+      <incoming>P04_sf05</incoming>
+      <incoming>P04_sf10</incoming>
+      <outgoing>P04_sf06</outgoing>
+    </userTask>
+
+    <userTask id="P04_T04" name="Registrar Parecer&#10;Técnico Fundamentado">
+      <incoming>P04_sf06</incoming>
+      <outgoing>P04_sf07</outgoing>
+    </userTask>
+
+    <exclusiveGateway id="P04_GW02" name="Resultado&#10;da Análise?">
+      <incoming>P04_sf07</incoming>
+      <outgoing>P04_sf08</outgoing>
+      <outgoing>P04_sf09</outgoing>
+      <outgoing>P04_sf10</outgoing>
+    </exclusiveGateway>
+
+    <serviceTask id="P04_T05" name="CA: Emitir APPCI e&#10;Notificar RT/Cidadão">
+      <incoming>P04_sf08</incoming>
+      <outgoing>P04_sf11</outgoing>
+    </serviceTask>
+
+    <serviceTask id="P04_T06" name="CIA: Registrar&#10;Inviabilidade/Arquivo">
+      <incoming>P04_sf09</incoming>
+      <outgoing>P04_sf12</outgoing>
+    </serviceTask>
+
+    <endEvent id="P04_EndCA" name="CA – APPCI Emitido&#10;(AGUARDANDO_PRPCI)">
+      <incoming>P04_sf11</incoming>
+    </endEvent>
+
+    <endEvent id="P04_EndCIA" name="CIA – Processo&#10;Arquivado / Inviável">
+      <incoming>P04_sf12</incoming>
+    </endEvent>
+
+    <sequenceFlow id="P04_sf01"  sourceRef="P04_Start"  targetRef="P04_T01"/>
+    <sequenceFlow id="P04_sf02"  sourceRef="P04_T01"    targetRef="P04_GW01"/>
+    <sequenceFlow id="P04_sf03"  name="Não"             sourceRef="P04_GW01" targetRef="P04_EndErr"/>
+    <sequenceFlow id="P04_sf04"  name="Sim"             sourceRef="P04_GW01" targetRef="P04_T02"/>
+    <sequenceFlow id="P04_sf05"  sourceRef="P04_T02"    targetRef="P04_T03"/>
+    <sequenceFlow id="P04_sf06"  sourceRef="P04_T03"    targetRef="P04_T04"/>
+    <sequenceFlow id="P04_sf07"  sourceRef="P04_T04"    targetRef="P04_GW02"/>
+    <sequenceFlow id="P04_sf08"  name="CA"              sourceRef="P04_GW02" targetRef="P04_T05"/>
+    <sequenceFlow id="P04_sf09"  name="CIA (Arquivo)"   sourceRef="P04_GW02" targetRef="P04_T06"/>
+    <sequenceFlow id="P04_sf10"  name="NCS (RT corrige)" sourceRef="P04_GW02" targetRef="P04_T03"/>
+    <sequenceFlow id="P04_sf11"  sourceRef="P04_T05"    targetRef="P04_EndCA"/>
+    <sequenceFlow id="P04_sf12"  sourceRef="P04_T06"    targetRef="P04_EndCIA"/>
+  </process>
+
+  <bpmndi:BPMNDiagram id="diagram_P04">
+    <bpmndi:BPMNPlane id="plane_P04" bpmnElement="Proc_04">
+      <bpmndi:BPMNShape id="shape_P04_Start" bpmnElement="P04_Start">
+        <omgdc:Bounds x="102" y="242" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P04_T01" bpmnElement="P04_T01">
+        <omgdc:Bounds x="200" y="220" width="160" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P04_GW01" bpmnElement="P04_GW01" isMarkerVisible="true">
+        <omgdc:Bounds x="415" y="235" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P04_EndErr" bpmnElement="P04_EndErr" isMarkerVisible="true">
+        <omgdc:Bounds x="422" y="102" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P04_T02" bpmnElement="P04_T02">
+        <omgdc:Bounds x="520" y="220" width="160" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P04_T03" bpmnElement="P04_T03">
+        <omgdc:Bounds x="730" y="220" width="160" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P04_T04" bpmnElement="P04_T04">
+        <omgdc:Bounds x="940" y="220" width="160" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P04_GW02" bpmnElement="P04_GW02" isMarkerVisible="true">
+        <omgdc:Bounds x="1155" y="235" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P04_T05" bpmnElement="P04_T05">
+        <omgdc:Bounds x="1260" y="100" width="170" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P04_T06" bpmnElement="P04_T06">
+        <omgdc:Bounds x="1260" y="360" width="170" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P04_EndCA" bpmnElement="P04_EndCA">
+        <omgdc:Bounds x="1492" y="122" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P04_EndCIA" bpmnElement="P04_EndCIA">
+        <omgdc:Bounds x="1492" y="382" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNEdge id="edge_P04_sf01" bpmnElement="P04_sf01">
+        <omgdi:waypoint x="138" y="260"/>
+        <omgdi:waypoint x="200" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P04_sf02" bpmnElement="P04_sf02">
+        <omgdi:waypoint x="360" y="260"/>
+        <omgdi:waypoint x="415" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P04_sf03" bpmnElement="P04_sf03">
+        <omgdi:waypoint x="440" y="235"/>
+        <omgdi:waypoint x="440" y="138"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P04_sf04" bpmnElement="P04_sf04">
+        <omgdi:waypoint x="465" y="260"/>
+        <omgdi:waypoint x="520" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P04_sf05" bpmnElement="P04_sf05">
+        <omgdi:waypoint x="680" y="260"/>
+        <omgdi:waypoint x="730" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P04_sf06" bpmnElement="P04_sf06">
+        <omgdi:waypoint x="890" y="260"/>
+        <omgdi:waypoint x="940" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P04_sf07" bpmnElement="P04_sf07">
+        <omgdi:waypoint x="1100" y="260"/>
+        <omgdi:waypoint x="1155" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P04_sf08" bpmnElement="P04_sf08">
+        <omgdi:waypoint x="1180" y="235"/>
+        <omgdi:waypoint x="1180" y="140"/>
+        <omgdi:waypoint x="1260" y="140"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P04_sf09" bpmnElement="P04_sf09">
+        <omgdi:waypoint x="1180" y="285"/>
+        <omgdi:waypoint x="1180" y="400"/>
+        <omgdi:waypoint x="1260" y="400"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P04_sf10" bpmnElement="P04_sf10">
+        <omgdi:waypoint x="1205" y="260"/>
+        <omgdi:waypoint x="1250" y="260"/>
+        <omgdi:waypoint x="1250" y="480"/>
+        <omgdi:waypoint x="810"  y="480"/>
+        <omgdi:waypoint x="810"  y="300"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P04_sf11" bpmnElement="P04_sf11">
+        <omgdi:waypoint x="1430" y="140"/>
+        <omgdi:waypoint x="1492" y="140"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P04_sf12" bpmnElement="P04_sf12">
+        <omgdi:waypoint x="1430" y="400"/>
+        <omgdi:waypoint x="1492" y="400"/>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</definitions>

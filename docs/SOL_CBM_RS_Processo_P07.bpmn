@@ -1,0 +1,233 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI"
+             xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+             targetNamespace="http://solcbm.procergs.rs.gov.br/bpmn"
+             id="definitions_P07">
+
+  <!-- ================================================================ -->
+  <!-- PROCESSO 07 – VISTORIA PRESENCIAL                                -->
+  <!-- RT solicita vistoria (status NCA) →                              -->
+  <!-- ADM distribui para fiscal → fiscal executa vistoria in loco →    -->
+  <!-- Registra Laudo de Vistoria:                                       -->
+  <!--   Aprovado → Homologação → APPCI emitido → ALVARA_VIGENTE        -->
+  <!--   Reprovado → Retorna ao RT para adequações                       -->
+  <!--   Inviável  → Arquiva processo (CIA)                              -->
+  <!-- ================================================================ -->
+  <process id="Proc_07" name="07 - Vistoria Presencial" isExecutable="false">
+
+    <startEvent id="P07_Start" name="Solicitação em NCA&#10;(Necessita Vistoria)">
+      <outgoing>P07_sf01</outgoing>
+    </startEvent>
+
+    <userTask id="P07_T01" name="RT Solicita&#10;Agendamento de Vistoria">
+      <incoming>P07_sf01</incoming>
+      <outgoing>P07_sf02</outgoing>
+    </userTask>
+
+    <serviceTask id="P07_T02" name="Validar Situação do RT&#10;e do Processo">
+      <incoming>P07_sf02</incoming>
+      <outgoing>P07_sf03</outgoing>
+    </serviceTask>
+
+    <exclusiveGateway id="P07_GW01" name="RT e Processo&#10;Válidos?">
+      <incoming>P07_sf03</incoming>
+      <outgoing>P07_sf04</outgoing>
+      <outgoing>P07_sf05</outgoing>
+    </exclusiveGateway>
+
+    <endEvent id="P07_EndErr" name="Erro: Validação&#10;do RT Falhou">
+      <incoming>P07_sf04</incoming>
+      <errorEventDefinition id="P07_ErrDef"/>
+    </endEvent>
+
+    <userTask id="P07_T03" name="ADM Distribui Vistoria&#10;para Fiscal Responsável">
+      <incoming>P07_sf05</incoming>
+      <outgoing>P07_sf06</outgoing>
+    </userTask>
+
+    <userTask id="P07_T04" name="Fiscal Executa Vistoria&#10;In Loco no Estabelecimento">
+      <incoming>P07_sf06</incoming>
+      <outgoing>P07_sf07</outgoing>
+    </userTask>
+
+    <userTask id="P07_T05" name="Registrar Laudo&#10;de Vistoria no Sistema">
+      <incoming>P07_sf07</incoming>
+      <outgoing>P07_sf08</outgoing>
+    </userTask>
+
+    <serviceTask id="P07_T06" name="Validar Laudo&#10;(Status: EM_APROVACAO)">
+      <incoming>P07_sf08</incoming>
+      <outgoing>P07_sf09</outgoing>
+    </serviceTask>
+
+    <exclusiveGateway id="P07_GW02" name="Resultado&#10;da Vistoria?">
+      <incoming>P07_sf09</incoming>
+      <outgoing>P07_sf10</outgoing>
+      <outgoing>P07_sf11</outgoing>
+      <outgoing>P07_sf12</outgoing>
+    </exclusiveGateway>
+
+    <serviceTask id="P07_T07" name="Homologar Vistoria e&#10;Emitir APPCI / ALVARA_VIGENTE">
+      <incoming>P07_sf10</incoming>
+      <outgoing>P07_sf13</outgoing>
+    </serviceTask>
+
+    <serviceTask id="P07_T08" name="Reprovar: Notificar RT&#10;para Adequações (Nova Vistoria)">
+      <incoming>P07_sf11</incoming>
+      <outgoing>P07_sf14</outgoing>
+    </serviceTask>
+
+    <serviceTask id="P07_T09" name="Inviabilidade: Arquivar&#10;Processo (CIA)">
+      <incoming>P07_sf12</incoming>
+      <outgoing>P07_sf15</outgoing>
+    </serviceTask>
+
+    <endEvent id="P07_EndAprovado" name="Vistoria Aprovada&#10;– ALVARA_VIGENTE">
+      <incoming>P07_sf13</incoming>
+    </endEvent>
+
+    <endEvent id="P07_EndReprovado" name="Vistoria Reprovada&#10;– RT Deve Adequar">
+      <incoming>P07_sf14</incoming>
+    </endEvent>
+
+    <endEvent id="P07_EndInviavel" name="Processo Arquivado&#10;por Inviabilidade (CIA)">
+      <incoming>P07_sf15</incoming>
+    </endEvent>
+
+    <sequenceFlow id="P07_sf01"  sourceRef="P07_Start"  targetRef="P07_T01"/>
+    <sequenceFlow id="P07_sf02"  sourceRef="P07_T01"    targetRef="P07_T02"/>
+    <sequenceFlow id="P07_sf03"  sourceRef="P07_T02"    targetRef="P07_GW01"/>
+    <sequenceFlow id="P07_sf04"  name="Não"             sourceRef="P07_GW01" targetRef="P07_EndErr"/>
+    <sequenceFlow id="P07_sf05"  name="Sim"             sourceRef="P07_GW01" targetRef="P07_T03"/>
+    <sequenceFlow id="P07_sf06"  sourceRef="P07_T03"    targetRef="P07_T04"/>
+    <sequenceFlow id="P07_sf07"  sourceRef="P07_T04"    targetRef="P07_T05"/>
+    <sequenceFlow id="P07_sf08"  sourceRef="P07_T05"    targetRef="P07_T06"/>
+    <sequenceFlow id="P07_sf09"  sourceRef="P07_T06"    targetRef="P07_GW02"/>
+    <sequenceFlow id="P07_sf10"  name="Aprovado"        sourceRef="P07_GW02" targetRef="P07_T07"/>
+    <sequenceFlow id="P07_sf11"  name="Reprovado"       sourceRef="P07_GW02" targetRef="P07_T08"/>
+    <sequenceFlow id="P07_sf12"  name="Inviável"        sourceRef="P07_GW02" targetRef="P07_T09"/>
+    <sequenceFlow id="P07_sf13"  sourceRef="P07_T07"    targetRef="P07_EndAprovado"/>
+    <sequenceFlow id="P07_sf14"  sourceRef="P07_T08"    targetRef="P07_EndReprovado"/>
+    <sequenceFlow id="P07_sf15"  sourceRef="P07_T09"    targetRef="P07_EndInviavel"/>
+  </process>
+
+  <bpmndi:BPMNDiagram id="diagram_P07">
+    <bpmndi:BPMNPlane id="plane_P07" bpmnElement="Proc_07">
+      <bpmndi:BPMNShape id="shape_P07_Start" bpmnElement="P07_Start">
+        <omgdc:Bounds x="102" y="242" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P07_T01" bpmnElement="P07_T01">
+        <omgdc:Bounds x="200" y="220" width="150" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P07_T02" bpmnElement="P07_T02">
+        <omgdc:Bounds x="400" y="220" width="160" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P07_GW01" bpmnElement="P07_GW01" isMarkerVisible="true">
+        <omgdc:Bounds x="615" y="235" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P07_EndErr" bpmnElement="P07_EndErr" isMarkerVisible="true">
+        <omgdc:Bounds x="622" y="102" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P07_T03" bpmnElement="P07_T03">
+        <omgdc:Bounds x="725" y="220" width="160" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P07_T04" bpmnElement="P07_T04">
+        <omgdc:Bounds x="940" y="220" width="170" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P07_T05" bpmnElement="P07_T05">
+        <omgdc:Bounds x="1160" y="220" width="160" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P07_T06" bpmnElement="P07_T06">
+        <omgdc:Bounds x="1375" y="220" width="160" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P07_GW02" bpmnElement="P07_GW02" isMarkerVisible="true">
+        <omgdc:Bounds x="1590" y="235" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P07_T07" bpmnElement="P07_T07">
+        <omgdc:Bounds x="1700" y="100" width="180" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P07_T08" bpmnElement="P07_T08">
+        <omgdc:Bounds x="1700" y="220" width="180" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P07_T09" bpmnElement="P07_T09">
+        <omgdc:Bounds x="1700" y="340" width="180" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P07_EndAprovado" bpmnElement="P07_EndAprovado">
+        <omgdc:Bounds x="1942" y="122" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P07_EndReprovado" bpmnElement="P07_EndReprovado">
+        <omgdc:Bounds x="1942" y="242" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P07_EndInviavel" bpmnElement="P07_EndInviavel">
+        <omgdc:Bounds x="1942" y="362" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNEdge id="edge_P07_sf01" bpmnElement="P07_sf01">
+        <omgdi:waypoint x="138" y="260"/>
+        <omgdi:waypoint x="200" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P07_sf02" bpmnElement="P07_sf02">
+        <omgdi:waypoint x="350" y="260"/>
+        <omgdi:waypoint x="400" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P07_sf03" bpmnElement="P07_sf03">
+        <omgdi:waypoint x="560" y="260"/>
+        <omgdi:waypoint x="615" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P07_sf04" bpmnElement="P07_sf04">
+        <omgdi:waypoint x="640" y="235"/>
+        <omgdi:waypoint x="640" y="138"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P07_sf05" bpmnElement="P07_sf05">
+        <omgdi:waypoint x="665" y="260"/>
+        <omgdi:waypoint x="725" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P07_sf06" bpmnElement="P07_sf06">
+        <omgdi:waypoint x="885" y="260"/>
+        <omgdi:waypoint x="940" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P07_sf07" bpmnElement="P07_sf07">
+        <omgdi:waypoint x="1110" y="260"/>
+        <omgdi:waypoint x="1160" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P07_sf08" bpmnElement="P07_sf08">
+        <omgdi:waypoint x="1320" y="260"/>
+        <omgdi:waypoint x="1375" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P07_sf09" bpmnElement="P07_sf09">
+        <omgdi:waypoint x="1535" y="260"/>
+        <omgdi:waypoint x="1590" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P07_sf10" bpmnElement="P07_sf10">
+        <omgdi:waypoint x="1615" y="235"/>
+        <omgdi:waypoint x="1615" y="140"/>
+        <omgdi:waypoint x="1700" y="140"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P07_sf11" bpmnElement="P07_sf11">
+        <omgdi:waypoint x="1640" y="260"/>
+        <omgdi:waypoint x="1700" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P07_sf12" bpmnElement="P07_sf12">
+        <omgdi:waypoint x="1615" y="285"/>
+        <omgdi:waypoint x="1615" y="380"/>
+        <omgdi:waypoint x="1700" y="380"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P07_sf13" bpmnElement="P07_sf13">
+        <omgdi:waypoint x="1880" y="140"/>
+        <omgdi:waypoint x="1942" y="140"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P07_sf14" bpmnElement="P07_sf14">
+        <omgdi:waypoint x="1880" y="260"/>
+        <omgdi:waypoint x="1942" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P07_sf15" bpmnElement="P07_sf15">
+        <omgdi:waypoint x="1880" y="380"/>
+        <omgdi:waypoint x="1942" y="380"/>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</definitions>

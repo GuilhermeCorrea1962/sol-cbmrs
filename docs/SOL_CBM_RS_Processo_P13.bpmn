@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI"
+             xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+             targetNamespace="http://solcbm.procergs.rs.gov.br/bpmn"
+             id="definitions_P13">
+
+  <!-- ============================================================ -->
+  <!-- PROCESSO 13 – JOBS AUTOMÁTICOS DO SISTEMA                    -->
+  <!-- Acionamento diário via scheduler:                            -->
+  <!--   Job 1 – Cancelar boletos vencidos sem pagamento            -->
+  <!--   Job 2 – Marcar alvarás com validade expirada (VENCIDO)     -->
+  <!--   Job 3 – Notificar renovações / vencimentos próximos        -->
+  <!-- Execução em paralelo → join → registro de log               -->
+  <!-- ============================================================ -->
+  <process id="Proc_13" name="13 - Jobs Automáticos do Sistema" isExecutable="false">
+
+    <startEvent id="P13_Start" name="Agendamento&#10;Diário (Scheduler)">
+      <timerEventDefinition id="P13_TimerDef">
+        <timeCycle>0 0 2 * * ?</timeCycle>
+      </timerEventDefinition>
+      <outgoing>P13_sf01</outgoing>
+    </startEvent>
+
+    <parallelGateway id="P13_PGW01" name="Disparar Jobs&#10;em Paralelo">
+      <incoming>P13_sf01</incoming>
+      <outgoing>P13_sf02</outgoing>
+      <outgoing>P13_sf03</outgoing>
+      <outgoing>P13_sf04</outgoing>
+    </parallelGateway>
+
+    <serviceTask id="P13_T01" name="Job 1: Verificar e Cancelar&#10;Boletos Vencidos">
+      <incoming>P13_sf02</incoming>
+      <outgoing>P13_sf05</outgoing>
+    </serviceTask>
+
+    <serviceTask id="P13_T02" name="Job 2: Verificar Alvarás&#10;Vencidos → ALVARA_VENCIDO">
+      <incoming>P13_sf03</incoming>
+      <outgoing>P13_sf06</outgoing>
+    </serviceTask>
+
+    <serviceTask id="P13_T03" name="Job 3: Notificar Vencimentos&#10;e Renovações Próximas">
+      <incoming>P13_sf04</incoming>
+      <outgoing>P13_sf07</outgoing>
+    </serviceTask>
+
+    <parallelGateway id="P13_PGW02" name="Aguardar&#10;Todos os Jobs">
+      <incoming>P13_sf05</incoming>
+      <incoming>P13_sf06</incoming>
+      <incoming>P13_sf07</incoming>
+      <outgoing>P13_sf08</outgoing>
+    </parallelGateway>
+
+    <serviceTask id="P13_T04" name="Registrar Log&#10;de Execução">
+      <incoming>P13_sf08</incoming>
+      <outgoing>P13_sf09</outgoing>
+    </serviceTask>
+
+    <endEvent id="P13_End" name="Jobs Concluídos&#10;com Sucesso">
+      <incoming>P13_sf09</incoming>
+    </endEvent>
+
+    <sequenceFlow id="P13_sf01" sourceRef="P13_Start"   targetRef="P13_PGW01"/>
+    <sequenceFlow id="P13_sf02" sourceRef="P13_PGW01"   targetRef="P13_T01"/>
+    <sequenceFlow id="P13_sf03" sourceRef="P13_PGW01"   targetRef="P13_T02"/>
+    <sequenceFlow id="P13_sf04" sourceRef="P13_PGW01"   targetRef="P13_T03"/>
+    <sequenceFlow id="P13_sf05" sourceRef="P13_T01"     targetRef="P13_PGW02"/>
+    <sequenceFlow id="P13_sf06" sourceRef="P13_T02"     targetRef="P13_PGW02"/>
+    <sequenceFlow id="P13_sf07" sourceRef="P13_T03"     targetRef="P13_PGW02"/>
+    <sequenceFlow id="P13_sf08" sourceRef="P13_PGW02"   targetRef="P13_T04"/>
+    <sequenceFlow id="P13_sf09" sourceRef="P13_T04"     targetRef="P13_End"/>
+  </process>
+
+  <bpmndi:BPMNDiagram id="diagram_P13">
+    <bpmndi:BPMNPlane id="plane_P13" bpmnElement="Proc_13">
+      <!-- Start (timer): cx=120, cy=260 -->
+      <bpmndi:BPMNShape id="shape_P13_Start" bpmnElement="P13_Start">
+        <omgdc:Bounds x="102" y="242" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <!-- PGW01 split: cx=230, cy=260 -->
+      <bpmndi:BPMNShape id="shape_P13_PGW01" bpmnElement="P13_PGW01">
+        <omgdc:Bounds x="205" y="235" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      <!-- T01 upper: cx=430, cy=140 -->
+      <bpmndi:BPMNShape id="shape_P13_T01" bpmnElement="P13_T01">
+        <omgdc:Bounds x="330" y="100" width="200" height="80"/>
+      </bpmndi:BPMNShape>
+      <!-- T02 center: cx=430, cy=260 -->
+      <bpmndi:BPMNShape id="shape_P13_T02" bpmnElement="P13_T02">
+        <omgdc:Bounds x="330" y="220" width="200" height="80"/>
+      </bpmndi:BPMNShape>
+      <!-- T03 lower: cx=430, cy=380 -->
+      <bpmndi:BPMNShape id="shape_P13_T03" bpmnElement="P13_T03">
+        <omgdc:Bounds x="330" y="340" width="200" height="80"/>
+      </bpmndi:BPMNShape>
+      <!-- PGW02 join: cx=610, cy=260 -->
+      <bpmndi:BPMNShape id="shape_P13_PGW02" bpmnElement="P13_PGW02">
+        <omgdc:Bounds x="585" y="235" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      <!-- T04: cx=750, cy=260 -->
+      <bpmndi:BPMNShape id="shape_P13_T04" bpmnElement="P13_T04">
+        <omgdc:Bounds x="690" y="220" width="160" height="80"/>
+      </bpmndi:BPMNShape>
+      <!-- End: cx=920, cy=260 -->
+      <bpmndi:BPMNShape id="shape_P13_End" bpmnElement="P13_End">
+        <omgdc:Bounds x="902" y="242" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNEdge id="edge_P13_sf01" bpmnElement="P13_sf01">
+        <omgdi:waypoint x="138" y="260"/>
+        <omgdi:waypoint x="205" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P13_sf02" bpmnElement="P13_sf02">
+        <omgdi:waypoint x="230" y="235"/>
+        <omgdi:waypoint x="230" y="140"/>
+        <omgdi:waypoint x="330" y="140"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P13_sf03" bpmnElement="P13_sf03">
+        <omgdi:waypoint x="255" y="260"/>
+        <omgdi:waypoint x="330" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P13_sf04" bpmnElement="P13_sf04">
+        <omgdi:waypoint x="230" y="285"/>
+        <omgdi:waypoint x="230" y="380"/>
+        <omgdi:waypoint x="330" y="380"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P13_sf05" bpmnElement="P13_sf05">
+        <omgdi:waypoint x="530" y="140"/>
+        <omgdi:waypoint x="610" y="140"/>
+        <omgdi:waypoint x="610" y="235"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P13_sf06" bpmnElement="P13_sf06">
+        <omgdi:waypoint x="530" y="260"/>
+        <omgdi:waypoint x="585" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P13_sf07" bpmnElement="P13_sf07">
+        <omgdi:waypoint x="530" y="380"/>
+        <omgdi:waypoint x="610" y="380"/>
+        <omgdi:waypoint x="610" y="285"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P13_sf08" bpmnElement="P13_sf08">
+        <omgdi:waypoint x="635" y="260"/>
+        <omgdi:waypoint x="690" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P13_sf09" bpmnElement="P13_sf09">
+        <omgdi:waypoint x="850" y="260"/>
+        <omgdi:waypoint x="902" y="260"/>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</definitions>

@@ -1,0 +1,218 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI"
+             xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+             targetNamespace="http://solcbm.procergs.rs.gov.br/bpmn"
+             id="definitions_P10">
+
+  <!-- ================================================================ -->
+  <!-- PROCESSO 10 – RECURSO / CONTESTAÇÃO DE DECISÃO                   -->
+  <!-- Cidadão ou RT contesta decisão de CIA/análise →                  -->
+  <!-- Sistema valida 7 campos obrigatórios (motivo, fundamentação,     -->
+  <!-- documentos de suporte, etc.) →                                   -->
+  <!-- 1ª Instância: Chefe CBM analisa →                               -->
+  <!--   Provido → Retornar à análise técnica                           -->
+  <!--   Improvido → Oferecer 2ª Instância (Comandante CBM)             -->
+  <!-- 2ª Instância: Decisão final (Provido ou Improvido definitivo)    -->
+  <!-- ================================================================ -->
+  <process id="Proc_10" name="10 - Recurso / Contestação de Decisão" isExecutable="false">
+
+    <startEvent id="P10_Start" name="Cidadão/RT Interpõe&#10;Recurso contra Decisão">
+      <outgoing>P10_sf01</outgoing>
+    </startEvent>
+
+    <userTask id="P10_T01" name="Preencher Formulário&#10;de Recurso (7 campos)">
+      <incoming>P10_sf01</incoming>
+      <outgoing>P10_sf02</outgoing>
+    </userTask>
+
+    <serviceTask id="P10_T02" name="Validar Campos Obrigatórios&#10;do Recurso (7 campos)">
+      <incoming>P10_sf02</incoming>
+      <outgoing>P10_sf03</outgoing>
+    </serviceTask>
+
+    <exclusiveGateway id="P10_GW01" name="Recurso&#10;Válido?">
+      <incoming>P10_sf03</incoming>
+      <outgoing>P10_sf04</outgoing>
+      <outgoing>P10_sf05</outgoing>
+    </exclusiveGateway>
+
+    <endEvent id="P10_EndErr" name="Erro: Campos&#10;Obrigatórios Incompletos">
+      <incoming>P10_sf04</incoming>
+      <errorEventDefinition id="P10_ErrDef"/>
+    </endEvent>
+
+    <userTask id="P10_T03" name="1ª Instância: Chefe CBM&#10;Analisa o Recurso">
+      <incoming>P10_sf05</incoming>
+      <outgoing>P10_sf06</outgoing>
+    </userTask>
+
+    <exclusiveGateway id="P10_GW02" name="Decisão&#10;1ª Instância?">
+      <incoming>P10_sf06</incoming>
+      <outgoing>P10_sf07</outgoing>
+      <outgoing>P10_sf08</outgoing>
+    </exclusiveGateway>
+
+    <serviceTask id="P10_T04" name="Recurso Provido: Retornar&#10;à Análise Técnica (Proc_04)">
+      <incoming>P10_sf07</incoming>
+      <outgoing>P10_sf09</outgoing>
+    </serviceTask>
+
+    <userTask id="P10_T05" name="2ª Instância: Comandante CBM&#10;Analisa o Recurso">
+      <incoming>P10_sf08</incoming>
+      <outgoing>P10_sf10</outgoing>
+    </userTask>
+
+    <exclusiveGateway id="P10_GW03" name="Decisão&#10;2ª Instância?">
+      <incoming>P10_sf10</incoming>
+      <outgoing>P10_sf11</outgoing>
+      <outgoing>P10_sf12</outgoing>
+    </exclusiveGateway>
+
+    <serviceTask id="P10_T06" name="2ª Instância Provida: Retornar&#10;à Análise (Proc_04)">
+      <incoming>P10_sf11</incoming>
+      <outgoing>P10_sf13</outgoing>
+    </serviceTask>
+
+    <serviceTask id="P10_T07" name="2ª Instância Improvida:&#10;Manter Decisão Final">
+      <incoming>P10_sf12</incoming>
+      <outgoing>P10_sf14</outgoing>
+    </serviceTask>
+
+    <endEvent id="P10_EndProvido" name="Recurso Provido&#10;– Retorna à Análise">
+      <incoming>P10_sf09</incoming>
+      <incoming>P10_sf13</incoming>
+    </endEvent>
+
+    <endEvent id="P10_EndImprovido" name="Recurso Improvido&#10;– Decisão Mantida">
+      <incoming>P10_sf14</incoming>
+    </endEvent>
+
+    <sequenceFlow id="P10_sf01"  sourceRef="P10_Start"  targetRef="P10_T01"/>
+    <sequenceFlow id="P10_sf02"  sourceRef="P10_T01"    targetRef="P10_T02"/>
+    <sequenceFlow id="P10_sf03"  sourceRef="P10_T02"    targetRef="P10_GW01"/>
+    <sequenceFlow id="P10_sf04"  name="Não"             sourceRef="P10_GW01" targetRef="P10_EndErr"/>
+    <sequenceFlow id="P10_sf05"  name="Sim"             sourceRef="P10_GW01" targetRef="P10_T03"/>
+    <sequenceFlow id="P10_sf06"  sourceRef="P10_T03"    targetRef="P10_GW02"/>
+    <sequenceFlow id="P10_sf07"  name="Provido"         sourceRef="P10_GW02" targetRef="P10_T04"/>
+    <sequenceFlow id="P10_sf08"  name="Improvido"       sourceRef="P10_GW02" targetRef="P10_T05"/>
+    <sequenceFlow id="P10_sf09"  sourceRef="P10_T04"    targetRef="P10_EndProvido"/>
+    <sequenceFlow id="P10_sf10"  sourceRef="P10_T05"    targetRef="P10_GW03"/>
+    <sequenceFlow id="P10_sf11"  name="Provido"         sourceRef="P10_GW03" targetRef="P10_T06"/>
+    <sequenceFlow id="P10_sf12"  name="Improvido"       sourceRef="P10_GW03" targetRef="P10_T07"/>
+    <sequenceFlow id="P10_sf13"  sourceRef="P10_T06"    targetRef="P10_EndProvido"/>
+    <sequenceFlow id="P10_sf14"  sourceRef="P10_T07"    targetRef="P10_EndImprovido"/>
+  </process>
+
+  <bpmndi:BPMNDiagram id="diagram_P10">
+    <bpmndi:BPMNPlane id="plane_P10" bpmnElement="Proc_10">
+      <bpmndi:BPMNShape id="shape_P10_Start" bpmnElement="P10_Start">
+        <omgdc:Bounds x="102" y="242" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P10_T01" bpmnElement="P10_T01">
+        <omgdc:Bounds x="200" y="220" width="160" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P10_T02" bpmnElement="P10_T02">
+        <omgdc:Bounds x="420" y="220" width="170" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P10_GW01" bpmnElement="P10_GW01" isMarkerVisible="true">
+        <omgdc:Bounds x="645" y="235" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P10_EndErr" bpmnElement="P10_EndErr" isMarkerVisible="true">
+        <omgdc:Bounds x="652" y="102" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P10_T03" bpmnElement="P10_T03">
+        <omgdc:Bounds x="755" y="220" width="180" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P10_GW02" bpmnElement="P10_GW02" isMarkerVisible="true">
+        <omgdc:Bounds x="990" y="235" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P10_T04" bpmnElement="P10_T04">
+        <omgdc:Bounds x="1100" y="100" width="190" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P10_T05" bpmnElement="P10_T05">
+        <omgdc:Bounds x="1100" y="340" width="190" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P10_GW03" bpmnElement="P10_GW03" isMarkerVisible="true">
+        <omgdc:Bounds x="1350" y="355" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P10_T06" bpmnElement="P10_T06">
+        <omgdc:Bounds x="1460" y="280" width="190" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P10_T07" bpmnElement="P10_T07">
+        <omgdc:Bounds x="1460" y="420" width="190" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P10_EndProvido" bpmnElement="P10_EndProvido">
+        <omgdc:Bounds x="1712" y="302" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P10_EndImprovido" bpmnElement="P10_EndImprovido">
+        <omgdc:Bounds x="1712" y="442" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNEdge id="edge_P10_sf01" bpmnElement="P10_sf01">
+        <omgdi:waypoint x="138" y="260"/>
+        <omgdi:waypoint x="200" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P10_sf02" bpmnElement="P10_sf02">
+        <omgdi:waypoint x="360" y="260"/>
+        <omgdi:waypoint x="420" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P10_sf03" bpmnElement="P10_sf03">
+        <omgdi:waypoint x="590" y="260"/>
+        <omgdi:waypoint x="645" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P10_sf04" bpmnElement="P10_sf04">
+        <omgdi:waypoint x="670" y="235"/>
+        <omgdi:waypoint x="670" y="138"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P10_sf05" bpmnElement="P10_sf05">
+        <omgdi:waypoint x="695" y="260"/>
+        <omgdi:waypoint x="755" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P10_sf06" bpmnElement="P10_sf06">
+        <omgdi:waypoint x="935" y="260"/>
+        <omgdi:waypoint x="990" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P10_sf07" bpmnElement="P10_sf07">
+        <omgdi:waypoint x="1015" y="235"/>
+        <omgdi:waypoint x="1015" y="140"/>
+        <omgdi:waypoint x="1100" y="140"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P10_sf08" bpmnElement="P10_sf08">
+        <omgdi:waypoint x="1015" y="285"/>
+        <omgdi:waypoint x="1015" y="380"/>
+        <omgdi:waypoint x="1100" y="380"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P10_sf09" bpmnElement="P10_sf09">
+        <omgdi:waypoint x="1290" y="140"/>
+        <omgdi:waypoint x="1730" y="140"/>
+        <omgdi:waypoint x="1730" y="302"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P10_sf10" bpmnElement="P10_sf10">
+        <omgdi:waypoint x="1290" y="380"/>
+        <omgdi:waypoint x="1350" y="380"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P10_sf11" bpmnElement="P10_sf11">
+        <omgdi:waypoint x="1375" y="355"/>
+        <omgdi:waypoint x="1375" y="320"/>
+        <omgdi:waypoint x="1460" y="320"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P10_sf12" bpmnElement="P10_sf12">
+        <omgdi:waypoint x="1375" y="405"/>
+        <omgdi:waypoint x="1375" y="460"/>
+        <omgdi:waypoint x="1460" y="460"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P10_sf13" bpmnElement="P10_sf13">
+        <omgdi:waypoint x="1650" y="320"/>
+        <omgdi:waypoint x="1712" y="320"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P10_sf14" bpmnElement="P10_sf14">
+        <omgdi:waypoint x="1650" y="460"/>
+        <omgdi:waypoint x="1712" y="460"/>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</definitions>

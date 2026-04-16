@@ -1,0 +1,1212 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  id="Definitions_P11"
+                  targetNamespace="http://cbmrs.sol.p11"
+                  exporter="Camunda Modeler"
+                  exporterVersion="5.0.0">
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       P11 — Pagamento e Geração de Boleto
+       Stack Atual: Java EE · WildFly · JAX-RS · CDI · JPA/Hibernate · EJB @Stateless / @Singleton
+       Integração bancária: PROCERGS / Banrisul (REST + JWT/JWE + XML JAXB)
+       Confirmação de pagamento: arquivo CNAB 240 depositado em diretório do servidor
+       Dois pools independentes:
+         P11-A: Geração de Boleto (acionado pelo Cidadão/RT/Proprietário via frontend Angular)
+         P11-B: Confirmação de Pagamento (dois jobs @Schedule automáticos via EJBTimerService)
+  ═══════════════════════════════════════════════════════════════════════ -->
+
+  <bpmn:collaboration id="Collab_P11">
+    <bpmn:documentation>
+      Colaboração P11 — Pagamento e Geração de Boleto (SOL CBM-RS).
+      Stack: Java EE 7 · JAX-RS · CDI · EJB @Stateless/@Singleton · JPA/Hibernate · Oracle · WildFly/JBoss.
+      Autenticação: SOE PROCERGS / meu.rs.gov.br (OAuth2/OIDC).
+      Integração bancária: serviço intermediário PROCERGS (Banrisul SOAP encapsulado em REST JWT/JWE).
+      Confirmação de pagamento: arquivo CNAB 240 depositado em diretório do servidor.
+
+      Processo transversal: é acionado sempre que um licenciamento atinge um dos estados
+      de aguardo de pagamento (AGUARDANDO_PAGAMENTO, AGUARDANDO_PAGAMENTO_VISTORIA,
+      AGUARDANDO_PAGAMENTO_RENOVACAO).
+
+      Entidades principais: BoletoED (CBM_BOLETO), BoletoLicenciamentoED (CBM_BOLETO_LICENCIAMENTO),
+      BeneficiarioED (CBM_BENEFICIARIO), ParametroBoletoED (CBM_PARAMETRO_BOLETO),
+      LogGeraBoletoED (CBM_LOG_GERA_BOLETO).
+    </bpmn:documentation>
+    <bpmn:participant id="Pool_P11A" name="P11-A — Geração de Boleto (Solicitação do Cidadão)" processRef="Process_P11A" />
+    <bpmn:participant id="Pool_P11B" name="P11-B — Confirmação de Pagamento (Jobs @Schedule Automáticos)" processRef="Process_P11B" />
+  </bpmn:collaboration>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       PROCESSO P11-A: Geração de Boleto
+       Atores: Cidadão/RT/Proprietário | Sistema SOL Backend | PROCERGS/Banrisul
+  ═══════════════════════════════════════════════════════════════════════ -->
+  <bpmn:process id="Process_P11A" name="P11-A Geração de Boleto" isExecutable="false">
+
+    <bpmn:laneSet id="LaneSet_P11A">
+
+      <bpmn:lane id="Lane_Cidadao_A" name="Cidadão / RT / Proprietário">
+        <bpmn:documentation>
+          Ator externo autenticado via SOE PROCERGS (Implicit Flow OIDC — token Bearer).
+          Pode ser o RT (Responsável Técnico), RU (Responsável pelo Uso) ou Proprietário do licenciamento.
+          Identificado por idUsuarioSoe Long, obtido do token via CDI @SessionScoped.
+          Segurança: @AutorizaEnvolvido — interceptor verifica que o usuário é envolvido no licenciamento.
+          @Permissao(objeto="PAGAMENTOS", acao="INCLUIR") — controle RBAC para geração de boleto.
+        </bpmn:documentation>
+        <bpmn:flowNodeRef>Start_P11A</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>UT_ListarResponsaveis</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>UT_SolicitarBoleto</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>UT_DownloadBoleto</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>UT_EfetuarPagamento</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>End_BoletoEmitido</bpmn:flowNodeRef>
+      </bpmn:lane>
+
+      <bpmn:lane id="Lane_Sistema_A" name="Sistema SOL — Backend Java EE (BoletoLicenciamentoRN / BoletoRN)">
+        <bpmn:documentation>
+          Backend Java EE executando no WildFly/JBoss.
+          Classes principais:
+            BoletoLicenciamentoRN (@Stateless) — orquestra P11-A: gerarBoleto, downloadBoleto, listaPorLicenciamento.
+            BoletoRN (@Stateless) — CRUD de BoletoED, geração de nossoNumero, geração de PDF JasperReports.
+            BoletoLicenciamentoRNVal — validações: situação do licenciamento (RN-090), boleto anterior (RN-092).
+            BoletoIntegracaoProcergs — integração REST+JWT/JWE com PROCERGS/Banrisul (RN-101).
+          Todas as operações de banco ocorrem em transação @TransactionAttribute(REQUIRED).
+        </bpmn:documentation>
+        <bpmn:flowNodeRef>ST_ValidarPrecond</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>GW_PrecondOK</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>ST_VerifBoletoAnterior</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>GW_BloqueioAnterior</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>ST_CalcularMontarBoleto</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>GW_IntegracaoOK</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>ST_PersistirMarco</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>End_Erro400</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>End_ErroBloqueio</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>End_ErroIntegracao</bpmn:flowNodeRef>
+      </bpmn:lane>
+
+      <bpmn:lane id="Lane_PROCERGS" name="PROCERGS / Banrisul (Serviço Externo de Registro de Boleto)">
+        <bpmn:documentation>
+          Serviço intermediário PROCERGS que encapsula o SOAP Banrisul em uma API REST com segurança JWT/JWE.
+          URL de integração: PropriedadesEnum.INTEGRACAO_BOLETO_BANRISUL_URL_VIA_PROCERGS.
+          Protocolo: POST HTTP com payload JSON criptografado JWE (DirectEncrypter, AES-256-GCM),
+          assinado com HMAC-SHA256 (nimbus-jose-jwt).
+          Payload interno: XML JAXB com dados do título Banrisul codificado em Base64.
+          Retorno: XML Banrisul com codigoBarras (max 44 chars) e linhaDigitavel (max 47 chars).
+          Código de retorno "3" indica erro de registro no Banrisul.
+          Todo o ciclo de chamada é logado em CBM_LOG_GERA_BOLETO (LogGeraBoletoED).
+        </bpmn:documentation>
+        <bpmn:flowNodeRef>ST_RegistrarBoletoPROCERGS</bpmn:flowNodeRef>
+      </bpmn:lane>
+
+    </bpmn:laneSet>
+
+    <!-- ═══ START EVENT ═══ -->
+    <bpmn:startEvent id="Start_P11A" name="Licenciamento em&#10;AGUARDANDO_PAGAMENTO*">
+      <bpmn:documentation>
+        O processo P11-A é iniciado quando o cidadão (RT, RU ou Proprietário) acessa o painel do
+        licenciamento via frontend Angular e este se encontra em um dos estados de aguardo de pagamento:
+          - SituacaoLicenciamento.AGUARDANDO_PAGAMENTO
+              → gera boleto tipo TAXA_ANALISE, TAXA_REANALISE ou TAXA_UNICA
+          - SituacaoLicenciamento.AGUARDANDO_PAGAMENTO_VISTORIA
+              → gera boleto tipo TAXA_VISTORIA
+          - SituacaoLicenciamento.AGUARDANDO_PAGAMENTO_RENOVACAO
+              → gera boleto tipo TAXA_RENOVACAO
+
+        O estado AGUARDANDO_PAGAMENTO é atingido ao final do P03 (wizard de submissão de PPCI/PSPCIM),
+        AGUARDANDO_PAGAMENTO_VISTORIA ao final do P04 (análise técnica com resultado CIA) ou P07
+        (vistoria presencial reprovada), e AGUARDANDO_PAGAMENTO_RENOVACAO em processo de renovação.
+
+        Autenticação: SOE PROCERGS (meu.rs.gov.br) — Implicit Flow OIDC.
+        Controle de acesso: @AutorizaEnvolvido (verifica envolvimento no licenciamento).
+      </bpmn:documentation>
+      <bpmn:outgoing>Flow_Start_To_ListarResp</bpmn:outgoing>
+    </bpmn:startEvent>
+
+    <!-- ═══ LISTAR RESPONSÁVEIS ═══ -->
+    <bpmn:userTask id="UT_ListarResponsaveis"
+                   name="Listar responsáveis disponíveis para o pagamento"
+                   camunda:assignee="Cidadão/RT/Proprietário">
+      <bpmn:documentation>
+        O frontend Angular exibe a lista de pessoas disponíveis para figurar como pagador no boleto.
+
+        Endpoint para análise/taxa_unica:
+          GET /licenciamentos/{idLic}/reponsaveis-pagamento
+          Implementação: LicenciamentoResponsavelPagamentoRN
+          Retorna: List&lt;ResponsavelPagamentoDTO&gt; com:
+            - RTs (filtrados por TipoFaseLicenciamento.EXECUCAO quando aplicável)
+            - RUs e Proprietários (PF e PJ)
+            - Deduplicados por CPF/CNPJ, ordenados por nome
+          DTO: { tipo: TipoResponsavelPagamento, cpfCnpj, nome, cpfProcurador? }
+
+        Endpoint para renovação (TAXA_RENOVACAO):
+          GET /licenciamentos/{idLic}/reponsaveis-pagamento-renovacao
+          RTs filtrados apenas com TipoResponsabilidadeTecnica.RENOVACAO_APPCI
+
+        TipoResponsavelPagamento enum: RT | RU | PROPRIETARIO_PF | PROPRIETARIO_PJ
+        Para PROPRIETARIO_PJ: cpfProcurador é preenchido (usado na busca de endereço — RN-099).
+
+        Segurança: @AutorizaEnvolvido no endpoint JAX-RS (LicenciamentoRest).
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_Start_To_ListarResp</bpmn:incoming>
+      <bpmn:outgoing>Flow_ListarResp_To_Solicitar</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <!-- ═══ SOLICITAR BOLETO ═══ -->
+    <bpmn:userTask id="UT_SolicitarBoleto"
+                   name="Selecionar responsável e solicitar geração do boleto"
+                   camunda:assignee="Cidadão/RT/Proprietário"
+                   camunda:formKey="solicitar-boleto-form">
+      <bpmn:documentation>
+        O cidadão seleciona o responsável pagador da lista exibida e aciona a geração do boleto.
+
+        Endpoint: POST /licenciamentos/{idLic}/pagamentos/boleto/
+        Content-Type: application/json
+        Anotações: @AutorizaEnvolvido + @Permissao(objeto="PAGAMENTOS", acao="INCLUIR")
+
+        Body da requisição (BoletoLicenciamento DTO):
+          {
+            "tipo": "TAXA_ANALISE",         // TipoBoleto enum
+            "id": null,                     // opcional — ID de boleto anterior (para compensação RN-095)
+            "responsavel": {
+              "tipo": "RT",                 // TipoResponsavelPagamento
+              "cpfCnpj": "12345678901",
+              "nome": "João da Silva",
+              "cpfProcurador": null         // preenchido apenas para PROPRIETARIO_PJ
+            }
+          }
+
+        TipoBoleto enum: TAXA_ANALISE | TAXA_REANALISE | TAXA_VISTORIA | TAXA_UNICA | TAXA_RENOVACAO
+
+        Response esperado em caso de sucesso (HTTP 201 CREATED):
+          { id, boleto: { id, nossoNumero, codigoBarras, linhaDigitavel, dataVencimento, valorNominal, situacao } }
+
+        Classe JAX-RS: LicenciamentoRest (@Path("/licenciamentos"))
+        Método: gerarBoleto(@PathParam idLicenciamento, BoletoLicenciamento boletoLicenciamento)
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_ListarResp_To_Solicitar</bpmn:incoming>
+      <bpmn:outgoing>Flow_Solicitar_To_ValidarPrecond</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <!-- ═══ VALIDAR PRÉ-CONDIÇÕES ═══ -->
+    <bpmn:serviceTask id="ST_ValidarPrecond"
+                      name="Validar situação do licenciamento e cancelar isenção solicitada (RN-090, RN-091)"
+                      camunda:class="com.procergs.solcbm.boleto.BoletoLicenciamentoRN">
+      <bpmn:documentation>
+        Executado por BoletoLicenciamentoRN.gerarBoleto() — @Stateless EJB, @TransactionAttribute(REQUIRED).
+        Classe de validação: BoletoLicenciamentoRNVal.
+
+        RN-090 — Validar situação do licenciamento (validaSituacaoLicenciamento):
+          Verifica compatibilidade entre TipoBoleto solicitado e SituacaoLicenciamento atual.
+          | TipoBoleto                                   | SituacaoLicenciamento exigida             |
+          |----------------------------------------------|-------------------------------------------|
+          | TAXA_VISTORIA                                | AGUARDANDO_PAGAMENTO_VISTORIA             |
+          | TAXA_RENOVACAO                               | AGUARDANDO_PAGAMENTO_RENOVACAO            |
+          | TAXA_ANALISE, TAXA_REANALISE, TAXA_UNICA     | AGUARDANDO_PAGAMENTO                      |
+          Falha: WebApplicationRNException(HTTP 400, "licenciamento.situacao.operacao.invalida")
+
+        RN-090 (complemento) — Validar tipo de boleto (validaTipoBoleto):
+          TAXA_REANALISE exige que licenciamento.numero não seja em branco.
+          (O licenciamento deve ter passado pela análise técnica ao menos uma vez e ter número gerado.)
+          Falha: WebApplicationRNException(HTTP 400)
+
+        RN-091 — Cancelar isenção solicitada (início de gerarBoleto):
+          Se licenciamento.situacaoIsencao == SOLICITADA:
+            1. licenciamentoED.isencao = false
+            2. licenciamentoED.situacaoIsencao = null
+            3. licenciamentoRN.altera(licenciamentoED) → UPDATE CBM_LICENCIAMENTO
+          Justificativa: ao optar por pagar, o cidadão abandona implicitamente a isenção pendente.
+          Tabelas afetadas: CBM_LICENCIAMENTO (campos IS_ISENCAO, TP_SITUACAO_ISENCAO).
+
+        Endpoint: POST /licenciamentos/{idLic}/pagamentos/boleto/
+        Tabelas lidas: CBM_LICENCIAMENTO.
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_Solicitar_To_ValidarPrecond</bpmn:incoming>
+      <bpmn:outgoing>Flow_ValidarPrecond_To_GW</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- ═══ GATEWAY: PRÉ-CONDIÇÕES OK? ═══ -->
+    <bpmn:exclusiveGateway id="GW_PrecondOK" name="Pré-condições&#10;OK?">
+      <bpmn:documentation>
+        Bifurca com base no resultado das validações RN-090 e RN-091.
+        Saída "OK": situação do licenciamento é compatível com o tipo de boleto solicitado.
+        Saída "Inválida": situação incompatível ou tipo de boleto inválido → HTTP 400.
+        Nota: na implementação real, o gateway é implícito (exceção lançada dentro da ServiceTask anterior).
+        O gateway no BPMN torna explícitas as duas trajetórias possíveis para a equipe de desenvolvimento.
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_ValidarPrecond_To_GW</bpmn:incoming>
+      <bpmn:outgoing>Flow_GW_PrecondOK_Sim</bpmn:outgoing>
+      <bpmn:outgoing>Flow_GW_PrecondOK_Nao</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <!-- ═══ END: ERRO 400 (situação inválida) ═══ -->
+    <bpmn:endEvent id="End_Erro400" name="Erro: situação inválida&#10;(HTTP 400)">
+      <bpmn:documentation>
+        Encerra o processo com HTTP 400 BAD_REQUEST.
+        Mensagem ao cliente: "licenciamento.situacao.operacao.invalida"
+           ou mensagem de tipo de boleto inválido (TAXA_REANALISE sem número de licenciamento).
+        Tabelas afetadas: nenhuma (transação revertida antes de qualquer persistência).
+        Ação esperada do frontend: exibir mensagem de erro ao cidadão.
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_GW_PrecondOK_Nao</bpmn:incoming>
+      <bpmn:errorEventDefinition id="ErrDef_400" />
+    </bpmn:endEvent>
+
+    <!-- ═══ VERIFICAR BOLETO ANTERIOR ═══ -->
+    <bpmn:serviceTask id="ST_VerifBoletoAnterior"
+                      name="Verificar boleto vigente anterior (RN-092)"
+                      camunda:class="com.procergs.solcbm.boleto.BoletoLicenciamentoRN">
+      <bpmn:documentation>
+        Implementado em: BoletoLicenciamentoRN.validarBoletoVencido
+                       + BoletoLicenciamentoRNVal.validaSituacaoBoletoAnteriorParaPagador
+        Aplicado para todos os tipos de boleto EXCETO TAXA_REANALISE.
+
+        Algoritmo RN-092:
+        1. Buscar todos BoletoLicenciamentoED para o mesmo licenciamento, mesmo idResponsavel
+           (quando informado) e mesmo tipoBoleto — via BoletoLicenciamentoBD.lista(BuilderBoletoLicenciamentoED).
+        2. Para cada boleto encontrado, verificar se CPF/CNPJ do responsável informado coincide
+           com cpfPagador ou cnpjPagador do BoletoED desnormalizado.
+        3. Regras por tipo de boleto:
+           Para TAXA_ANALISE / TAXA_UNICA:
+             - situacao == EM_ABERTO → WebApplicationRNException(HTTP 400, "boleto.licenciamento.EM_ABERTO")
+             - situacao == PAGO      → WebApplicationRNException(HTTP 400, "boleto.licenciamento.PAGO")
+             - situacao == VENCIDO   → permite prosseguir (gerar novo boleto é válido)
+           Para TAXA_VISTORIA / TAXA_RENOVACAO:
+             - situacao == EM_ABERTO → WebApplicationRNException(HTTP 400, "boleto.licenciamento.EM_ABERTO")
+             - situacao == PAGO      → permite prosseguir (cenário de segundo pagamento, raro)
+             - situacao == VENCIDO   → permite prosseguir
+
+        Tabelas lidas: CBM_BOLETO_LICENCIAMENTO JOIN CBM_BOLETO.
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_GW_PrecondOK_Sim</bpmn:incoming>
+      <bpmn:outgoing>Flow_VerifBoleto_To_GW</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- ═══ GATEWAY: BOLETO ANTERIOR BLOQUEIA? ═══ -->
+    <bpmn:exclusiveGateway id="GW_BloqueioAnterior" name="Boleto anterior&#10;bloqueia?">
+      <bpmn:documentation>
+        Saída "Bloqueado": existe boleto anterior EM_ABERTO (para qualquer tipo) ou PAGO
+                           (para TAXA_ANALISE/TAXA_UNICA) → HTTP 400.
+        Saída "Pode gerar": não há boleto bloqueante → prossegue para cálculo da taxa.
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_VerifBoleto_To_GW</bpmn:incoming>
+      <bpmn:outgoing>Flow_GW_Bloqueio_Sim</bpmn:outgoing>
+      <bpmn:outgoing>Flow_GW_Bloqueio_Nao</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <!-- ═══ END: ERRO BOLETO BLOQUEANTE ═══ -->
+    <bpmn:endEvent id="End_ErroBloqueio" name="Erro: boleto anterior&#10;vigente (HTTP 400)">
+      <bpmn:documentation>
+        Encerra com HTTP 400.
+        Mensagem ao cliente: "boleto.licenciamento.EM_ABERTO" ou "boleto.licenciamento.PAGO".
+        Indica que não é possível gerar novo boleto enquanto houver um em aberto ou já pago.
+        O cidadão deve aguardar o vencimento (para EM_ABERTO) ou verificar o status do pagamento.
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_GW_Bloqueio_Sim</bpmn:incoming>
+      <bpmn:errorEventDefinition id="ErrDef_Bloqueio" />
+    </bpmn:endEvent>
+
+    <!-- ═══ CALCULAR E MONTAR BOLETO ═══ -->
+    <bpmn:serviceTask id="ST_CalcularMontarBoleto"
+                      name="Calcular taxa, montar dados e pré-persistir boleto (RN-093 a RN-100)"
+                      camunda:class="com.procergs.solcbm.boleto.BoletoRN">
+      <bpmn:documentation>
+        Implementado em: BoletoLicenciamentoRN.registrarBoleto → BoletoRN.registraBoleto
+                       → BoletoRN.buildBoletoEDLicenciamento
+        @TransactionAttribute(REQUIRED). Toda esta etapa é uma unidade transacional.
+
+        RN-093 — Cálculo do valor da taxa (BoletoLicenciamentoRN.getValorTaxa):
+          Fórmula geral: valorBoleto = round(qtdUPF × valorUPF, 2, HALF_EVEN)
+          valorUPF = ValorUPFRN.getValorAtualUPF() → tabela CBM_PARAMETRO_BOLETO, chave "upf.valor"
+          | TipoBoleto     | Cálculo de qtdUPF                                             | Isenção      |
+          |----------------|---------------------------------------------------------------|--------------|
+          | TAXA_ANALISE   | TaxaLicenciamentoRN.calculaTaxaAnaliseLicenciamento (PPCI)     | Sem isenção  |
+          | TAXA_ANALISE   | TaxaLicenciamentoRN.calculaTaxaUnicaLicenciamento (PSPCIM)     | Sem isenção  |
+          | TAXA_UNICA     | TaxaLicenciamentoRN.calculaTaxaUnicaLicenciamento             | Sem isenção  |
+          | TAXA_VISTORIA  | TaxaLicenciamentoRN.calculaTaxaVistoriaLicenciamento          | Se isIsento → R$ 0,00 |
+          | TAXA_REANALISE | getValorTaxaReanalise (50% + compensação UPF)                 | Se isIsento → R$ 0,00 |
+          | TAXA_RENOVACAO | calculaTaxaVistoriaLicenciamento (com regra 50% reprovação)   | Sem isenção  |
+
+        RN-094 — Regra dos 50% para TAXA_VISTORIA (devePagarMeiaTaxaDeVistoria):
+          Aplica 50% quando TODAS as condições são verdadeiras:
+          1. Há vistoria anterior APROVADA ou REPROVADA para o mesmo licenciamento e TipoVistoria.
+          2. Não existe APPCI emitido APÓS a data da última vistoria encerrada.
+          Caso contrário: taxa 100%.
+
+        RN-095 — Compensação na TAXA_REANALISE (getValorTaxaReanalise + getValorCompensacao):
+          valorBase = TAXA_ANALISE atual.
+          valorReanalise = possuiIsencaoReanalise ? R$ 0,00 : valorBase × 0,50
+          Compensação: se qtdUPF_atual > qtdUPF_boletoAnteriorPago:
+            compensacao = (qtdUPF_atual - qtdUPF_anterior) × valorUPF
+          valorFinal = valorReanalise + compensacao
+          Retrocompatibilidade: se boletoAnterior.qtdUPF == null → preencher com qtdUPF_atual e altera().
+
+        RN-096 — Regra dos 50% para TAXA_RENOVACAO (getValorTaxaRenovacao):
+          50% se última vistoria encerrada teve StatusVistoria = REPROVADO.
+          100% caso contrário (aprovada ou sem vistoria anterior).
+
+        RN-097 — Nosso Número e Seu Número (BoletoRN.getNossoNumero / getSeuNumero):
+          Nosso Número: truncar ID a 8 dígitos → calcular DV módulo 11 → (numero × 100) + DV
+          Seu Número: ID do BoletoED + "L" (licenciamento) ou + "C" (instrutor)
+          Sequência: 1. inclui(boletoED) → ID gerado via CBM_ID_BOLETO_SEQ
+                     2. getNossoNumero(boletoED.getId()) → calcula nossoNumero
+                     3. altera(boletoED) → persiste nossoNumero
+          Tabela: CBM_BOLETO (INSERT inicial + UPDATE do nossoNumero).
+
+        RN-098 — Vencimento (BoletoRN.getDataVencimento):
+          dataVencimento = dataEmissao + 30 dias corridos (TimeZone GMT-03:00).
+          Exceção histórica jan/2024 não deve ser replicada no novo sistema.
+
+        RN-099 — Desnormalização do pagador (BoletoRN.buildBoletoEDLicenciamento):
+          Copia para BoletoED no momento da emissão:
+            nomePagador, cpfPagador ou cnpjPagador (conforme TipoResponsavelPagamento).
+            enderecoPagador = "{logradouro}, {número} / {complemento}, {bairro}" (complemento omitido se nulo).
+            cidadePagador, ufPagador, cepPagador.
+          Endereço via EnderecoUsuarioRN.listarEnderecosUsuario — preferência TipoEndereco.COMERCIAL.
+          Para PROPRIETARIO_PJ: endereço buscado pelo CPF do procurador (não do CNPJ da empresa);
+            cnpjPagador = CNPJ empresa; cpfPagador = null.
+          Tabela afetada: CBM_BOLETO (campos NOME_PAGADOR, TXT_CPF_PAGADOR, TXT_CNPJ_PAGADOR,
+            TXT_ENDERECO_PAGADOR, TXT_CIDADE_PAGADOR, TXT_UF_PAGADOR, TXT_CEP_PAGADOR).
+
+        RN-100 — Seleção do beneficiário por município IBGE (BoletoLicenciamentoRN.registrarBoleto):
+          beneficiario = CidadeRN.consultaPorNroMunicipioIBGE(licenciamento.localizacao.nroMunicipioIBGE)
+          O campo cidade.beneficiario aponta para o BeneficiarioED do município (conta bancária do CBM-RS).
+          Tabela lida: CBM_CIDADE JOIN CBM_BENEFICIARIO por NRO_MUNICIPIO_IBGE.
+          Inserido em: CBM_BOLETO (NRO_INT_BENEFICIARIO).
+
+        Tabelas afetadas (resumo): CBM_BOLETO (INSERT + UPDATE nossoNumero),
+          CBM_BOLETO_LICENCIAMENTO (INSERT com tipoBoleto e quantidadeTotalUpf).
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_GW_Bloqueio_Nao</bpmn:incoming>
+      <bpmn:outgoing>Flow_CalcularBoleto_To_PROCERGS</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- ═══ REGISTRAR BOLETO NO BANRISUL VIA PROCERGS ═══ -->
+    <bpmn:serviceTask id="ST_RegistrarBoletoPROCERGS"
+                      name="Registrar boleto no Banrisul via PROCERGS (RN-101)"
+                      camunda:class="com.procergs.solcbm.boleto.BoletoIntegracaoProcergs">
+      <bpmn:documentation>
+        Implementado em: BoletoIntegracaoProcergs.registrarBoleto
+        Chamado por BoletoRN.registraBoleto após pré-persistência do BoletoED.
+
+        Fluxo de integração RN-101 (6 etapas):
+        1. Montar XML do título Banrisul via JAXB:
+             RegistrarTitulo → Dados → Titulo (nossoNumero, dataVencimento, valorNominal, espécie)
+                                     → Pagador (nome, CPF/CNPJ, endereço desnormalizado)
+                                     → Beneficiario (codigo, nome, agência)
+                                     → Instrucoes, Juros, PagParcial, Ocorrencia
+        2. Serializar XML (JAXB) → Base64 → encapsular em JSON: {"conteudo": "&lt;base64&gt;"}
+        3. Assinar payload com HMAC-SHA256 (biblioteca nimbus-jose-jwt)
+        4. Criptografar com JWE (DirectEncrypter, AES-256-GCM, chave simétrica configurada)
+        5. POST HTTP para PropriedadesEnum.INTEGRACAO_BOLETO_BANRISUL_URL_VIA_PROCERGS
+        6. Receber resposta JSON → decodificar Base64 → desserializar XML retorno Banrisul
+             Extrair: codigoBarras (max 44 chars) e linhaDigitavel (max 47 chars)
+             Persistir no BoletoED via boletoRN.altera(boletoED) → UPDATE CBM_BOLETO
+
+        Código de retorno PROCERGS "3" → BoletoIntegracaoException
+          → relançado como WebApplicationRNException(HTTP 500, "integracao.boleto.registrar.erro")
+
+        Log (CBM_LOG_GERA_BOLETO — LogGeraBoletoED):
+          Sucesso: logBoletoRN.incluirSucesso(xmlEnvio, xmlRetorno, idBoleto, origem)
+          Falha:   logBoletoRN.incluirErro(xmlEnvio, xmlRetorno, idBoleto, origem, mensagemErro)
+          Cada tentativa de geração é registrada independentemente do resultado.
+
+        Tabelas afetadas: CBM_BOLETO (TXT_CODIGO_BARRAS, TXT_LINHA_DIGITAVEL — UPDATE),
+                          CBM_LOG_GERA_BOLETO (INSERT).
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_CalcularBoleto_To_PROCERGS</bpmn:incoming>
+      <bpmn:outgoing>Flow_PROCERGS_To_GW</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- ═══ GATEWAY: INTEGRAÇÃO PROCERGS OK? ═══ -->
+    <bpmn:exclusiveGateway id="GW_IntegracaoOK" name="Integração&#10;PROCERGS OK?">
+      <bpmn:documentation>
+        Saída "OK": código de retorno PROCERGS diferente de "3"; codigoBarras e linhaDigitavel
+                    obtidos com sucesso e persistidos no BoletoED.
+        Saída "Falha": código "3" ou falha de comunicação → HTTP 500 ao cliente.
+        Nota: na implementação, a falha é sinalizada por exceção (BoletoIntegracaoException →
+        WebApplicationRNException). O gateway representa explicitamente os dois cenários.
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_PROCERGS_To_GW</bpmn:incoming>
+      <bpmn:outgoing>Flow_GW_Integ_Sim</bpmn:outgoing>
+      <bpmn:outgoing>Flow_GW_Integ_Nao</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <!-- ═══ END: ERRO INTEGRAÇÃO ═══ -->
+    <bpmn:endEvent id="End_ErroIntegracao" name="Erro: falha integração&#10;PROCERGS (HTTP 500)">
+      <bpmn:documentation>
+        Encerra com HTTP 500 INTERNAL_SERVER_ERROR.
+        Mensagem ao cliente: "integracao.boleto.registrar.erro".
+        Registro em CBM_LOG_GERA_BOLETO com XML de envio e detalhes do erro.
+        O BoletoED pode ter sido criado parcialmente (sem codigoBarras e linhaDigitavel).
+        Recomendação: implementar limpeza (DELETE ou flag INVALIDO) do BoletoED criado mas sem
+        dados bancários, para evitar registros incompletos persistindo no banco.
+        Ação do cidadão: tentar novamente após resolução do problema de integração.
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_GW_Integ_Nao</bpmn:incoming>
+      <bpmn:errorEventDefinition id="ErrDef_Integ" />
+    </bpmn:endEvent>
+
+    <!-- ═══ PERSISTIR MARCO ═══ -->
+    <bpmn:serviceTask id="ST_PersistirMarco"
+                      name="Registrar marco de auditoria da geração do boleto (RN-102)"
+                      camunda:class="com.procergs.solcbm.boleto.BoletoLicenciamentoRN">
+      <bpmn:documentation>
+        Implementado em: BoletoLicenciamentoRN.incluiMarco — chamado ao final de gerarBoleto()
+        após sucesso confirmado da integração PROCERGS/Banrisul.
+
+        RN-102 — Marco de auditoria (LicenciamentoMarcoInclusaoRN):
+          TipoResponsavelMarco: CIDADAO (o usuário autenticado que solicitou o boleto)
+          | TipoBoleto      | TipoMarco registrado               |
+          |-----------------|------------------------------------|
+          | TAXA_VISTORIA   | BOLETO_VISTORIA                    |
+          | TAXA_RENOVACAO  | BOLETO_VISTORIA_RENOVACAO_PPCI     |
+          | Demais tipos    | BOLETO_ATEC                        |
+          Texto complementar: valor nominal formatado em R$ (NumberFormatter.formataComRetornoVazio)
+          Tabela: CBM_LICENCIAMENTO_MARCO (INSERT).
+
+        Após registro do marco, a resposta HTTP 201 é enviada ao frontend com o BoletoLicenciamento DTO:
+          { id (BoletoLicenciamentoED.id), boleto: { id, nossoNumero, codigoBarras, linhaDigitavel,
+            dataVencimento, valorNominal, situacao (EM_ABERTO) } }
+
+        Estado resultante: BoletoED.situacao = EM_ABERTO.
+        O licenciamento permanece em AGUARDANDO_PAGAMENTO* — não há mudança de estado aqui.
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_GW_Integ_Sim</bpmn:incoming>
+      <bpmn:outgoing>Flow_Marco_To_Download</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- ═══ DOWNLOAD PDF DO BOLETO ═══ -->
+    <bpmn:userTask id="UT_DownloadBoleto"
+                   name="Fazer download do PDF do boleto (RN-103)"
+                   camunda:assignee="Cidadão/RT/Proprietário">
+      <bpmn:documentation>
+        O frontend Angular exibe o boleto gerado (código de barras, linha digitável, valor, vencimento).
+        O cidadão pode fazer download do PDF para pagamento presencial ou via internet banking.
+
+        Endpoint: GET /licenciamentos/{idLic}/pagamentos/boleto/{idBoletoLic}
+        Produces: application/octet-stream (stream binário PDF)
+        Anotação: @AutorizaEnvolvido
+
+        RN-103 — Validações do download (BoletoLicenciamentoRN.downloadBoleto):
+          1. Verificar que BoletoLicenciamentoED pertence ao licenciamento informado
+             (busca por idBoletoLicenciamento AND idLicenciamento).
+             Se não encontrado → WebApplicationRNException(HTTP 404).
+          2. Se boleto.situacao == VENCIDO → WebApplicationRNException(HTTP 400, "boleto.licenciamento.VENCIDO").
+             O cidadão deve gerar novo boleto (o anterior está expirado).
+
+        Geração do PDF (BoletoRN.gerarPdfBoletoLicenciamento):
+          FacadeReport.gerarPDF("/reports/boleto.jasper", boletoDTOLicenciamento)
+          Campos do BoletoDTO:
+            nossoNumero (10 dígitos com padding de zeros à esquerda)
+            vencimento, valorNominal (R$ #,##0.00), especie.siglaBoleto, emissao
+            codigoBarras, linhaDigitavel (formatado por AplicacaoUtil.formatBarCode)
+            beneficiarioCodigo = codigo.substring(codigo.indexOf('.') + 1)
+            dados do beneficiário (CBM-RS): nome, nomeFantasia, agencia, endereço, cidade, uf, cep
+            dados do pagador (desnormalizados do BoletoED): nome, cpfCnpj, endereço, cidade, uf, cep
+            aceite = "N"
+            logoBanrisul = classpath "reports/img/banrisul-logo.jpg"
+          Response: Response.ok(streamPDF).build()
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_Marco_To_Download</bpmn:incoming>
+      <bpmn:outgoing>Flow_Download_To_Pagar</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <!-- ═══ EFETUAR PAGAMENTO (EXTERNO) ═══ -->
+    <bpmn:userTask id="UT_EfetuarPagamento"
+                   name="Efetuar pagamento do boleto no banco (ação externa ao SOL)"
+                   camunda:assignee="Cidadão/RT/Proprietário">
+      <bpmn:documentation>
+        Ação realizada pelo cidadão EXTERNAMENTE ao sistema SOL:
+          - Internet banking, aplicativo bancário, caixa eletrônico ou agência Banrisul.
+          - Identificação do boleto: código de barras (44 chars) ou linha digitável (47 chars).
+          - Prazo: até a DATA_VENCIMENTO (dataEmissao + 30 dias corridos — RN-098).
+
+        O sistema SOL NÃO é notificado em tempo real sobre o pagamento.
+        A confirmação ocorre de forma assíncrona via arquivo CNAB 240:
+          - O Banrisul deposita o arquivo no diretório configurado em
+            PropriedadesEnum.CAMINHO_ARQUIVO_ENTRADA_BANRISUL.
+          - O job P11-B (EJBTimerService) lê esse arquivo a cada 12 horas.
+
+        Estado do BoletoED após esta etapa: permanece EM_ABERTO até confirmação pelo P11-B.
+        O licenciamento permanece em AGUARDANDO_PAGAMENTO* até confirmação pelo P11-B.
+
+        BPMN: esta UserTask é modelada para explicitar a responsabilidade do cidadão no pagamento.
+        O End Event (End_BoletoEmitido) sinaliza que o P11-A está encerrado do ponto de vista
+        do sistema — o licenciamento aguarda a confirmação assíncrona do P11-B.
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_Download_To_Pagar</bpmn:incoming>
+      <bpmn:outgoing>Flow_Pagar_To_End</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <!-- ═══ END: BOLETO EMITIDO ═══ -->
+    <bpmn:endEvent id="End_BoletoEmitido" name="Boleto emitido — aguardando&#10;confirmação de pagamento (P11-B)">
+      <bpmn:documentation>
+        Estado final do P11-A:
+          BoletoED.situacao = EM_ABERTO
+          BoletoLicenciamentoED persistido com tipoBoleto e quantidadeTotalUpf.
+          SituacaoLicenciamento: permanece em AGUARDANDO_PAGAMENTO* (sem alteração no P11-A).
+          Marco registrado em CBM_LICENCIAMENTO_MARCO (TipoMarco conforme RN-102).
+          Arquivo CNAB 240 aguardado no diretório de entrada do Banrisul (P11-B irá processá-lo).
+        O próximo processo no ciclo de vida é o P11-B (confirmação via CNAB 240).
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_Pagar_To_End</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <!-- ═══ SEQUENCE FLOWS P11-A ═══ -->
+    <bpmn:sequenceFlow id="Flow_Start_To_ListarResp"        sourceRef="Start_P11A"               targetRef="UT_ListarResponsaveis" />
+    <bpmn:sequenceFlow id="Flow_ListarResp_To_Solicitar"    sourceRef="UT_ListarResponsaveis"     targetRef="UT_SolicitarBoleto" />
+    <bpmn:sequenceFlow id="Flow_Solicitar_To_ValidarPrecond" sourceRef="UT_SolicitarBoleto"       targetRef="ST_ValidarPrecond" />
+    <bpmn:sequenceFlow id="Flow_ValidarPrecond_To_GW"       sourceRef="ST_ValidarPrecond"         targetRef="GW_PrecondOK" />
+    <bpmn:sequenceFlow id="Flow_GW_PrecondOK_Sim"           name="OK"                             sourceRef="GW_PrecondOK"             targetRef="ST_VerifBoletoAnterior" />
+    <bpmn:sequenceFlow id="Flow_GW_PrecondOK_Nao"           name="Situação incompatível"          sourceRef="GW_PrecondOK"             targetRef="End_Erro400" />
+    <bpmn:sequenceFlow id="Flow_VerifBoleto_To_GW"          sourceRef="ST_VerifBoletoAnterior"    targetRef="GW_BloqueioAnterior" />
+    <bpmn:sequenceFlow id="Flow_GW_Bloqueio_Sim"            name="Bloqueado (EM_ABERTO / PAGO)"   sourceRef="GW_BloqueioAnterior"      targetRef="End_ErroBloqueio" />
+    <bpmn:sequenceFlow id="Flow_GW_Bloqueio_Nao"            name="Pode gerar"                     sourceRef="GW_BloqueioAnterior"      targetRef="ST_CalcularMontarBoleto" />
+    <bpmn:sequenceFlow id="Flow_CalcularBoleto_To_PROCERGS" sourceRef="ST_CalcularMontarBoleto"   targetRef="ST_RegistrarBoletoPROCERGS" />
+    <bpmn:sequenceFlow id="Flow_PROCERGS_To_GW"             sourceRef="ST_RegistrarBoletoPROCERGS" targetRef="GW_IntegracaoOK" />
+    <bpmn:sequenceFlow id="Flow_GW_Integ_Sim"               name="OK"                             sourceRef="GW_IntegracaoOK"          targetRef="ST_PersistirMarco" />
+    <bpmn:sequenceFlow id="Flow_GW_Integ_Nao"               name="Falha integração"               sourceRef="GW_IntegracaoOK"          targetRef="End_ErroIntegracao" />
+    <bpmn:sequenceFlow id="Flow_Marco_To_Download"          sourceRef="ST_PersistirMarco"         targetRef="UT_DownloadBoleto" />
+    <bpmn:sequenceFlow id="Flow_Download_To_Pagar"          sourceRef="UT_DownloadBoleto"         targetRef="UT_EfetuarPagamento" />
+    <bpmn:sequenceFlow id="Flow_Pagar_To_End"               sourceRef="UT_EfetuarPagamento"       targetRef="End_BoletoEmitido" />
+
+  </bpmn:process>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       PROCESSO P11-B: Confirmação de Pagamento (Jobs Automáticos)
+       Dois fluxos distintos disparados por timer @Schedule a cada 12 horas:
+         Fluxo 1: Job Vencimento — BoletoSituacaoBatchRN — marca boletos como VENCIDO (RN-104)
+         Fluxo 2: Job CNAB 240  — EJBTimerService — processa retorno bancário (RN-105 a RN-108)
+  ═══════════════════════════════════════════════════════════════════════ -->
+  <bpmn:process id="Process_P11B" name="P11-B Confirmação de Pagamento (Jobs @Schedule)" isExecutable="false">
+
+    <bpmn:laneSet id="LaneSet_P11B">
+
+      <bpmn:lane id="Lane_EJBTimer" name="EJBTimerService (@Singleton @Startup @Schedule — WildFly)">
+        <bpmn:documentation>
+          Dois EJBs @Singleton @Startup com @Schedule são responsáveis pelos jobs automáticos:
+          1. BoletoSituacaoBatchRN: @Schedule(hour="12/12") — atualização de boletos vencidos (RN-104).
+          2. EJBTimerService: @Schedule(minute="0", hour="*/12") — confirmação de pagamento CNAB 240 (RN-105).
+          Ambos usam persistent=false (timers não são persistidos — reiniciam no restart do WildFly).
+          Controle de execução: PropriedadesEnum.INTEGRACAO_WORKLOAD_ATIVA = "true" aborta os jobs.
+        </bpmn:documentation>
+        <bpmn:flowNodeRef>Start_Timer_Vencimento</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Start_Timer_CNAB</bpmn:flowNodeRef>
+      </bpmn:lane>
+
+      <bpmn:lane id="Lane_Sistema_B" name="Sistema SOL — Backend Java EE (BoletoSituacaoBatchRN / EJBTimerService / PagamentoBoletoRN)">
+        <bpmn:documentation>
+          Classes do fluxo P11-B:
+            BoletoSituacaoBatchRN (@Singleton) — job de vencimento de boletos (RN-104).
+            EJBTimerService (@Singleton @Startup) — orquestra o job de CNAB 240 (RN-105).
+            PagamentoBoletoRN (@Stateless, @REQUIRES_NEW por registro) — processa retorno CNAB (RN-106).
+            PagamentoBoletoRNVal — valida os dados do retorno bancário (RN-107).
+            PagamentoBoletoLicenciamentoRN — atualiza estado do licenciamento após pagamento (RN-108).
+            ParserCnab240 — parse do arquivo CNAB 240 retornado pelo Banrisul.
+            EmailService — envio de e-mail de alerta ao administrador em caso de erros.
+        </bpmn:documentation>
+        <bpmn:flowNodeRef>ST_JobVencimento</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>End_Vencimento</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>ST_ValidarDiretorios</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>ST_ListarArquivos</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>GW_HaArquivos</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>End_SemArquivos</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>SP_ProcessarArquivos</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>GW_HouvErros</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>ST_EnviarEmailErro</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>End_CNAB</bpmn:flowNodeRef>
+      </bpmn:lane>
+
+    </bpmn:laneSet>
+
+    <!-- ═══ TIMER START 1: JOB VENCIMENTO ═══ -->
+    <bpmn:startEvent id="Start_Timer_Vencimento" name="Timer: 00:00 e 12:00&#10;(Job Vencimento de Boletos)">
+      <bpmn:documentation>
+        EJB: BoletoSituacaoBatchRN (@Singleton @Startup)
+        @Schedule(hour = "12/12", info = "Verificação de situação de boletos executada 12:00 e 24:00",
+                  persistent = false)
+        Método: atualizaSituacao()
+        Executa às 00:00 e 12:00 todos os dias (hora = "12/12" no EJB = a cada 12 horas a partir da meia-noite).
+        Objetivo: marcar como VENCIDO todos os boletos EM_ABERTO cujo DATA_VENCIMENTO
+        foi ultrapassado há mais de N dias (parâmetro "numero.dias.situacao.vencimento", default 2 dias).
+      </bpmn:documentation>
+      <bpmn:outgoing>Flow_TimerVenc_To_Job</bpmn:outgoing>
+      <bpmn:timerEventDefinition id="TimerDef_Venc">
+        <bpmn:timeCycle xsi:type="bpmn:tFormalExpression">0 0,12 * * *</bpmn:timeCycle>
+      </bpmn:timerEventDefinition>
+    </bpmn:startEvent>
+
+    <!-- ═══ JOB VENCIMENTO ═══ -->
+    <bpmn:serviceTask id="ST_JobVencimento"
+                      name="Atualizar boletos vencidos: EM_ABERTO → VENCIDO (RN-104)"
+                      camunda:class="com.procergs.solcbm.boleto.BoletoSituacaoBatchRN">
+      <bpmn:documentation>
+        Implementado em: BoletoSituacaoBatchRN.atualizaSituacao()
+
+        RN-104 — Algoritmo do job de vencimento:
+        1. Calcular dataLimiteVencimento:
+             param = parametroBoletoRN.consultarPorChave("numero.dias.situacao.vencimento")
+             dias  = param != null ? Integer.valueOf(param.getValor()) : 2  // default: 2 dias
+             dataLimite = DataUtil.somarDias(AplicacaoUtil.removeTime(dataAtualHelper.getDataAtual()), -dias)
+           Semântica: boletos com dataVencimento &lt;= (hoje - 2 dias) são marcados como vencidos.
+        2. Buscar todos BoletoED com:
+             situacao = EM_ABERTO AND dataVencimento &lt;= dataLimite
+             boletoRN.lista(BuilderBoletoED.of().dataVencimento(dataLimiteVencimento)
+                                                .situacao(SituacaoBoleto.EM_ABERTO).instance())
+        3. Para cada boleto encontrado:
+             boleto.setSituacao(SituacaoBoleto.VENCIDO)
+             boletoRN.altera(boleto) → UPDATE CBM_BOLETO SET TP_SITUACAO = 'VENCIDO'
+
+        Escopo: todos os boletos do sistema com qualquer TipoOrigemBoleto
+                (LICENCIAMENTO, INSTRUTOR, FACT, RENOVACAO_INSTRUTOR).
+        Tabela afetada: CBM_BOLETO (campo TP_SITUACAO).
+
+        Impacto em P11-A: após este job, boletos VENCIDOS não podem ser baixados (RN-103 retorna HTTP 400).
+        O cidadão deve gerar novo boleto para prosseguir com o licenciamento.
+
+        Controle: se INTEGRACAO_WORKLOAD_ATIVA = "true" → job abortado imediatamente.
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_TimerVenc_To_Job</bpmn:incoming>
+      <bpmn:outgoing>Flow_Job_To_End_Venc</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- ═══ END: JOB VENCIMENTO ═══ -->
+    <bpmn:endEvent id="End_Vencimento" name="Boletos vencidos&#10;atualizados (EM_ABERTO → VENCIDO)">
+      <bpmn:documentation>
+        Todos os boletos EM_ABERTO com DATA_VENCIMENTO vencida há mais de N dias foram marcados VENCIDO.
+        Próxima execução: 12 horas depois.
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_Job_To_End_Venc</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <!-- ═══ TIMER START 2: JOB CNAB ═══ -->
+    <bpmn:startEvent id="Start_Timer_CNAB" name="Timer: a cada 12h (*/12)&#10;(Job Confirmação CNAB 240)">
+      <bpmn:documentation>
+        EJB: EJBTimerService (@Singleton @Startup)
+        @Schedule(minute = "0", hour = "*/12", persistent = false)
+        Método: verificaPagamentoBanrisul()
+        Executa a cada 12 horas (às 00:00 e 12:00 diariamente).
+        Objetivo: ler arquivos CNAB 240 depositados pelo Banrisul no diretório de entrada,
+        confirmar pagamentos liquidados e atualizar o estado dos boletos e dos licenciamentos.
+
+        Os dois fluxos (vencimento e CNAB) são modelados como start events separados na mesma pool
+        por representarem responsabilidades técnicas distintas em classes EJB distintas,
+        embora possam ser disparados no mesmo momento.
+      </bpmn:documentation>
+      <bpmn:outgoing>Flow_TimerCNAB_To_ValidarDir</bpmn:outgoing>
+      <bpmn:timerEventDefinition id="TimerDef_CNAB">
+        <bpmn:timeCycle xsi:type="bpmn:tFormalExpression">0 0,12 * * *</bpmn:timeCycle>
+      </bpmn:timerEventDefinition>
+    </bpmn:startEvent>
+
+    <!-- ═══ VALIDAR DIRETÓRIOS ═══ -->
+    <bpmn:serviceTask id="ST_ValidarDiretorios"
+                      name="Validar diretórios de entrada e destino CNAB"
+                      camunda:class="com.procergs.solcbm.boleto.EJBTimerService">
+      <bpmn:documentation>
+        EJBTimerService.verificaPagamentoBanrisul() — início do fluxo CNAB.
+
+        Lê configurações de diretório:
+          caminhoOrigem  = PropriedadesEnum.CAMINHO_ARQUIVO_ENTRADA_BANRISUL.getVal()
+          caminhoDestino = PropriedadesEnum.CAMINHO_ARQUIVO_PROCESSADOS_BANRISUL.getVal()
+
+        Validações:
+          Se caminhoOrigem == null ou !new File(caminhoOrigem).exists() → RuntimeException (job interrompido).
+          Se caminhoDestino == null ou !new File(caminhoDestino).exists() → RuntimeException (job interrompido).
+
+        Falhas nesta etapa são logadas pelo WildFly como erros de EJB Timer mas NÃO disparam e-mail
+        (pois o mecanismo de e-mail só é acionado após o processamento dos arquivos).
+        Ação de operações: verificar se os diretórios estão montados corretamente no servidor.
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_TimerCNAB_To_ValidarDir</bpmn:incoming>
+      <bpmn:outgoing>Flow_ValidarDir_To_Listar</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- ═══ LISTAR ARQUIVOS ═══ -->
+    <bpmn:serviceTask id="ST_ListarArquivos"
+                      name="Listar arquivos CNAB 240 no diretório de entrada"
+                      camunda:class="com.procergs.solcbm.boleto.EJBTimerService">
+      <bpmn:documentation>
+        new File(caminhoOrigem).listFiles() — lista todos os arquivos no diretório de entrada.
+        Retorna File[] com cada arquivo CNAB 240 depositado pelo Banrisul.
+        Se diretório vazio → array null ou length=0 → GW_HaArquivos redireciona para End_SemArquivos.
+        Cada arquivo representa um ciclo de liquidação do Banrisul (pode conter múltiplos registros).
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_ValidarDir_To_Listar</bpmn:incoming>
+      <bpmn:outgoing>Flow_Listar_To_GW</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- ═══ GATEWAY: HÁ ARQUIVOS? ═══ -->
+    <bpmn:exclusiveGateway id="GW_HaArquivos" name="Há arquivos CNAB&#10;no diretório?">
+      <bpmn:documentation>
+        Saída "Sim": há arquivos para processar → prossegue para o sub-processo.
+        Saída "Não": diretório vazio → encerra o job normalmente (situação esperada em dias sem liquidação).
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_Listar_To_GW</bpmn:incoming>
+      <bpmn:outgoing>Flow_GW_Arq_Sim</bpmn:outgoing>
+      <bpmn:outgoing>Flow_GW_Arq_Nao</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <!-- ═══ END: SEM ARQUIVOS ═══ -->
+    <bpmn:endEvent id="End_SemArquivos" name="Nenhum arquivo CNAB&#10;para processar">
+      <bpmn:incoming>Flow_GW_Arq_Nao</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <!-- ═══ SUB-PROCESSO: PROCESSAR ARQUIVOS CNAB ═══ -->
+    <bpmn:subProcess id="SP_ProcessarArquivos" name="Processar arquivo CNAB 240 (multi-instância serial por arquivo)">
+      <bpmn:documentation>
+        Sub-processo colapsado que itera sobre cada arquivo CNAB 240 encontrado no diretório.
+        Multi-instance serial (um arquivo por vez) para evitar condições de corrida em
+        leituras/escritas de arquivos e atualizações concorrentes de estado de boleto.
+
+        ════ PASSO A — Verificar tamanho do arquivo ════
+        Se arquivo.length() == 0 (arquivo vazio):
+          → mover arquivo para caminhoDestino
+          → pular para próximo arquivo (continue no loop)
+        Arquivos de zero bytes são depositados pelo Banrisul em ciclos sem liquidação.
+
+        ════ PASSO B — Ler linhas do arquivo ════
+        Scanner(arquivo).readLine() → List&lt;String&gt; com todas as linhas.
+        O arquivo CNAB 240 tem linhas de 240 caracteres cada.
+
+        ════ PASSO C — Parsear CNAB 240 ════
+        Classe: ParserCnab240.processaLinhasArquivo(linhas, nomeArquivo)
+        Retorna: List&lt;RetornoPagamentoBanrisulDTO&gt; com campos:
+          codMovimento (String) — código do movimento Banrisul
+          nossoNumero  (String) — número do boleto gerado pelo SOL
+          dtPagamento  (Calendar) — data de pagamento no banco
+          valorPago    (BigDecimal) — valor pago
+
+        ════ PASSO D — Processar cada registro (RN-106) ════
+        Para cada RetornoPagamentoBanrisulDTO, em nova transação @REQUIRES_NEW:
+          PagamentoBoletoRN.processaRetorno(nomeArquivo, retorno, erros)
+
+          D.1 — Filtro de código de movimento:
+            Se codMovimento != "06" (liquidação) → return (ignorar silenciosamente)
+            Apenas código "06" representa liquidação de título.
+
+          D.2 — Buscar boleto por nossoNumero (RN-106):
+            boletoRN.lista(BuilderBoletoED.of().nossoNumero(new BigInteger(retorno.getNossoNumero())).instance())
+            Se não encontrado → RuntimeException adicionada à lista de erros (e continua próximo registro)
+            Se duplicado (mais de 1 boleto com mesmo nossoNumero) → RuntimeException + continua
+
+          D.3 — RN-107 — Validar retorno bancário (PagamentoBoletoRNVal.validar):
+            a. valorPago != valorNominal:
+               RuntimeException com mensagem detalhada: "{nossoNumero} — valorPago={X} valorNominal={Y}"
+            b. situacao == PAGO (boleto já liquidado anteriormente):
+               RuntimeException de rejeição (idempotência explícita — não silenciosa).
+            Ambas adicionadas à lista de erros; registro atual é abortado (rollback @REQUIRES_NEW).
+
+          D.4 — Liquidar boleto (PagamentoBoletoRN.liquidaBoleto):
+            boletoED.setDataPagamento(retorno.getDtPagamento())
+            boletoED.setSituacao(SituacaoBoleto.PAGO)
+            boletoED.setNomeArquivoRetorno(nomeArquivo)
+            boletoRN.altera(boletoED) → UPDATE CBM_BOLETO
+
+          D.5 — RN-108 — Despachar pós-pagamento por TipoOrigemBoleto:
+            LICENCIAMENTO: PagamentoBoletoLicenciamentoRN.atualizaStatusAposBoletoPago(boletoED.id)
+              Transições de estado (situacaoAtual × tipoBoleto):
+              | SituacaoLicenciamento       | TipoBoleto       | Próxima Situação                     | TipoMarco              |
+              |-----------------------------|------------------|--------------------------------------|------------------------|
+              | AGUARDANDO_PAGAMENTO        | TAXA_ANALISE/    | ANALISE_ENDERECO_PENDENTE            | LIQUIDACAO_TAXA_UNICA  |
+              |                             | TAXA_REANALISE   | (PSPCIM, endereço novo)              | ou LIQUIDACAO_ATEC     |
+              | AGUARDANDO_PAGAMENTO        | TAXA_ANALISE/    | AGUARDANDO_DISTRIBUICAO              | LIQUIDACAO_TAXA_UNICA  |
+              |                             | TAXA_REANALISE   | (PSPCIM, geral)                      | ou LIQUIDACAO_ATEC     |
+              | AGUARDANDO_PAGAMENTO        | TAXA_ANALISE/    | ANALISE_INVIABILIDADE_PENDENTE       | LIQUIDACAO_ATEC        |
+              |                             | TAXA_REANALISE   | (PPCI, inviabilidade pendente)       |                        |
+              | AGUARDANDO_PAGAMENTO        | TAXA_ANALISE/    | AGUARDANDO_DISTRIBUICAO              | LIQUIDACAO_ATEC        |
+              |                             | TAXA_REANALISE   | (PPCI, geral)                        |                        |
+              | AGUARDANDO_PAGAMENTO_VISTORIA | TAXA_VISTORIA  | AGUARDANDO_DISTRIBUICAO_VISTORIA     | LIQUIDACAO_VISTORIA    |
+              | AGUARDANDO_PAGAMENTO_RENOVACAO | TAXA_RENOVACAO | AGUARDANDO_DISTRIBUICAO_VISTORIA_    | LIQUIDACAO_VISTORIA_   |
+              |                             |                  | RENOVACAO                            | RENOVACAO              |
+              "Endereço novo" = LicenciamentoEnderecoNovoHelper.isEnderecoNovo(licenciamento)
+              "Inviabilidade" = MedidaSegurancaRN.existeMedidaSegurancaComInviabilidadeTecnicaSemAprovacao
+              TipoResponsavelMarco: SISTEMA. Texto: valorNominal formatado em R$.
+              Tabelas afetadas: CBM_LICENCIAMENTO (SIT_LICENCIAMENTO),
+                                CBM_LICENCIAMENTO_MARCO (INSERT),
+                                CBM_SITUACAO_LICENCIAMENTO (histórico de situações — via TrocaEstado CDI).
+            INSTRUTOR: instrutorRN.atualizaStatusAposBoletoPago(boletoED, true)
+            RENOVACAO_INSTRUTOR: instrutorRN.atualizaStatusAposBoletoPago(boletoED, false)
+            FACT: pagamentoBoletoFactRN.processaPagamentoFact(boletoED.id)
+
+        ════ PASSO E — Mover arquivo ════
+        Se não houve erros novos durante o processamento deste arquivo:
+          → mover arquivo de caminhoOrigem para caminhoDestino
+        Se houve erros: o arquivo pode ser mantido (comportamento varia por implementação)
+          para reprocessamento manual.
+
+        @TransactionAttribute(REQUIRES_NEW) em PagamentoBoletoRN.processaRetorno garante:
+          - Falha em um registro CNAB não reverte os demais (isolamento por registro).
+          - Cada registro tem seu próprio commit ou rollback.
+          - A lista de erros acumula problemas para envio posterior por e-mail.
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_GW_Arq_Sim</bpmn:incoming>
+      <bpmn:outgoing>Flow_SP_To_GW_Erros</bpmn:outgoing>
+      <bpmn:multiInstanceLoopCharacteristics isSequential="true">
+        <bpmn:loopCardinality xsi:type="bpmn:tFormalExpression">arquivosEncontrados.length</bpmn:loopCardinality>
+      </bpmn:multiInstanceLoopCharacteristics>
+    </bpmn:subProcess>
+
+    <!-- ═══ GATEWAY: HOUVE ERROS? ═══ -->
+    <bpmn:exclusiveGateway id="GW_HouvErros" name="Houve erros de&#10;processamento CNAB?">
+      <bpmn:documentation>
+        Verifica se a lista de erros coletados durante o processamento dos arquivos está não vazia.
+        Saída "Sim": houve erros → enviar e-mail de notificação ao administrador.
+        Saída "Não": todos os registros foram processados com sucesso → encerrar normalmente.
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_SP_To_GW_Erros</bpmn:incoming>
+      <bpmn:outgoing>Flow_GW_Erros_Sim</bpmn:outgoing>
+      <bpmn:outgoing>Flow_GW_Erros_Nao</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <!-- ═══ ENVIAR E-MAIL DE ERRO ═══ -->
+    <bpmn:serviceTask id="ST_EnviarEmailErro"
+                      name="Enviar e-mail de alerta ao administrador sobre erros CNAB"
+                      camunda:class="com.procergs.solcbm.boleto.EJBTimerService">
+      <bpmn:documentation>
+        EmailService.enviarEmailErro(erros) — envia e-mail com a lista de erros coletados.
+        Destinatário: PropriedadesEnum.EMAIL_DESTINATARIO_ERRO_JOB.getVal()
+        Assunto: inclui PropriedadesEnum.AMBIENTE (dev/hom/prod) para identificar o ambiente.
+        Corpo: lista de mensagens de erro, cada uma identificando:
+          - Nome do arquivo CNAB que originou o erro
+          - Nosso número do boleto envolvido
+          - Natureza do erro (não encontrado, valor divergente, boleto já pago)
+
+        Erros típicos notificados:
+          1. nossoNumero não encontrado no banco → registro CNAB sem correspondência no SOL.
+          2. Valor pago diverge do valor nominal → inconsistência bancária.
+          3. Boleto já está com situacao = PAGO → duplicata no arquivo CNAB.
+          4. Boleto duplicado (mesmo nossoNumero para múltiplos BoletoED) → problema de dados.
+
+        Após o e-mail, o processo segue para End_CNAB normalmente.
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_GW_Erros_Sim</bpmn:incoming>
+      <bpmn:outgoing>Flow_Email_To_End</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- ═══ END: CNAB PROCESSADO ═══ -->
+    <bpmn:endEvent id="End_CNAB" name="Arquivos CNAB 240 processados&#10;e boletos confirmados">
+      <bpmn:documentation>
+        Estado final do job P11-B (CNAB):
+          - Arquivos CNAB movidos para caminhoDestino (processamento concluído).
+          - Boletos liquidados: BoletoED.situacao = PAGO, dataPagamento preenchida.
+          - Licenciamentos transitados de AGUARDANDO_PAGAMENTO* para próximo estado (conforme RN-108).
+          - Marcos de liquidação registrados em CBM_LICENCIAMENTO_MARCO.
+          - E-mail de alerta enviado ao administrador (se houve erros).
+        Próxima execução do job: 12 horas depois.
+      </bpmn:documentation>
+      <bpmn:incoming>Flow_GW_Erros_Nao</bpmn:incoming>
+      <bpmn:incoming>Flow_Email_To_End</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <!-- ═══ SEQUENCE FLOWS P11-B ═══ -->
+    <bpmn:sequenceFlow id="Flow_TimerVenc_To_Job"       sourceRef="Start_Timer_Vencimento"  targetRef="ST_JobVencimento" />
+    <bpmn:sequenceFlow id="Flow_Job_To_End_Venc"        sourceRef="ST_JobVencimento"         targetRef="End_Vencimento" />
+    <bpmn:sequenceFlow id="Flow_TimerCNAB_To_ValidarDir" sourceRef="Start_Timer_CNAB"        targetRef="ST_ValidarDiretorios" />
+    <bpmn:sequenceFlow id="Flow_ValidarDir_To_Listar"   sourceRef="ST_ValidarDiretorios"     targetRef="ST_ListarArquivos" />
+    <bpmn:sequenceFlow id="Flow_Listar_To_GW"           sourceRef="ST_ListarArquivos"        targetRef="GW_HaArquivos" />
+    <bpmn:sequenceFlow id="Flow_GW_Arq_Sim"             name="Sim"                           sourceRef="GW_HaArquivos"    targetRef="SP_ProcessarArquivos" />
+    <bpmn:sequenceFlow id="Flow_GW_Arq_Nao"             name="Não"                           sourceRef="GW_HaArquivos"    targetRef="End_SemArquivos" />
+    <bpmn:sequenceFlow id="Flow_SP_To_GW_Erros"         sourceRef="SP_ProcessarArquivos"     targetRef="GW_HouvErros" />
+    <bpmn:sequenceFlow id="Flow_GW_Erros_Sim"           name="Sim — enviar alerta"           sourceRef="GW_HouvErros"     targetRef="ST_EnviarEmailErro" />
+    <bpmn:sequenceFlow id="Flow_GW_Erros_Nao"           name="Não"                           sourceRef="GW_HouvErros"     targetRef="End_CNAB" />
+    <bpmn:sequenceFlow id="Flow_Email_To_End"            sourceRef="ST_EnviarEmailErro"       targetRef="End_CNAB" />
+
+  </bpmn:process>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       DIAGRAMA (BPMNDI) — Layout visual dos elementos
+  ═══════════════════════════════════════════════════════════════════════ -->
+  <bpmndi:BPMNDiagram id="BPMNDiagram_P11">
+    <bpmndi:BPMNPlane id="BPMNPlane_P11" bpmnElement="Collab_P11">
+
+      <!-- ═══ POOL P11-A ═══ -->
+      <bpmndi:BPMNShape id="Shape_Pool_P11A" bpmnElement="Pool_P11A" isHorizontal="true">
+        <dc:Bounds x="160" y="80" width="2020" height="640" />
+      </bpmndi:BPMNShape>
+
+      <!-- Lanes P11-A -->
+      <bpmndi:BPMNShape id="Shape_Lane_Cidadao_A" bpmnElement="Lane_Cidadao_A" isHorizontal="true">
+        <dc:Bounds x="190" y="80" width="1990" height="210" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Lane_Sistema_A" bpmnElement="Lane_Sistema_A" isHorizontal="true">
+        <dc:Bounds x="190" y="290" width="1990" height="230" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Lane_PROCERGS" bpmnElement="Lane_PROCERGS" isHorizontal="true">
+        <dc:Bounds x="190" y="520" width="1990" height="200" />
+      </bpmndi:BPMNShape>
+
+      <!-- Start P11-A -->
+      <bpmndi:BPMNShape id="Shape_Start_P11A" bpmnElement="Start_P11A">
+        <dc:Bounds x="252" y="165" width="36" height="36" />
+        <bpmndi:BPMNLabel><dc:Bounds x="228" y="209" width="86" height="40" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- UT_ListarResponsaveis -->
+      <bpmndi:BPMNShape id="Shape_UT_ListarResponsaveis" bpmnElement="UT_ListarResponsaveis">
+        <dc:Bounds x="340" y="143" width="150" height="80" />
+      </bpmndi:BPMNShape>
+
+      <!-- UT_SolicitarBoleto -->
+      <bpmndi:BPMNShape id="Shape_UT_SolicitarBoleto" bpmnElement="UT_SolicitarBoleto">
+        <dc:Bounds x="550" y="143" width="150" height="80" />
+      </bpmndi:BPMNShape>
+
+      <!-- ST_ValidarPrecond -->
+      <bpmndi:BPMNShape id="Shape_ST_ValidarPrecond" bpmnElement="ST_ValidarPrecond">
+        <dc:Bounds x="550" y="353" width="160" height="80" />
+      </bpmndi:BPMNShape>
+
+      <!-- GW_PrecondOK -->
+      <bpmndi:BPMNShape id="Shape_GW_PrecondOK" bpmnElement="GW_PrecondOK" isMarkerVisible="true">
+        <dc:Bounds x="770" y="368" width="50" height="50" />
+        <bpmndi:BPMNLabel><dc:Bounds x="756" y="340" width="78" height="27" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- End_Erro400 -->
+      <bpmndi:BPMNShape id="Shape_End_Erro400" bpmnElement="End_Erro400">
+        <dc:Bounds x="777" y="302" width="36" height="36" />
+        <bpmndi:BPMNLabel><dc:Bounds x="752" y="268" width="86" height="27" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- ST_VerifBoletoAnterior -->
+      <bpmndi:BPMNShape id="Shape_ST_VerifBoletoAnterior" bpmnElement="ST_VerifBoletoAnterior">
+        <dc:Bounds x="880" y="353" width="150" height="80" />
+      </bpmndi:BPMNShape>
+
+      <!-- GW_BloqueioAnterior -->
+      <bpmndi:BPMNShape id="Shape_GW_BloqueioAnterior" bpmnElement="GW_BloqueioAnterior" isMarkerVisible="true">
+        <dc:Bounds x="1090" y="368" width="50" height="50" />
+        <bpmndi:BPMNLabel><dc:Bounds x="1073" y="340" width="84" height="27" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- End_ErroBloqueio -->
+      <bpmndi:BPMNShape id="Shape_End_ErroBloqueio" bpmnElement="End_ErroBloqueio">
+        <dc:Bounds x="1097" y="302" width="36" height="36" />
+        <bpmndi:BPMNLabel><dc:Bounds x="1068" y="268" width="94" height="27" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- ST_CalcularMontarBoleto -->
+      <bpmndi:BPMNShape id="Shape_ST_CalcularMontarBoleto" bpmnElement="ST_CalcularMontarBoleto">
+        <dc:Bounds x="1200" y="353" width="170" height="80" />
+      </bpmndi:BPMNShape>
+
+      <!-- ST_RegistrarBoletoPROCERGS (PROCERGS lane) -->
+      <bpmndi:BPMNShape id="Shape_ST_RegistrarBoletoPROCERGS" bpmnElement="ST_RegistrarBoletoPROCERGS">
+        <dc:Bounds x="1440" y="580" width="170" height="80" />
+      </bpmndi:BPMNShape>
+
+      <!-- GW_IntegracaoOK -->
+      <bpmndi:BPMNShape id="Shape_GW_IntegracaoOK" bpmnElement="GW_IntegracaoOK" isMarkerVisible="true">
+        <dc:Bounds x="1680" y="368" width="50" height="50" />
+        <bpmndi:BPMNLabel><dc:Bounds x="1660" y="340" width="90" height="27" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- End_ErroIntegracao -->
+      <bpmndi:BPMNShape id="Shape_End_ErroIntegracao" bpmnElement="End_ErroIntegracao">
+        <dc:Bounds x="1687" y="302" width="36" height="36" />
+        <bpmndi:BPMNLabel><dc:Bounds x="1654" y="268" width="102" height="27" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- ST_PersistirMarco -->
+      <bpmndi:BPMNShape id="Shape_ST_PersistirMarco" bpmnElement="ST_PersistirMarco">
+        <dc:Bounds x="1790" y="353" width="150" height="80" />
+      </bpmndi:BPMNShape>
+
+      <!-- UT_DownloadBoleto -->
+      <bpmndi:BPMNShape id="Shape_UT_DownloadBoleto" bpmnElement="UT_DownloadBoleto">
+        <dc:Bounds x="1790" y="143" width="150" height="80" />
+      </bpmndi:BPMNShape>
+
+      <!-- UT_EfetuarPagamento -->
+      <bpmndi:BPMNShape id="Shape_UT_EfetuarPagamento" bpmnElement="UT_EfetuarPagamento">
+        <dc:Bounds x="2000" y="143" width="150" height="80" />
+      </bpmndi:BPMNShape>
+
+      <!-- End_BoletoEmitido -->
+      <bpmndi:BPMNShape id="Shape_End_BoletoEmitido" bpmnElement="End_BoletoEmitido">
+        <dc:Bounds x="2122" y="165" width="36" height="36" />
+        <bpmndi:BPMNLabel><dc:Bounds x="2094" y="209" width="92" height="40" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- ═══ EDGES P11-A ═══ -->
+      <bpmndi:BPMNEdge id="Edge_Start_To_ListarResp" bpmnElement="Flow_Start_To_ListarResp">
+        <di:waypoint x="288" y="183" /><di:waypoint x="340" y="183" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_ListarResp_To_Solicitar" bpmnElement="Flow_ListarResp_To_Solicitar">
+        <di:waypoint x="490" y="183" /><di:waypoint x="550" y="183" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Solicitar_To_ValidarPrecond" bpmnElement="Flow_Solicitar_To_ValidarPrecond">
+        <di:waypoint x="625" y="223" /><di:waypoint x="625" y="353" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_ValidarPrecond_To_GW" bpmnElement="Flow_ValidarPrecond_To_GW">
+        <di:waypoint x="710" y="393" /><di:waypoint x="770" y="393" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_GW_PrecondOK_Sim" bpmnElement="Flow_GW_PrecondOK_Sim">
+        <di:waypoint x="820" y="393" /><di:waypoint x="880" y="393" />
+        <bpmndi:BPMNLabel><dc:Bounds x="841" y="375" width="18" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_GW_PrecondOK_Nao" bpmnElement="Flow_GW_PrecondOK_Nao">
+        <di:waypoint x="795" y="368" /><di:waypoint x="795" y="338" />
+        <bpmndi:BPMNLabel><dc:Bounds x="736" y="347" width="52" height="27" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_VerifBoleto_To_GW" bpmnElement="Flow_VerifBoleto_To_GW">
+        <di:waypoint x="1030" y="393" /><di:waypoint x="1090" y="393" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_GW_Bloqueio_Sim" bpmnElement="Flow_GW_Bloqueio_Sim">
+        <di:waypoint x="1115" y="368" /><di:waypoint x="1115" y="338" />
+        <bpmndi:BPMNLabel><dc:Bounds x="1040" y="347" width="68" height="27" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_GW_Bloqueio_Nao" bpmnElement="Flow_GW_Bloqueio_Nao">
+        <di:waypoint x="1140" y="393" /><di:waypoint x="1200" y="393" />
+        <bpmndi:BPMNLabel><dc:Bounds x="1152" y="375" width="52" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_CalcularBoleto_To_PROCERGS" bpmnElement="Flow_CalcularBoleto_To_PROCERGS">
+        <di:waypoint x="1370" y="393" /><di:waypoint x="1525" y="393" /><di:waypoint x="1525" y="580" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_PROCERGS_To_GW" bpmnElement="Flow_PROCERGS_To_GW">
+        <di:waypoint x="1610" y="620" /><di:waypoint x="1705" y="620" /><di:waypoint x="1705" y="418" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_GW_Integ_Sim" bpmnElement="Flow_GW_Integ_Sim">
+        <di:waypoint x="1730" y="393" /><di:waypoint x="1790" y="393" />
+        <bpmndi:BPMNLabel><dc:Bounds x="1748" y="375" width="18" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_GW_Integ_Nao" bpmnElement="Flow_GW_Integ_Nao">
+        <di:waypoint x="1705" y="368" /><di:waypoint x="1705" y="338" />
+        <bpmndi:BPMNLabel><dc:Bounds x="1622" y="347" width="76" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Marco_To_Download" bpmnElement="Flow_Marco_To_Download">
+        <di:waypoint x="1865" y="353" /><di:waypoint x="1865" y="223" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Download_To_Pagar" bpmnElement="Flow_Download_To_Pagar">
+        <di:waypoint x="1940" y="183" /><di:waypoint x="2000" y="183" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Pagar_To_End" bpmnElement="Flow_Pagar_To_End">
+        <di:waypoint x="2150" y="183" /><di:waypoint x="2122" y="183" />
+      </bpmndi:BPMNEdge>
+
+      <!-- ═══ POOL P11-B ═══ -->
+      <bpmndi:BPMNShape id="Shape_Pool_P11B" bpmnElement="Pool_P11B" isHorizontal="true">
+        <dc:Bounds x="160" y="760" width="1500" height="400" />
+      </bpmndi:BPMNShape>
+
+      <!-- Lanes P11-B -->
+      <bpmndi:BPMNShape id="Shape_Lane_EJBTimer" bpmnElement="Lane_EJBTimer" isHorizontal="true">
+        <dc:Bounds x="190" y="760" width="1470" height="160" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Lane_Sistema_B" bpmnElement="Lane_Sistema_B" isHorizontal="true">
+        <dc:Bounds x="190" y="920" width="1470" height="240" />
+      </bpmndi:BPMNShape>
+
+      <!-- Start_Timer_Vencimento -->
+      <bpmndi:BPMNShape id="Shape_Start_Timer_Vencimento" bpmnElement="Start_Timer_Vencimento">
+        <dc:Bounds x="252" y="795" width="36" height="36" />
+        <bpmndi:BPMNLabel><dc:Bounds x="228" y="839" width="85" height="53" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- Start_Timer_CNAB -->
+      <bpmndi:BPMNShape id="Shape_Start_Timer_CNAB" bpmnElement="Start_Timer_CNAB">
+        <dc:Bounds x="252" y="883" width="36" height="36" />
+        <bpmndi:BPMNLabel><dc:Bounds x="228" y="927" width="85" height="53" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- ST_JobVencimento -->
+      <bpmndi:BPMNShape id="Shape_ST_JobVencimento" bpmnElement="ST_JobVencimento">
+        <dc:Bounds x="350" y="933" width="160" height="80" />
+      </bpmndi:BPMNShape>
+
+      <!-- End_Vencimento -->
+      <bpmndi:BPMNShape id="Shape_End_Vencimento" bpmnElement="End_Vencimento">
+        <dc:Bounds x="572" y="955" width="36" height="36" />
+        <bpmndi:BPMNLabel><dc:Bounds x="548" y="999" width="85" height="40" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- ST_ValidarDiretorios -->
+      <bpmndi:BPMNShape id="Shape_ST_ValidarDiretorios" bpmnElement="ST_ValidarDiretorios">
+        <dc:Bounds x="350" y="1043" width="150" height="80" />
+      </bpmndi:BPMNShape>
+
+      <!-- ST_ListarArquivos -->
+      <bpmndi:BPMNShape id="Shape_ST_ListarArquivos" bpmnElement="ST_ListarArquivos">
+        <dc:Bounds x="560" y="1043" width="140" height="80" />
+      </bpmndi:BPMNShape>
+
+      <!-- GW_HaArquivos -->
+      <bpmndi:BPMNShape id="Shape_GW_HaArquivos" bpmnElement="GW_HaArquivos" isMarkerVisible="true">
+        <dc:Bounds x="760" y="1058" width="50" height="50" />
+        <bpmndi:BPMNLabel><dc:Bounds x="741" y="1030" width="88" height="27" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- End_SemArquivos -->
+      <bpmndi:BPMNShape id="Shape_End_SemArquivos" bpmnElement="End_SemArquivos">
+        <dc:Bounds x="767" y="965" width="36" height="36" />
+        <bpmndi:BPMNLabel><dc:Bounds x="743" y="1009" width="85" height="27" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- SP_ProcessarArquivos -->
+      <bpmndi:BPMNShape id="Shape_SP_ProcessarArquivos" bpmnElement="SP_ProcessarArquivos" isExpanded="false">
+        <dc:Bounds x="880" y="1033" width="200" height="100" />
+      </bpmndi:BPMNShape>
+
+      <!-- GW_HouvErros -->
+      <bpmndi:BPMNShape id="Shape_GW_HouvErros" bpmnElement="GW_HouvErros" isMarkerVisible="true">
+        <dc:Bounds x="1145" y="1058" width="50" height="50" />
+        <bpmndi:BPMNLabel><dc:Bounds x="1123" y="1030" width="93" height="27" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- ST_EnviarEmailErro -->
+      <bpmndi:BPMNShape id="Shape_ST_EnviarEmailErro" bpmnElement="ST_EnviarEmailErro">
+        <dc:Bounds x="1260" y="1033" width="140" height="80" />
+      </bpmndi:BPMNShape>
+
+      <!-- End_CNAB -->
+      <bpmndi:BPMNShape id="Shape_End_CNAB" bpmnElement="End_CNAB">
+        <dc:Bounds x="1462" y="1058" width="36" height="36" />
+        <bpmndi:BPMNLabel><dc:Bounds x="1432" y="1102" width="96" height="40" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- ═══ EDGES P11-B ═══ -->
+      <bpmndi:BPMNEdge id="Edge_TimerVenc_To_Job" bpmnElement="Flow_TimerVenc_To_Job">
+        <di:waypoint x="270" y="831" /><di:waypoint x="270" y="973" /><di:waypoint x="350" y="973" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Job_To_End_Venc" bpmnElement="Flow_Job_To_End_Venc">
+        <di:waypoint x="510" y="973" /><di:waypoint x="572" y="973" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_TimerCNAB_To_ValidarDir" bpmnElement="Flow_TimerCNAB_To_ValidarDir">
+        <di:waypoint x="270" y="919" /><di:waypoint x="270" y="1083" /><di:waypoint x="350" y="1083" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_ValidarDir_To_Listar" bpmnElement="Flow_ValidarDir_To_Listar">
+        <di:waypoint x="500" y="1083" /><di:waypoint x="560" y="1083" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Listar_To_GW" bpmnElement="Flow_Listar_To_GW">
+        <di:waypoint x="700" y="1083" /><di:waypoint x="760" y="1083" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_GW_Arq_Sim" bpmnElement="Flow_GW_Arq_Sim">
+        <di:waypoint x="810" y="1083" /><di:waypoint x="880" y="1083" />
+        <bpmndi:BPMNLabel><dc:Bounds x="833" y="1065" width="22" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_GW_Arq_Nao" bpmnElement="Flow_GW_Arq_Nao">
+        <di:waypoint x="785" y="1058" /><di:waypoint x="785" y="1001" />
+        <bpmndi:BPMNLabel><dc:Bounds x="792" y="1022" width="22" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_SP_To_GW_Erros" bpmnElement="Flow_SP_To_GW_Erros">
+        <di:waypoint x="1080" y="1083" /><di:waypoint x="1145" y="1083" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_GW_Erros_Sim" bpmnElement="Flow_GW_Erros_Sim">
+        <di:waypoint x="1195" y="1083" /><di:waypoint x="1260" y="1073" />
+        <bpmndi:BPMNLabel><dc:Bounds x="1198" y="1056" width="57" height="27" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_GW_Erros_Nao" bpmnElement="Flow_GW_Erros_Nao">
+        <di:waypoint x="1170" y="1058" /><di:waypoint x="1170" y="1010" /><di:waypoint x="1480" y="1010" /><di:waypoint x="1480" y="1058" />
+        <bpmndi:BPMNLabel><dc:Bounds x="1298" y="992" width="22" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Email_To_End" bpmnElement="Flow_Email_To_End">
+        <di:waypoint x="1400" y="1073" /><di:waypoint x="1462" y="1076" />
+      </bpmndi:BPMNEdge>
+
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</bpmn:definitions>

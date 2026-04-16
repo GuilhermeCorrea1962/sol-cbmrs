@@ -1,0 +1,355 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+  id="Definitions_P02_CadastroUsuario_SOLCBM"
+  targetNamespace="http://solcbm.procergs.rs.gov.br/bpmn/P02">
+
+  <!-- =========================================================
+       MESSAGES (must be direct children of bpmn:definitions)
+       ========================================================= -->
+  <bpmn:message id="Message_Submissao_Cadastro" name="Cadastro submetido (ANALISE_PENDENTE)"/>
+  <bpmn:message id="Message_Decisao_Aprovado" name="Decisão: APROVADO"/>
+  <bpmn:message id="Message_Decisao_Reprovado" name="Decisão: REPROVADO"/>
+  <bpmn:message id="Message_Decisao_Cancelado" name="Decisão: CANCELADO (retorna fila)"/>
+
+  <!-- =========================================================
+       COLLABORATION / POOLS
+       ========================================================= -->
+  <bpmn:collaboration id="Collab_P02_CadastroUsuario_SOLCBM">
+    <bpmn:participant id="Participant_Frontend_Cidadao" name="Cidadão/RT (Frontend SOL)" processRef="Process_Cidadao_RT"/>
+    <bpmn:participant id="Participant_Analista_CBM" name="Analista/Supervisor CBM" processRef="Process_Analise_Cadastro"/>
+    <bpmn:participant id="Participant_Backend_SOL" name="Backend SOL-CBM (API/Serviços)"/>
+
+    <!-- Message flows (alto nível) -->
+    <bpmn:messageFlow id="MF_SubmissaoParaAnalise"
+                      name="Notificar cadastro pendente"
+                      sourceRef="Task_SubmeterCadastro"
+                      targetRef="StartMsg_CadastroPendente"/>
+
+    <bpmn:messageFlow id="MF_AprovadoParaCidadao"
+                      name="Notificar aprovação"
+                      sourceRef="Task_NotificarAprovacao"
+                      targetRef="CatchMsg_Aprovado"/>
+
+    <bpmn:messageFlow id="MF_ReprovadoParaCidadao"
+                      name="Notificar reprovação"
+                      sourceRef="Task_NotificarReprovacao"
+                      targetRef="CatchMsg_Reprovado"/>
+
+    <bpmn:messageFlow id="MF_CanceladoParaCidadao"
+                      name="Notificar cancelamento (retorna fila)"
+                      sourceRef="Task_NotificarCancelado"
+                      targetRef="CatchMsg_Cancelado"/>
+
+    <!-- Message flows “técnicos” para o pool Backend (representação) -->
+    <bpmn:messageFlow id="MF_FE_ConsultaCadastro"
+                      name="GET /usuarios/{cpf}"
+                      sourceRef="Task_VerificarExistenciaCadastro"
+                      targetRef="Participant_Backend_SOL"/>
+    <bpmn:messageFlow id="MF_FE_CriarCadastro"
+                      name="POST /usuarios (status=INCOMPLETO)"
+                      sourceRef="Task_CriarCadastroInicial"
+                      targetRef="Participant_Backend_SOL"/>
+    <bpmn:messageFlow id="MF_FE_AtualizarCadastro"
+                      name="PUT /usuarios/{id}"
+                      sourceRef="Task_SalvarEdicoesCadastro"
+                      targetRef="Participant_Backend_SOL"/>
+    <bpmn:messageFlow id="MF_FE_UploadRG"
+                      name="POST/PUT /usuarios/{id}/arquivo-rg"
+                      sourceRef="Task_AnexarRG"
+                      targetRef="Participant_Backend_SOL"/>
+    <bpmn:messageFlow id="MF_FE_UploadDocGraduacao"
+                      name="POST/PUT /usuarios/{id}/graduacoes/{idGrad}/arquivo"
+                      sourceRef="Task_AnexarDocsGraduacoes"
+                      targetRef="Participant_Backend_SOL"/>
+    <bpmn:messageFlow id="MF_FE_SubmeterCadastro"
+                      name="PATCH /usuarios/{id}"
+                      sourceRef="Task_SubmeterCadastro"
+                      targetRef="Participant_Backend_SOL"/>
+
+    <bpmn:messageFlow id="MF_BE_AssumirAnalise"
+                      name="POST /adm/analise-cadastros (claim)"
+                      sourceRef="Task_AssumirAnalise"
+                      targetRef="Participant_Backend_SOL"/>
+    <bpmn:messageFlow id="MF_BE_DecisaoAnalise"
+                      name="PUT /adm/analise-cadastros/{id}"
+                      sourceRef="Task_DecidirAnalise"
+                      targetRef="Participant_Backend_SOL"/>
+  </bpmn:collaboration>
+
+  <!-- =========================================================
+       PROCESSO 1: CIDADÃO / RT (Frontend)
+       ========================================================= -->
+  <bpmn:process id="Process_Cidadao_RT" name="P02 - Cadastro do Usuário/RT (Cidadão)" isExecutable="false">
+
+    <bpmn:startEvent id="Start_Cidadao" name="Início: Usuário autenticado acessa Cadastro"/>
+    <bpmn:serviceTask id="Task_VerificarExistenciaCadastro" name="Verificar existência de cadastro (por CPF)"/>
+    <bpmn:exclusiveGateway id="GW_CadastroExiste" name="Cadastro existe?"/>
+
+    <bpmn:serviceTask id="Task_CriarCadastroInicial" name="Criar cadastro inicial (status=INCOMPLETO)"/>
+    <bpmn:userTask id="Task_PreencherCadastro" name="Preencher dados cadastrais"/>
+    <bpmn:serviceTask id="Task_SalvarEdicoesCadastro" name="Salvar alterações do cadastro (PUT)"/>
+
+    <bpmn:userTask id="Task_AnexarRG" name="Anexar RG (upload)"/>
+    <bpmn:userTask id="Task_AnexarDocsGraduacoes" name="Anexar doc. por graduação (upload)"/>
+
+    <bpmn:userTask id="Task_RevisarCadastro" name="Revisar cadastro e documentos"/>
+    <bpmn:serviceTask id="Task_SubmeterCadastro" name="Submeter cadastro para análise (PATCH)"/>
+
+    <bpmn:exclusiveGateway id="GW_CadastroCompleto" name="Cadastro completo? (RG + docs graduações)"/>
+
+    <bpmn:intermediateCatchEvent id="CatchMsg_Aprovado" name="Receber notificação: APROVADO">
+      <bpmn:messageEventDefinition messageRef="Message_Decisao_Aprovado"/>
+    </bpmn:intermediateCatchEvent>
+
+    <bpmn:intermediateCatchEvent id="CatchMsg_Reprovado" name="Receber notificação: REPROVADO">
+      <bpmn:messageEventDefinition messageRef="Message_Decisao_Reprovado"/>
+    </bpmn:intermediateCatchEvent>
+
+    <bpmn:intermediateCatchEvent id="CatchMsg_Cancelado" name="Receber notificação: CANCELADO">
+      <bpmn:messageEventDefinition messageRef="Message_Decisao_Cancelado"/>
+    </bpmn:intermediateCatchEvent>
+
+    <!-- (Opcional) fins separados para clareza -->
+    <bpmn:endEvent id="End_Aguardando" name="Aguardando análise do CBM"/>
+    <bpmn:endEvent id="End_Aprovado" name="Cadastro aprovado"/>
+    <bpmn:endEvent id="End_Reprovado" name="Cadastro reprovado (ajustar e reenviar)"/>
+
+    <!-- Sequence flows -->
+    <bpmn:sequenceFlow id="F1" sourceRef="Start_Cidadao" targetRef="Task_VerificarExistenciaCadastro"/>
+    <bpmn:sequenceFlow id="F2" sourceRef="Task_VerificarExistenciaCadastro" targetRef="GW_CadastroExiste"/>
+
+    <bpmn:sequenceFlow id="F3_SIM" sourceRef="GW_CadastroExiste" targetRef="Task_PreencherCadastro">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression"><![CDATA[existeCadastro == true]]></bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+
+    <bpmn:sequenceFlow id="F3_NAO" sourceRef="GW_CadastroExiste" targetRef="Task_CriarCadastroInicial">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression"><![CDATA[existeCadastro == false]]></bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+
+    <bpmn:sequenceFlow id="F4" sourceRef="Task_CriarCadastroInicial" targetRef="Task_PreencherCadastro"/>
+    <bpmn:sequenceFlow id="F5" sourceRef="Task_PreencherCadastro" targetRef="Task_SalvarEdicoesCadastro"/>
+    <bpmn:sequenceFlow id="F6" sourceRef="Task_SalvarEdicoesCadastro" targetRef="Task_AnexarRG"/>
+    <bpmn:sequenceFlow id="F7" sourceRef="Task_AnexarRG" targetRef="Task_AnexarDocsGraduacoes"/>
+    <bpmn:sequenceFlow id="F8" sourceRef="Task_AnexarDocsGraduacoes" targetRef="Task_RevisarCadastro"/>
+    <bpmn:sequenceFlow id="F9" sourceRef="Task_RevisarCadastro" targetRef="Task_SubmeterCadastro"/>
+    <bpmn:sequenceFlow id="F10" sourceRef="Task_SubmeterCadastro" targetRef="GW_CadastroCompleto"/>
+
+    <bpmn:sequenceFlow id="F11_OK" sourceRef="GW_CadastroCompleto" targetRef="End_Aguardando">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression"><![CDATA[cadastroCompleto == true]]></bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+
+    <bpmn:sequenceFlow id="F11_NOK" sourceRef="GW_CadastroCompleto" targetRef="Task_AnexarRG">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression"><![CDATA[cadastroCompleto == false]]></bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+
+    <!-- Após submissão: aguarda mensagens da decisão -->
+    <bpmn:sequenceFlow id="F12_1" sourceRef="End_Aguardando" targetRef="CatchMsg_Aprovado"/>
+    <bpmn:sequenceFlow id="F12_2" sourceRef="End_Aguardando" targetRef="CatchMsg_Reprovado"/>
+    <bpmn:sequenceFlow id="F12_3" sourceRef="End_Aguardando" targetRef="CatchMsg_Cancelado"/>
+
+    <bpmn:sequenceFlow id="F13_Aprov" sourceRef="CatchMsg_Aprovado" targetRef="End_Aprovado"/>
+    <bpmn:sequenceFlow id="F13_Reprov" sourceRef="CatchMsg_Reprovado" targetRef="End_Reprovado"/>
+
+    <!-- Cancelado: volta para revisão -->
+    <bpmn:sequenceFlow id="F13_Cancel" sourceRef="CatchMsg_Cancelado" targetRef="Task_RevisarCadastro"/>
+
+  </bpmn:process>
+
+  <!-- =========================================================
+       PROCESSO 2: ANALISTA / SUPERVISOR CBM
+       ========================================================= -->
+  <bpmn:process id="Process_Analise_Cadastro" name="P02 - Análise de Cadastro (CBM)" isExecutable="false">
+
+    <bpmn:startEvent id="StartMsg_CadastroPendente" name="Cadastro pendente para análise">
+      <bpmn:messageEventDefinition messageRef="Message_Submissao_Cadastro"/>
+    </bpmn:startEvent>
+
+    <bpmn:userTask id="Task_ListarPendentes" name="Listar cadastros pendentes"/>
+    <bpmn:serviceTask id="Task_AssumirAnalise" name="Assumir análise (claim) e mover para EM_ANALISE"/>
+    <bpmn:userTask id="Task_AnalisarDocumentos" name="Analisar dados e documentos"/>
+    <bpmn:userTask id="Task_DecidirAnalise" name="Registrar decisão (APROVADO/REPROVADO/CANCELADO)"/>
+    <bpmn:exclusiveGateway id="GW_Decisao" name="Decisão"/>
+
+    <bpmn:serviceTask id="Task_NotificarAprovacao" name="Notificar APROVAÇÃO (notificação + e-mail)"/>
+    <bpmn:serviceTask id="Task_NotificarReprovacao" name="Notificar REPROVAÇÃO (notificação + e-mail)"/>
+    <bpmn:serviceTask id="Task_NotificarCancelado" name="Notificar CANCELAMENTO (retorna fila)"/>
+
+    <bpmn:endEvent id="End_CBM_Aprovado" name="Fim: Aprovado"/>
+    <bpmn:endEvent id="End_CBM_Reprovado" name="Fim: Reprovado"/>
+    <bpmn:endEvent id="End_CBM_Cancelado" name="Fim: Cancelado"/>
+
+    <bpmn:sequenceFlow id="A1" sourceRef="StartMsg_CadastroPendente" targetRef="Task_ListarPendentes"/>
+    <bpmn:sequenceFlow id="A2" sourceRef="Task_ListarPendentes" targetRef="Task_AssumirAnalise"/>
+    <bpmn:sequenceFlow id="A3" sourceRef="Task_AssumirAnalise" targetRef="Task_AnalisarDocumentos"/>
+    <bpmn:sequenceFlow id="A4" sourceRef="Task_AnalisarDocumentos" targetRef="Task_DecidirAnalise"/>
+    <bpmn:sequenceFlow id="A5" sourceRef="Task_DecidirAnalise" targetRef="GW_Decisao"/>
+
+    <bpmn:sequenceFlow id="A6_APROV" sourceRef="GW_Decisao" targetRef="Task_NotificarAprovacao">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression"><![CDATA[decisao == 'APROVADO']]></bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+
+    <bpmn:sequenceFlow id="A6_REPROV" sourceRef="GW_Decisao" targetRef="Task_NotificarReprovacao">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression"><![CDATA[decisao == 'REPROVADO']]></bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+
+    <bpmn:sequenceFlow id="A6_CANCEL" sourceRef="GW_Decisao" targetRef="Task_NotificarCancelado">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression"><![CDATA[decisao == 'CANCELADO']]></bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+
+    <bpmn:sequenceFlow id="A7_APROV" sourceRef="Task_NotificarAprovacao" targetRef="End_CBM_Aprovado"/>
+    <bpmn:sequenceFlow id="A7_REPROV" sourceRef="Task_NotificarReprovacao" targetRef="End_CBM_Reprovado"/>
+    <bpmn:sequenceFlow id="A7_CANCEL" sourceRef="Task_NotificarCancelado" targetRef="End_CBM_Cancelado"/>
+
+  </bpmn:process>
+
+  <!-- =========================================================
+       BPMN DIAGRAM (so Modeler can display it)
+       Minimal layout: pools + key nodes + main edges
+       ========================================================= -->
+  <bpmndi:BPMNDiagram id="BPMNDiagram_P02">
+    <bpmndi:BPMNPlane id="BPMNPlane_P02" bpmnElement="Collab_P02_CadastroUsuario_SOLCBM">
+
+      <!-- Participants (pools) -->
+      <bpmndi:BPMNShape id="Shape_Participant_Frontend_Cidadao" bpmnElement="Participant_Frontend_Cidadao" isHorizontal="true">
+        <dc:Bounds x="80" y="80" width="1600" height="320"/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Shape_Participant_Analista_CBM" bpmnElement="Participant_Analista_CBM" isHorizontal="true">
+        <dc:Bounds x="80" y="450" width="1600" height="280"/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Shape_Participant_Backend_SOL" bpmnElement="Participant_Backend_SOL" isHorizontal="true">
+        <dc:Bounds x="80" y="770" width="1600" height="160"/>
+      </bpmndi:BPMNShape>
+
+      <!-- ===== Cidadão lane shapes ===== -->
+      <bpmndi:BPMNShape id="Shape_Start_Cidadao" bpmnElement="Start_Cidadao">
+        <dc:Bounds x="140" y="210" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Shape_Task_VerificarExistenciaCadastro" bpmnElement="Task_VerificarExistenciaCadastro">
+        <dc:Bounds x="220" y="190" width="210" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Shape_GW_CadastroExiste" bpmnElement="GW_CadastroExiste" isMarkerVisible="true">
+        <dc:Bounds x="470" y="205" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Shape_Task_CriarCadastroInicial" bpmnElement="Task_CriarCadastroInicial">
+        <dc:Bounds x="560" y="120" width="250" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Shape_Task_PreencherCadastro" bpmnElement="Task_PreencherCadastro">
+        <dc:Bounds x="560" y="240" width="250" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Shape_Task_SalvarEdicoesCadastro" bpmnElement="Task_SalvarEdicoesCadastro">
+        <dc:Bounds x="850" y="240" width="250" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Shape_Task_AnexarRG" bpmnElement="Task_AnexarRG">
+        <dc:Bounds x="1140" y="240" width="200" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Shape_Task_AnexarDocsGraduacoes" bpmnElement="Task_AnexarDocsGraduacoes">
+        <dc:Bounds x="1370" y="240" width="250" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- ===== Analista shapes ===== -->
+      <bpmndi:BPMNShape id="Shape_StartMsg_CadastroPendente" bpmnElement="StartMsg_CadastroPendente">
+        <dc:Bounds x="140" y="560" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Shape_Task_ListarPendentes" bpmnElement="Task_ListarPendentes">
+        <dc:Bounds x="220" y="540" width="220" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Shape_Task_AssumirAnalise" bpmnElement="Task_AssumirAnalise">
+        <dc:Bounds x="470" y="540" width="260" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Shape_Task_DecidirAnalise" bpmnElement="Task_DecidirAnalise">
+        <dc:Bounds x="760" y="540" width="260" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Shape_GW_Decisao" bpmnElement="GW_Decisao" isMarkerVisible="true">
+        <dc:Bounds x="1050" y="555" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Shape_Task_NotificarAprovacao" bpmnElement="Task_NotificarAprovacao">
+        <dc:Bounds x="1130" y="490" width="240" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Shape_Task_NotificarReprovacao" bpmnElement="Task_NotificarReprovacao">
+        <dc:Bounds x="1130" y="590" width="240" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Shape_Task_NotificarCancelado" bpmnElement="Task_NotificarCancelado">
+        <dc:Bounds x="1130" y="680" width="240" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- ===== Sequence flow edges (minimal) ===== -->
+      <bpmndi:BPMNEdge id="Edge_F1" bpmnElement="F1">
+        <di:waypoint x="176" y="228"/>
+        <di:waypoint x="220" y="228"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_F2" bpmnElement="F2">
+        <di:waypoint x="430" y="228"/>
+        <di:waypoint x="470" y="230"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_F3_SIM" bpmnElement="F3_SIM">
+        <di:waypoint x="520" y="230"/>
+        <di:waypoint x="560" y="280"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_F3_NAO" bpmnElement="F3_NAO">
+        <di:waypoint x="495" y="205"/>
+        <di:waypoint x="560" y="160"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_F5" bpmnElement="F5">
+        <di:waypoint x="810" y="280"/>
+        <di:waypoint x="850" y="280"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_F6" bpmnElement="F6">
+        <di:waypoint x="1100" y="280"/>
+        <di:waypoint x="1140" y="280"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_F7" bpmnElement="F7">
+        <di:waypoint x="1340" y="280"/>
+        <di:waypoint x="1370" y="280"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_A1" bpmnElement="A1">
+        <di:waypoint x="176" y="578"/>
+        <di:waypoint x="220" y="578"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_A2" bpmnElement="A2">
+        <di:waypoint x="440" y="578"/>
+        <di:waypoint x="470" y="578"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_A4" bpmnElement="A4">
+        <di:waypoint x="730" y="578"/>
+        <di:waypoint x="760" y="578"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Edge_A5" bpmnElement="A5">
+        <di:waypoint x="1020" y="578"/>
+        <di:waypoint x="1050" y="580"/>
+      </bpmndi:BPMNEdge>
+
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</bpmn:definitions>

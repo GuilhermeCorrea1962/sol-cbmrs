@@ -1,0 +1,925 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  id="Definitions_P13"
+                  targetNamespace="http://cbmrs.sol.p13"
+                  exporter="Camunda Modeler"
+                  exporterVersion="5.0.0">
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       P13 — Jobs Automáticos do Sistema (Renovação de Alvarás)
+       Stack Atual: Java EE 7 · WildFly · EJB @Singleton @Startup · @Schedule
+       Stack Moderna (ref.): Spring Boot 3.x · @Scheduled · ShedLock · Spring Mail · Thymeleaf
+
+       Processo PURAMENTE AUTOMATIZADO — sem interação humana, sem OAuth2/OIDC,
+       sem endpoints REST de entrada. Disparado por agendador temporal do servidor.
+
+       Três pools independentes (sem Message Flows entre eles):
+         Pool 1 — Rotina Diária de Alvarás    (00:01) → Jobs P13-A, P13-B, P13-C
+         Pool 2 — Envio de Notificações Email  (00:31) → Job  P13-D
+         Pool 3 — Verificação Pagamento Banrisul (12h) → Job  P13-E
+
+       Regras de Negócio: RN-121 a RN-140
+       Referência de código: EJBTimerService · LicenciamentoRN · LicenciamentoBD
+                             LicenciamentoNotificacaoRN · AppciRN · RotinaRN
+                             PagamentoBoletoRN · BoletoRN
+  ═══════════════════════════════════════════════════════════════════════ -->
+
+  <bpmn:collaboration id="Collab_P13">
+    <bpmn:documentation>
+      Colaboração P13 — Jobs Automáticos do Sistema SOL (CBM-RS).
+      Três pools independentes, cada um com seu próprio Timer Start Event e processo BPMN.
+      Não há Message Flows entre os pools: cada job é autônomo e não depende dos demais.
+      Todos os jobs executam com identidade de sistema (sem sessão de usuário).
+      Referência: EJBTimerService (@Singleton @Startup, métodos @Schedule distintos).
+    </bpmn:documentation>
+    <bpmn:participant id="Pool_RotinaDiaria"
+                      name="Pool 1 — Rotina Diária de Alvarás (00:01 — Jobs P13-A / P13-B / P13-C)"
+                      processRef="Process_P13Pool1"/>
+    <bpmn:participant id="Pool_EnvioEmails"
+                      name="Pool 2 — Envio de Notificações por E-mail (00:31 — Job P13-D)"
+                      processRef="Process_P13Pool2"/>
+    <bpmn:participant id="Pool_Banrisul"
+                      name="Pool 3 — Verificação de Pagamento Banrisul CNAB 240 (a cada 12h — Job P13-E)"
+                      processRef="Process_P13Pool3"/>
+  </bpmn:collaboration>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       POOL 1 — Rotina Diária de Alvarás
+       Jobs: P13-A (atualizar vencidos), P13-B (notif. 90/59/29 dias), P13-C (notif. vencidos ontem)
+       Raias: Agendador | Sistema SOL Backend
+  ═══════════════════════════════════════════════════════════════════════ -->
+  <bpmn:process id="Process_P13Pool1" name="P13 Pool 1 — Rotina Diária de Alvarás" isExecutable="false">
+
+    <bpmn:laneSet id="LaneSet_P13Pool1">
+      <bpmn:lane id="Lane_Sched_P1" name="Agendador&#10;(EJBTimerService @Singleton / Spring @Scheduled)">
+        <bpmn:documentation>
+          Representa o agendador temporal do servidor de aplicação.
+          Stack atual: EJBTimerService (@Singleton @Startup) —
+            método: notificaAlvaresVencimento() com @Schedule(hour="0", minute="1", persistent=false)
+          Stack moderna: AlvaraScheduler (@Component) —
+            @Scheduled(cron="0 1 0 * * *", zone="America/Sao_Paulo") + ShedLock para cluster.
+          Esta raia não executa lógica de negócio — apenas dispara e sinaliza término.
+        </bpmn:documentation>
+        <bpmn:flowNodeRef>Start_RotinaDiaria</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>End_RotinaDiaria</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_Sistema_P1"
+                 name="Sistema SOL Backend&#10;(LicenciamentoBD · LicenciamentoRN · AppciRN · LicenciamentoNotificacaoRN · RotinaRN)">
+        <bpmn:documentation>
+          Backend Java EE (WildFly). @Stateless / @Singleton com @TransactionAttribute(REQUIRED).
+          Transação por licenciamento: falha em um elemento não aborta os demais (try/catch interno).
+          Stack moderna: @Service + @Transactional (Spring) — sem JTA.
+        </bpmn:documentation>
+        <bpmn:flowNodeRef>ST_ConsultaAlvarasVencidos</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>GW_TemAlvaraVencido</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>SP_ProcessaAlvara</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>GW_JoinAlvara</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>ST_NotificaAVencer90</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>ST_NotificaAVencer59</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>ST_NotificaAVencer29</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>ST_NotificaVencidos</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>ST_RegistraRotina</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+
+    <bpmn:startEvent id="Start_RotinaDiaria" name="Timer 00:01&#10;(diário — Brasília)">
+      <bpmn:documentation>
+        Disparado às 00:01 horário de Brasília, todos os dias.
+        Stack atual: @Schedule(hour="0", minute="1", persistent=false) — EJBTimerService.
+        Stack moderna: @Scheduled(cron="0 1 0 * * *", zone="America/Sao_Paulo") — AlvaraScheduler.
+        Executa em sequência: P13-A → P13-B (90/59/29 dias) → P13-C (vencidos ontem).
+        RN-121, RN-123, RN-126.
+      </bpmn:documentation>
+      <bpmn:outgoing>SF_Start_Consulta</bpmn:outgoing>
+      <bpmn:timerEventDefinition id="TED_RotinaDiaria">
+        <bpmn:timeCycle xsi:type="bpmn:tFormalExpression">0 1 0 * * *</bpmn:timeCycle>
+      </bpmn:timerEventDefinition>
+    </bpmn:startEvent>
+
+    <bpmn:serviceTask id="ST_ConsultaAlvarasVencidos"
+                      name="Consultar licenciamentos com&#10;alvará vencido hoje (P13-A)"
+                      camunda:class="com.procergs.solcbm.licenciamento.LicenciamentoBD">
+      <bpmn:documentation>
+        P13-A — Job de Atualização de Alvarás Vencidos.
+        Método (stack atual): LicenciamentoBD.listaLicenciamentosAlvarasAVencer()
+        Método (stack moderna): AlvaraRepository.findAllVigentesComAlvaraVencido(LocalDate.now())
+
+        Query JPQL equivalente:
+          SELECT DISTINCT l FROM LicenciamentoED l
+          JOIN l.alvaras a
+          WHERE a.dataValidade &lt;= :hoje
+          AND l.situacao = 'ALVARA_VIGENTE'
+          AND a.indAtivo = 'S'
+
+        Retorna: List&lt;LicenciamentoED&gt;.
+        Tabelas: CBM_LICENCIAMENTO, CBM_APPCI.
+        RN-121, RN-122.
+      </bpmn:documentation>
+      <bpmn:incoming>SF_Start_Consulta</bpmn:incoming>
+      <bpmn:outgoing>SF_Consulta_GW</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:exclusiveGateway id="GW_TemAlvaraVencido" name="Há licenciamentos com&#10;alvará vencido?">
+      <bpmn:documentation>
+        Verifica se a lista retornada é não-vazia.
+        Sim → sub-processo multi-instance itera sobre cada licenciamento.
+        Não → sub-processo é pulado; segue para notificações P13-B e P13-C.
+        Justificativa: evita execução desnecessária do sub-processo quando não há alvarás a vencer.
+      </bpmn:documentation>
+      <bpmn:incoming>SF_Consulta_GW</bpmn:incoming>
+      <bpmn:outgoing>SF_GW_ComAlvara</bpmn:outgoing>
+      <bpmn:outgoing>SF_GW_SemAlvara</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:subProcess id="SP_ProcessaAlvara"
+                     name="Para cada licenciamento com alvará&#10;vencido — transitá-lo (P13-A)">
+      <bpmn:documentation>
+        Sub-processo multi-instance SEQUENCIAL — laço for sobre a lista de licenciamentos.
+        Comportamento em erro: try/catch por elemento — falha em um não interrompe os demais.
+        Para cada licenciamento:
+          1. TrocaEstadoLicenciamentoAlvaraVigenteParaAlvaraVencidoRN.trocaEstado(idLic)
+             → situacao: ALVARA_VIGENTE → ALVARA_VENCIDO
+          2. Registra marco TipoMarco.ALVARA_VENCIDO em CBM_LICENCIAMENTO_MARCO
+          3. Encaminha e-mail à fila CBM_LICENCIAMENTO_NOTIFICACAO
+        Stack moderna: AlvaraJobService.atualizarAlvarasVencidos() +
+                       SituacaoTransitionService.transicionar(lic, ALVARA_VENCIDO, "sistema")
+        RN-121, RN-122.
+      </bpmn:documentation>
+      <bpmn:multiInstanceLoopCharacteristics isSequential="true">
+        <bpmn:loopDataInputRef>licenciamentosVencidos</bpmn:loopDataInputRef>
+        <bpmn:inputDataItem id="DI_LicItem" name="licenciamento"/>
+      </bpmn:multiInstanceLoopCharacteristics>
+      <bpmn:incoming>SF_GW_ComAlvara</bpmn:incoming>
+      <bpmn:outgoing>SF_SP_JoinAlvara</bpmn:outgoing>
+
+      <bpmn:startEvent id="Start_SPAlvara" name="Início">
+        <bpmn:outgoing>SF_SPA_S_T</bpmn:outgoing>
+      </bpmn:startEvent>
+      <bpmn:serviceTask id="ST_TransitarAlvaraVencido"
+                        name="Transitar ALVARA_VIGENTE →&#10;ALVARA_VENCIDO + marco"
+                        camunda:class="com.procergs.solcbm.licenciamento.trocaestado.TrocaEstadoLicenciamentoAlvaraVigenteParaAlvaraVencidoRN">
+        <bpmn:documentation>
+          EJB: TrocaEstadoLicenciamentoAlvaraVigenteParaAlvaraVencidoRN.trocaEstado(idLic)
+          Ações:
+            1. UPDATE CBM_LICENCIAMENTO SET DSC_SITUACAO = 'ALVARA_VENCIDO'
+            2. INSERT CBM_LICENCIAMENTO_MARCO (TipoMarco.ALVARA_VENCIDO, SYSTIMESTAMP, SISTEMA)
+          Stack moderna: SituacaoTransitionService.transicionar(lic, ALVARA_VENCIDO, "sistema")
+          Tabelas: CBM_LICENCIAMENTO, CBM_LICENCIAMENTO_MARCO.
+          RN-121.
+        </bpmn:documentation>
+        <bpmn:incoming>SF_SPA_S_T</bpmn:incoming>
+        <bpmn:outgoing>SF_SPA_T_E</bpmn:outgoing>
+      </bpmn:serviceTask>
+      <bpmn:endEvent id="End_SPAlvara" name="Fim">
+        <bpmn:incoming>SF_SPA_T_E</bpmn:incoming>
+      </bpmn:endEvent>
+      <bpmn:sequenceFlow id="SF_SPA_S_T" sourceRef="Start_SPAlvara" targetRef="ST_TransitarAlvaraVencido"/>
+      <bpmn:sequenceFlow id="SF_SPA_T_E" sourceRef="ST_TransitarAlvaraVencido" targetRef="End_SPAlvara"/>
+    </bpmn:subProcess>
+
+    <bpmn:exclusiveGateway id="GW_JoinAlvara" name="(junção)">
+      <bpmn:documentation>
+        Gateway XOR de junção — merge dos dois caminhos de GW_TemAlvaraVencido:
+          1. "Sim" → vem de SP_ProcessaAlvara (após iterar todos os licenciamentos).
+          2. "Não" → vem diretamente de GW_TemAlvaraVencido (lista vazia).
+        Ambos convergem antes de P13-B (notificações) e P13-C (vencidos ontem).
+      </bpmn:documentation>
+      <bpmn:incoming>SF_SP_JoinAlvara</bpmn:incoming>
+      <bpmn:incoming>SF_GW_SemAlvara</bpmn:incoming>
+      <bpmn:outgoing>SF_Join_Notifica90</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:serviceTask id="ST_NotificaAVencer90"
+                      name="Notificar envolvidos —&#10;vencimento em 90 dias (P13-B)"
+                      camunda:class="com.procergs.solcbm.licenciamento.LicenciamentoRN">
+      <bpmn:documentation>
+        P13-B — Notificação de Vencimento Próximo: 90 dias.
+        Método (stack moderna): AlvaraNotificacaoService.notificarAVencer(90, NOTIFICACAO_SOLICITAR_RENOVACAO_90)
+        Consulta: licenciamentos com dataValidade = hoje + 90 dias E situacao IN (ALVARA_VIGENTE, ALVARA_VENCIDO).
+        Ações por licenciamento:
+          1. INSERT CBM_LICENCIAMENTO_NOTIFICACAO (SituacaoEnvio.PENDENTE)
+          2. INSERT CBM_LICENCIAMENTO_MARCO (TipoMarco.NOTIFICACAO_SOLICITAR_RENOVACAO_90)
+        Template e-mail: notificacao.email.template.renovacao.90dias.
+        RN-123, RN-124, RN-125.
+      </bpmn:documentation>
+      <bpmn:incoming>SF_Join_Notifica90</bpmn:incoming>
+      <bpmn:outgoing>SF_Notifica90_59</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:serviceTask id="ST_NotificaAVencer59"
+                      name="Notificar envolvidos —&#10;vencimento em 59 dias (P13-B)"
+                      camunda:class="com.procergs.solcbm.licenciamento.LicenciamentoRN">
+      <bpmn:documentation>
+        P13-B — Notificação de Vencimento Próximo: 59 dias.
+        Consulta: dataValidade = hoje + 59 dias E situacao IN (ALVARA_VIGENTE, ALVARA_VENCIDO).
+        Marco: NOTIFICACAO_SOLICITAR_RENOVACAO_59.
+        Template: notificacao.email.template.renovacao.59dias.
+        RN-123, RN-124, RN-125.
+      </bpmn:documentation>
+      <bpmn:incoming>SF_Notifica90_59</bpmn:incoming>
+      <bpmn:outgoing>SF_Notifica59_29</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:serviceTask id="ST_NotificaAVencer29"
+                      name="Notificar envolvidos —&#10;vencimento em 29 dias (P13-B)"
+                      camunda:class="com.procergs.solcbm.licenciamento.LicenciamentoRN">
+      <bpmn:documentation>
+        P13-B — Notificação de Vencimento Próximo: 29 dias.
+        Consulta: dataValidade = hoje + 29 dias E situacao IN (ALVARA_VIGENTE, ALVARA_VENCIDO).
+        Marco: NOTIFICACAO_SOLICITAR_RENOVACAO_29.
+        Template: notificacao.email.template.renovacao.29dias.
+        RN-123, RN-124, RN-125.
+      </bpmn:documentation>
+      <bpmn:incoming>SF_Notifica59_29</bpmn:incoming>
+      <bpmn:outgoing>SF_Notifica29_Vencidos</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:serviceTask id="ST_NotificaVencidos"
+                      name="Notificar envolvidos —&#10;alvará vencido ontem (P13-C)"
+                      camunda:class="com.procergs.solcbm.licenciamento.LicenciamentoRN">
+      <bpmn:documentation>
+        P13-C — Notificação de Alvará Vencido.
+        Consulta: dataValidade = hoje - 1 E situacao = ALVARA_VENCIDO.
+        Ações: INSERT CBM_LICENCIAMENTO_NOTIFICACAO (PENDENTE) +
+               INSERT CBM_LICENCIAMENTO_MARCO (NOTIFICACAO_ALVARA_VENCIDO).
+        Template: notificacao.email.template.alvara.vencido.
+        RN-126, RN-127.
+      </bpmn:documentation>
+      <bpmn:incoming>SF_Notifica29_Vencidos</bpmn:incoming>
+      <bpmn:outgoing>SF_Vencidos_Rotina</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:serviceTask id="ST_RegistraRotina"
+                      name="Registrar execução da rotina&#10;(RotinaRN / RotinaRepository)"
+                      camunda:class="com.procergs.solcbm.rotina.RotinaRN">
+      <bpmn:documentation>
+        Registra a execução da rotina diária para auditoria operacional.
+        Método (stack atual): RotinaRN.inclui(TipoRotina.ALVARA, status, dtInicio, dtFim, qtdProcessados, qtdErros)
+        Método (stack moderna): RotinaRepository.save(new RotinaEntity(ALVARA, status, inicio, fim, qtd, erros))
+        Tabela: CBM_ROTINA.
+        RN-128, RN-129.
+      </bpmn:documentation>
+      <bpmn:incoming>SF_Vencidos_Rotina</bpmn:incoming>
+      <bpmn:outgoing>SF_Rotina_End</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:endEvent id="End_RotinaDiaria" name="Rotina diária&#10;concluída">
+      <bpmn:documentation>Execução de P13-A, P13-B e P13-C concluída. Próxima execução: dia seguinte às 00:01.</bpmn:documentation>
+      <bpmn:incoming>SF_Rotina_End</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <bpmn:sequenceFlow id="SF_Start_Consulta" sourceRef="Start_RotinaDiaria" targetRef="ST_ConsultaAlvarasVencidos"/>
+    <bpmn:sequenceFlow id="SF_Consulta_GW" sourceRef="ST_ConsultaAlvarasVencidos" targetRef="GW_TemAlvaraVencido"/>
+    <bpmn:sequenceFlow id="SF_GW_ComAlvara" name="Sim" sourceRef="GW_TemAlvaraVencido" targetRef="SP_ProcessaAlvara"/>
+    <bpmn:sequenceFlow id="SF_GW_SemAlvara" name="Não (lista vazia)" sourceRef="GW_TemAlvaraVencido" targetRef="GW_JoinAlvara"/>
+    <bpmn:sequenceFlow id="SF_SP_JoinAlvara" sourceRef="SP_ProcessaAlvara" targetRef="GW_JoinAlvara"/>
+    <bpmn:sequenceFlow id="SF_Join_Notifica90" sourceRef="GW_JoinAlvara" targetRef="ST_NotificaAVencer90"/>
+    <bpmn:sequenceFlow id="SF_Notifica90_59" sourceRef="ST_NotificaAVencer90" targetRef="ST_NotificaAVencer59"/>
+    <bpmn:sequenceFlow id="SF_Notifica59_29" sourceRef="ST_NotificaAVencer59" targetRef="ST_NotificaAVencer29"/>
+    <bpmn:sequenceFlow id="SF_Notifica29_Vencidos" sourceRef="ST_NotificaAVencer29" targetRef="ST_NotificaVencidos"/>
+    <bpmn:sequenceFlow id="SF_Vencidos_Rotina" sourceRef="ST_NotificaVencidos" targetRef="ST_RegistraRotina"/>
+    <bpmn:sequenceFlow id="SF_Rotina_End" sourceRef="ST_RegistraRotina" targetRef="End_RotinaDiaria"/>
+
+  </bpmn:process>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       POOL 2 — Envio de Notificações por E-mail (Job P13-D)
+       Raias: Agendador | Sistema SOL Backend
+  ═══════════════════════════════════════════════════════════════════════ -->
+  <bpmn:process id="Process_P13Pool2" name="P13 Pool 2 — Envio de Notificações por E-mail" isExecutable="false">
+
+    <bpmn:laneSet id="LaneSet_P13Pool2">
+      <bpmn:lane id="Lane_Sched_P2" name="Agendador&#10;(EJBTimerService @Singleton / Spring @Scheduled)">
+        <bpmn:flowNodeRef>Start_EnvioEmails</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>End_EnvioEmails</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_Sistema_P2"
+                 name="Sistema SOL Backend&#10;(LicenciamentoNotificacaoRN · JavaMail / JavaMailSender · Thymeleaf · RotinaRN)">
+        <bpmn:flowNodeRef>ST_ConsultaNotifPendentes</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>GW_TemNotificacao</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>SP_ProcessaNotificacoes</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>ST_RegistraRotinaEmail</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+
+    <bpmn:startEvent id="Start_EnvioEmails" name="Timer 00:31&#10;(diário — Brasília)">
+      <bpmn:documentation>
+        Disparado às 00:31, 30 minutos após Pool 1.
+        Stack atual: @Schedule(hour="0", minute="31", persistent=false) — EJBTimerService.enviarNotificacaoLicenciamento()
+        Stack moderna: @Scheduled(cron="0 31 0 * * *", zone="America/Sao_Paulo") — NotificacaoScheduler.
+        Processa notificações PENDENTE e reenvia as com ERRO (reprocessamento automático).
+        RN-130, RN-131.
+      </bpmn:documentation>
+      <bpmn:outgoing>SF_Start2_Consulta</bpmn:outgoing>
+      <bpmn:timerEventDefinition id="TED_EnvioEmails">
+        <bpmn:timeCycle xsi:type="bpmn:tFormalExpression">0 31 0 * * *</bpmn:timeCycle>
+      </bpmn:timerEventDefinition>
+    </bpmn:startEvent>
+
+    <bpmn:serviceTask id="ST_ConsultaNotifPendentes"
+                      name="Consultar notificações PENDENTE&#10;ou com ERRO (P13-D)"
+                      camunda:class="com.procergs.solcbm.licenciamentonotificacao.LicenciamentoNotificacaoRN">
+      <bpmn:documentation>
+        P13-D — Job de Envio de Notificações Pendentes.
+        Método (stack moderna): NotificacaoRepository.findAllPendentesOuComErro()
+        Query: SELECT n FROM LicenciamentoNotificacaoED n
+               WHERE n.situacaoEnvio IN (PENDENTE, ERRO) ORDER BY n.dthCriacao ASC
+        Tabela: CBM_LICENCIAMENTO_NOTIFICACAO.
+        RN-130, RN-131, RN-132.
+      </bpmn:documentation>
+      <bpmn:incoming>SF_Start2_Consulta</bpmn:incoming>
+      <bpmn:outgoing>SF_Consulta2_GW</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:exclusiveGateway id="GW_TemNotificacao" name="Há notificações&#10;pendentes?">
+      <bpmn:incoming>SF_Consulta2_GW</bpmn:incoming>
+      <bpmn:outgoing>SF_GW2_Sim</bpmn:outgoing>
+      <bpmn:outgoing>SF_GW2_Nao</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:subProcess id="SP_ProcessaNotificacoes"
+                     name="Para cada notificação pendente — enviar e-mail (P13-D)">
+      <bpmn:documentation>
+        Sub-processo multi-instance SEQUENCIAL.
+        Para cada LicenciamentoNotificacaoED:
+          1. Renderiza template HTML (Thymeleaf na stack moderna)
+          2. JavaMailSender.send(MimeMessage) / JavaMail JNDI java:jboss/mail/Default
+          3. Sucesso: SituacaoEnvio → ENVIADO, DTH_ENVIO = now()
+          4. Falha: SituacaoEnvio → ERRO, DSC_ERRO = exception.getMessage()
+        Stack moderna: EmailService.enviarNotificacao(notificacao) — @Transactional.
+        RN-130, RN-131, RN-132, RN-133.
+      </bpmn:documentation>
+      <bpmn:multiInstanceLoopCharacteristics isSequential="true">
+        <bpmn:loopDataInputRef>notificacoesPendentes</bpmn:loopDataInputRef>
+        <bpmn:inputDataItem id="DI_NotifItem" name="notificacao"/>
+      </bpmn:multiInstanceLoopCharacteristics>
+      <bpmn:incoming>SF_GW2_Sim</bpmn:incoming>
+      <bpmn:outgoing>SF_SP2_Registra</bpmn:outgoing>
+
+      <bpmn:startEvent id="Start_SP2" name="Início">
+        <bpmn:outgoing>SF_SP2_S_Email</bpmn:outgoing>
+      </bpmn:startEvent>
+      <bpmn:serviceTask id="ST_EnviarEmail"
+                        name="Renderizar template e enviar&#10;e-mail ao destinatário"
+                        camunda:class="com.procergs.solcbm.licenciamentonotificacao.LicenciamentoNotificacaoRN">
+        <bpmn:documentation>
+          Stack atual: LicenciamentoNotificacaoRN.enviaNotificacao(notificacao)
+            via JavaMail JNDI java:jboss/mail/Default.
+          Stack moderna: EmailService.enviarNotificacao(notificacao)
+            via JavaMailSender + Thymeleaf.renderToString(templateKey, context).
+          Campos: DSC_EMAIL_DESTINATARIO, DSC_ASSUNTO, DSC_CORPO_HTML, DSC_TEMPLATE_KEY.
+          RN-130, RN-131.
+        </bpmn:documentation>
+        <bpmn:incoming>SF_SP2_S_Email</bpmn:incoming>
+        <bpmn:outgoing>SF_SP2_Email_GW</bpmn:outgoing>
+      </bpmn:serviceTask>
+      <bpmn:exclusiveGateway id="GW_EmailOK" name="Envio&#10;bem-sucedido?">
+        <bpmn:documentation>
+          Sim → SituacaoEnvio → ENVIADO.
+          Não (MailException) → SituacaoEnvio → ERRO; será reprocessada no próximo ciclo P13-D.
+        </bpmn:documentation>
+        <bpmn:incoming>SF_SP2_Email_GW</bpmn:incoming>
+        <bpmn:outgoing>SF_Email_Enviado</bpmn:outgoing>
+        <bpmn:outgoing>SF_Email_Erro</bpmn:outgoing>
+      </bpmn:exclusiveGateway>
+      <bpmn:serviceTask id="ST_MarcarEnviado"
+                        name="Marcar ENVIADO&#10;(DTH_ENVIO = now())"
+                        camunda:class="com.procergs.solcbm.licenciamentonotificacao.LicenciamentoNotificacaoRN">
+        <bpmn:documentation>
+          UPDATE CBM_LICENCIAMENTO_NOTIFICACAO
+          SET DSC_SITUACAO_ENVIO = 'ENVIADO', DTH_ENVIO = SYSTIMESTAMP
+          WHERE ID = :id
+          RN-131.
+        </bpmn:documentation>
+        <bpmn:incoming>SF_Email_Enviado</bpmn:incoming>
+        <bpmn:outgoing>SF_Enviado_End</bpmn:outgoing>
+      </bpmn:serviceTask>
+      <bpmn:serviceTask id="ST_MarcarErro"
+                        name="Marcar ERRO&#10;(DSC_ERRO = mensagem)"
+                        camunda:class="com.procergs.solcbm.licenciamentonotificacao.LicenciamentoNotificacaoRN">
+        <bpmn:documentation>
+          UPDATE CBM_LICENCIAMENTO_NOTIFICACAO
+          SET DSC_SITUACAO_ENVIO = 'ERRO', DSC_ERRO = :mensagemExcecao (max 500 chars)
+          WHERE ID = :id
+          Reprocessada na próxima execução de P13-D.
+          RN-132, RN-133.
+        </bpmn:documentation>
+        <bpmn:incoming>SF_Email_Erro</bpmn:incoming>
+        <bpmn:outgoing>SF_Erro_End</bpmn:outgoing>
+      </bpmn:serviceTask>
+      <bpmn:endEvent id="End_SP2" name="Fim">
+        <bpmn:incoming>SF_Enviado_End</bpmn:incoming>
+        <bpmn:incoming>SF_Erro_End</bpmn:incoming>
+      </bpmn:endEvent>
+      <bpmn:sequenceFlow id="SF_SP2_S_Email" sourceRef="Start_SP2" targetRef="ST_EnviarEmail"/>
+      <bpmn:sequenceFlow id="SF_SP2_Email_GW" sourceRef="ST_EnviarEmail" targetRef="GW_EmailOK"/>
+      <bpmn:sequenceFlow id="SF_Email_Enviado" name="Sim" sourceRef="GW_EmailOK" targetRef="ST_MarcarEnviado"/>
+      <bpmn:sequenceFlow id="SF_Email_Erro" name="Não (exceção)" sourceRef="GW_EmailOK" targetRef="ST_MarcarErro"/>
+      <bpmn:sequenceFlow id="SF_Enviado_End" sourceRef="ST_MarcarEnviado" targetRef="End_SP2"/>
+      <bpmn:sequenceFlow id="SF_Erro_End" sourceRef="ST_MarcarErro" targetRef="End_SP2"/>
+    </bpmn:subProcess>
+
+    <bpmn:serviceTask id="ST_RegistraRotinaEmail"
+                      name="Registrar execução da rotina&#10;de e-mails (RotinaRN)"
+                      camunda:class="com.procergs.solcbm.rotina.RotinaRN">
+      <bpmn:documentation>
+        RotinaRN.inclui(TipoRotina.NOTIFICACAO_EMAIL, status, dtInicio, dtFim, qtdEnviados, qtdErros)
+        Stack moderna: RotinaRepository.save(new RotinaEntity(NOTIFICACAO_EMAIL, ...))
+        Tabela: CBM_ROTINA.
+        RN-128, RN-129.
+      </bpmn:documentation>
+      <bpmn:incoming>SF_SP2_Registra</bpmn:incoming>
+      <bpmn:incoming>SF_GW2_Nao</bpmn:incoming>
+      <bpmn:outgoing>SF_Registra2_End</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:endEvent id="End_EnvioEmails" name="Envio de e-mails&#10;concluído">
+      <bpmn:incoming>SF_Registra2_End</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <bpmn:sequenceFlow id="SF_Start2_Consulta" sourceRef="Start_EnvioEmails" targetRef="ST_ConsultaNotifPendentes"/>
+    <bpmn:sequenceFlow id="SF_Consulta2_GW" sourceRef="ST_ConsultaNotifPendentes" targetRef="GW_TemNotificacao"/>
+    <bpmn:sequenceFlow id="SF_GW2_Sim" name="Sim" sourceRef="GW_TemNotificacao" targetRef="SP_ProcessaNotificacoes"/>
+    <bpmn:sequenceFlow id="SF_GW2_Nao" name="Não (fila vazia)" sourceRef="GW_TemNotificacao" targetRef="ST_RegistraRotinaEmail"/>
+    <bpmn:sequenceFlow id="SF_SP2_Registra" sourceRef="SP_ProcessaNotificacoes" targetRef="ST_RegistraRotinaEmail"/>
+    <bpmn:sequenceFlow id="SF_Registra2_End" sourceRef="ST_RegistraRotinaEmail" targetRef="End_EnvioEmails"/>
+
+  </bpmn:process>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       POOL 3 — Verificação de Pagamento Banrisul CNAB 240 (Job P13-E)
+       Raias: Agendador | Sistema SOL Backend
+  ═══════════════════════════════════════════════════════════════════════ -->
+  <bpmn:process id="Process_P13Pool3" name="P13 Pool 3 — Verificação de Pagamento Banrisul" isExecutable="false">
+
+    <bpmn:laneSet id="LaneSet_P13Pool3">
+      <bpmn:lane id="Lane_Sched_P3" name="Agendador&#10;(EJBTimerService @Singleton / Spring @Scheduled)">
+        <bpmn:flowNodeRef>Start_Banrisul</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>End_Banrisul</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_Sistema_P3"
+                 name="Sistema SOL Backend&#10;(PagamentoBoletoRN · BanrisulRetornoService · TrocaEstado*RN · BoletoRN)">
+        <bpmn:flowNodeRef>ST_BuscaArquivosCNAB</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>GW_TemArquivoCNAB</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>SP_ProcessaArquivoCNAB</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+
+    <bpmn:startEvent id="Start_Banrisul" name="Timer a cada 12h&#10;(00:00 e 12:00 — Brasília)">
+      <bpmn:documentation>
+        Disparado duas vezes ao dia (00:00 e 12:00 horário de Brasília).
+        Stack atual: @Schedule(minute="0", hour="*/12", persistent=false) — EJBTimerService.verificaPagamentoBanrisul()
+        Stack moderna: @Scheduled(cron="0 0 0,12 * * *", zone="America/Sao_Paulo") — BanrisulScheduler.
+        Lê arquivos de retorno CNAB 240 para confirmar pagamentos de boletos.
+        RN-134, RN-135.
+      </bpmn:documentation>
+      <bpmn:outgoing>SF_Start3_Busca</bpmn:outgoing>
+      <bpmn:timerEventDefinition id="TED_Banrisul">
+        <bpmn:timeCycle xsi:type="bpmn:tFormalExpression">0 0 0,12 * * *</bpmn:timeCycle>
+      </bpmn:timerEventDefinition>
+    </bpmn:startEvent>
+
+    <bpmn:serviceTask id="ST_BuscaArquivosCNAB"
+                      name="Buscar arquivos CNAB 240 no&#10;diretório de retorno (P13-E)"
+                      camunda:class="com.procergs.solcbm.pagamento.PagamentoBoletoRN">
+      <bpmn:documentation>
+        P13-E — Job de Verificação de Pagamento Banrisul.
+        Método (stack atual): PagamentoBoletoRN.verificaPagamentoBanrisul()
+        Método (stack moderna): BanrisulRetornoService.listarArquivosRetorno(Path dirRetorno)
+        Diretório: PropriedadesEnum.CAMINHO_ARQUIVO_RETORNO_BANRISUL (stack atual)
+                   env.getProperty("banrisul.retorno.diretorio") (stack moderna)
+        Filtro: arquivos .RET não processados (não presentes em /processados).
+        Retorna: List&lt;File&gt;.
+        RN-134, RN-135, RN-136.
+      </bpmn:documentation>
+      <bpmn:incoming>SF_Start3_Busca</bpmn:incoming>
+      <bpmn:outgoing>SF_Busca_GW3</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:exclusiveGateway id="GW_TemArquivoCNAB" name="Há arquivos CNAB&#10;para processar?">
+      <bpmn:incoming>SF_Busca_GW3</bpmn:incoming>
+      <bpmn:outgoing>SF_GW3_Sim</bpmn:outgoing>
+      <bpmn:outgoing>SF_GW3_Nao</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:subProcess id="SP_ProcessaArquivoCNAB"
+                     name="Para cada arquivo CNAB 240 —&#10;confirmar pagamentos (P13-E, Paralelo)">
+      <bpmn:documentation>
+        Sub-processo multi-instance PARALELO (isSequential=false) — um thread por arquivo.
+        Comportamento em erro: try/catch por arquivo — falha em um não interrompe os demais.
+        Para cada arquivo CNAB 240:
+          1. Parsear linhas de 240 chars (tipo "3" = detalhe; segmentos T e U)
+          2. Linhas com OcorrenciaRetorno = "00" (liquidado):
+             a. Localizar BoletoED pelo NossoNumero
+             b. BoletoED.situacaoPagamento → PAGO; DTH_PAGAMENTO = data liquidação
+             c. Executar TrocaEstado conforme TipoBoleto:
+                - TAXA_ANALISE / TAXA_REANALISE / TAXA_UNICA → ANALISE_PENDENTE
+                - TAXA_VISTORIA      → AGUARDANDO_DISTRIBUICAO
+                - TAXA_RENOVACAO (P14) → AGUARDANDO_DISTRIBUICAO_RENOV + marco LIQUIDACAO_VISTORIA_RENOVACAO (RN-149)
+          3. Mover arquivo para /processados
+        Stack moderna: BanrisulRetornoService.processarArquivoRetorno(Path arquivo)
+        RN-134 a RN-140, RN-149.
+      </bpmn:documentation>
+      <bpmn:multiInstanceLoopCharacteristics isSequential="false">
+        <bpmn:loopDataInputRef>arquivosCNAB</bpmn:loopDataInputRef>
+        <bpmn:inputDataItem id="DI_ArqItem" name="arquivo"/>
+      </bpmn:multiInstanceLoopCharacteristics>
+      <bpmn:incoming>SF_GW3_Sim</bpmn:incoming>
+      <bpmn:outgoing>SF_SP3_End</bpmn:outgoing>
+
+      <bpmn:startEvent id="Start_SP3" name="Início">
+        <bpmn:outgoing>SF_SP3_S_Ler</bpmn:outgoing>
+      </bpmn:startEvent>
+      <bpmn:serviceTask id="ST_LerLinhasRetorno"
+                        name="Parsear arquivo CNAB 240&#10;(segmentos T e U)"
+                        camunda:class="com.procergs.solcbm.pagamento.PagamentoBoletoRN">
+        <bpmn:documentation>
+          Parse do arquivo de retorno CNAB 240 Banrisul.
+          Linhas de 240 chars. Tipo "3" = detalhe.
+          Segmento T: NossoNumero, vencimento, código de barras.
+          Segmento U: OcorrenciaRetorno (posição 15-16) — "00" = liquidado.
+          Stack moderna: Cnab240Parser.parse(Path arquivo) → List&lt;Cnab240Linha&gt;.
+          RN-136, RN-137.
+        </bpmn:documentation>
+        <bpmn:incoming>SF_SP3_S_Ler</bpmn:incoming>
+        <bpmn:outgoing>SF_SP3_Ler_Proc</bpmn:outgoing>
+      </bpmn:serviceTask>
+      <bpmn:serviceTask id="ST_ProcessarPagamento"
+                        name="Confirmar pagamentos e transitar&#10;estado do licenciamento"
+                        camunda:class="com.procergs.solcbm.pagamento.PagamentoBoletoRN">
+        <bpmn:documentation>
+          Para cada linha com OcorrenciaRetorno = "00":
+            BoletoED.situacaoPagamento → PAGO; DTH_PAGAMENTO = data CNAB.
+            TrocaEstado por TipoBoleto:
+              TAXA_ANALISE → TrocaEstadoAguardandoPagamentoParaAnalisePendenteRN
+              TAXA_VISTORIA → TrocaEstadoAguardandoPagamentoVistoriaParaAguardandoDistribuicaoRN
+              TAXA_RENOVACAO → TrocaEstado...AguardandoPagamentoVistoriaRenovParaAguardandoDistribuicaoVistoriaRenovRN
+            Marco correspondente: LIQUIDACAO_ANALISE / LIQUIDACAO_VISTORIA / LIQUIDACAO_VISTORIA_RENOVACAO.
+          Tabelas: CBM_BOLETO, CBM_LICENCIAMENTO, CBM_LICENCIAMENTO_MARCO.
+          RN-138, RN-139, RN-140, RN-149.
+        </bpmn:documentation>
+        <bpmn:incoming>SF_SP3_Ler_Proc</bpmn:incoming>
+        <bpmn:outgoing>SF_SP3_Proc_Mov</bpmn:outgoing>
+      </bpmn:serviceTask>
+      <bpmn:serviceTask id="ST_MoverArquivoCNAB"
+                        name="Mover arquivo para&#10;diretório /processados"
+                        camunda:class="com.procergs.solcbm.pagamento.PagamentoBoletoRN">
+        <bpmn:documentation>
+          Stack atual: File.renameTo(new File(dirProcessados, arquivo.getName()))
+          Stack moderna: Files.move(arquivo, processados.resolve(arquivo.getFileName()), REPLACE_EXISTING)
+          Evita reprocessamento na próxima execução.
+          RN-140.
+        </bpmn:documentation>
+        <bpmn:incoming>SF_SP3_Proc_Mov</bpmn:incoming>
+        <bpmn:outgoing>SF_SP3_Mov_End</bpmn:outgoing>
+      </bpmn:serviceTask>
+      <bpmn:endEvent id="End_SP3" name="Fim">
+        <bpmn:incoming>SF_SP3_Mov_End</bpmn:incoming>
+      </bpmn:endEvent>
+      <bpmn:sequenceFlow id="SF_SP3_S_Ler" sourceRef="Start_SP3" targetRef="ST_LerLinhasRetorno"/>
+      <bpmn:sequenceFlow id="SF_SP3_Ler_Proc" sourceRef="ST_LerLinhasRetorno" targetRef="ST_ProcessarPagamento"/>
+      <bpmn:sequenceFlow id="SF_SP3_Proc_Mov" sourceRef="ST_ProcessarPagamento" targetRef="ST_MoverArquivoCNAB"/>
+      <bpmn:sequenceFlow id="SF_SP3_Mov_End" sourceRef="ST_MoverArquivoCNAB" targetRef="End_SP3"/>
+    </bpmn:subProcess>
+
+    <bpmn:endEvent id="End_Banrisul" name="Verificação Banrisul&#10;concluída">
+      <bpmn:incoming>SF_SP3_End</bpmn:incoming>
+      <bpmn:incoming>SF_GW3_Nao</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <bpmn:sequenceFlow id="SF_Start3_Busca" sourceRef="Start_Banrisul" targetRef="ST_BuscaArquivosCNAB"/>
+    <bpmn:sequenceFlow id="SF_Busca_GW3" sourceRef="ST_BuscaArquivosCNAB" targetRef="GW_TemArquivoCNAB"/>
+    <bpmn:sequenceFlow id="SF_GW3_Sim" name="Sim" sourceRef="GW_TemArquivoCNAB" targetRef="SP_ProcessaArquivoCNAB"/>
+    <bpmn:sequenceFlow id="SF_GW3_Nao" name="Não" sourceRef="GW_TemArquivoCNAB" targetRef="End_Banrisul"/>
+    <bpmn:sequenceFlow id="SF_SP3_End" sourceRef="SP_ProcessaArquivoCNAB" targetRef="End_Banrisul"/>
+
+  </bpmn:process>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       SEÇÃO DI — Posicionamento visual (Camunda Modeler)
+  ═══════════════════════════════════════════════════════════════════════ -->
+  <bpmndi:BPMNDiagram id="Diagram_P13">
+    <bpmndi:BPMNPlane id="Plane_P13" bpmnElement="Collab_P13">
+
+      <!-- Pool 1 -->
+      <bpmndi:BPMNShape id="Pool_RotinaDiaria_di" bpmnElement="Pool_RotinaDiaria" isHorizontal="true">
+        <dc:Bounds x="0" y="20" width="1860" height="310"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Sched_P1_di" bpmnElement="Lane_Sched_P1" isHorizontal="true">
+        <dc:Bounds x="30" y="20" width="1830" height="110"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Sistema_P1_di" bpmnElement="Lane_Sistema_P1" isHorizontal="true">
+        <dc:Bounds x="30" y="130" width="1830" height="200"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Start_RotinaDiaria_di" bpmnElement="Start_RotinaDiaria">
+        <dc:Bounds x="112" y="57" width="36" height="36"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="85" y="100" width="90" height="27"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_ConsultaAlvarasVencidos_di" bpmnElement="ST_ConsultaAlvarasVencidos">
+        <dc:Bounds x="200" y="162" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="GW_TemAlvaraVencido_di" bpmnElement="GW_TemAlvaraVencido" isMarkerVisible="true">
+        <dc:Bounds x="395" y="202" width="50" height="50"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="370" y="259" width="101" height="27"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="SP_ProcessaAlvara_di" bpmnElement="SP_ProcessaAlvara" isExpanded="true">
+        <dc:Bounds x="492" y="140" width="300" height="175"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Start_SPAlvara_di" bpmnElement="Start_SPAlvara">
+        <dc:Bounds x="512" y="210" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_TransitarAlvaraVencido_di" bpmnElement="ST_TransitarAlvaraVencido">
+        <dc:Bounds x="568" y="193" width="160" height="72"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="End_SPAlvara_di" bpmnElement="End_SPAlvara">
+        <dc:Bounds x="748" y="210" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="GW_JoinAlvara_di" bpmnElement="GW_JoinAlvara" isMarkerVisible="true">
+        <dc:Bounds x="848" y="202" width="50" height="50"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="854" y="259" width="38" height="14"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_NotificaAVencer90_di" bpmnElement="ST_NotificaAVencer90">
+        <dc:Bounds x="948" y="167" width="130" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_NotificaAVencer59_di" bpmnElement="ST_NotificaAVencer59">
+        <dc:Bounds x="1128" y="167" width="130" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_NotificaAVencer29_di" bpmnElement="ST_NotificaAVencer29">
+        <dc:Bounds x="1308" y="167" width="130" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_NotificaVencidos_di" bpmnElement="ST_NotificaVencidos">
+        <dc:Bounds x="1488" y="167" width="130" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_RegistraRotina_di" bpmnElement="ST_RegistraRotina">
+        <dc:Bounds x="1668" y="167" width="130" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="End_RotinaDiaria_di" bpmnElement="End_RotinaDiaria">
+        <dc:Bounds x="1848" y="189" width="36" height="36"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="1826" y="232" width="80" height="27"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- Pool 1 edges -->
+      <bpmndi:BPMNEdge id="SF_Start_Consulta_di" bpmnElement="SF_Start_Consulta">
+        <di:waypoint x="148" y="75"/>
+        <di:waypoint x="148" y="202"/>
+        <di:waypoint x="200" y="202"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_Consulta_GW_di" bpmnElement="SF_Consulta_GW">
+        <di:waypoint x="340" y="202"/>
+        <di:waypoint x="395" y="227"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_GW_ComAlvara_di" bpmnElement="SF_GW_ComAlvara">
+        <di:waypoint x="445" y="227"/>
+        <di:waypoint x="492" y="227"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="459" y="209" width="22" height="14"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_GW_SemAlvara_di" bpmnElement="SF_GW_SemAlvara">
+        <di:waypoint x="420" y="202"/>
+        <di:waypoint x="420" y="145"/>
+        <di:waypoint x="873" y="145"/>
+        <di:waypoint x="873" y="202"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="567" y="127" width="84" height="14"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_SPA_S_T_di" bpmnElement="SF_SPA_S_T">
+        <di:waypoint x="548" y="228"/>
+        <di:waypoint x="568" y="229"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_SPA_T_E_di" bpmnElement="SF_SPA_T_E">
+        <di:waypoint x="728" y="229"/>
+        <di:waypoint x="748" y="228"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_SP_JoinAlvara_di" bpmnElement="SF_SP_JoinAlvara">
+        <di:waypoint x="792" y="227"/>
+        <di:waypoint x="848" y="227"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_Join_Notifica90_di" bpmnElement="SF_Join_Notifica90">
+        <di:waypoint x="898" y="227"/>
+        <di:waypoint x="948" y="207"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_Notifica90_59_di" bpmnElement="SF_Notifica90_59">
+        <di:waypoint x="1078" y="207"/>
+        <di:waypoint x="1128" y="207"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_Notifica59_29_di" bpmnElement="SF_Notifica59_29">
+        <di:waypoint x="1258" y="207"/>
+        <di:waypoint x="1308" y="207"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_Notifica29_Vencidos_di" bpmnElement="SF_Notifica29_Vencidos">
+        <di:waypoint x="1438" y="207"/>
+        <di:waypoint x="1488" y="207"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_Vencidos_Rotina_di" bpmnElement="SF_Vencidos_Rotina">
+        <di:waypoint x="1618" y="207"/>
+        <di:waypoint x="1668" y="207"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_Rotina_End_di" bpmnElement="SF_Rotina_End">
+        <di:waypoint x="1798" y="207"/>
+        <di:waypoint x="1848" y="207"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- Pool 2 -->
+      <bpmndi:BPMNShape id="Pool_EnvioEmails_di" bpmnElement="Pool_EnvioEmails" isHorizontal="true">
+        <dc:Bounds x="0" y="385" width="1240" height="230"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Sched_P2_di" bpmnElement="Lane_Sched_P2" isHorizontal="true">
+        <dc:Bounds x="30" y="385" width="1210" height="100"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Sistema_P2_di" bpmnElement="Lane_Sistema_P2" isHorizontal="true">
+        <dc:Bounds x="30" y="485" width="1210" height="130"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Start_EnvioEmails_di" bpmnElement="Start_EnvioEmails">
+        <dc:Bounds x="112" y="417" width="36" height="36"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="85" y="460" width="90" height="27"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_ConsultaNotifPendentes_di" bpmnElement="ST_ConsultaNotifPendentes">
+        <dc:Bounds x="200" y="505" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="GW_TemNotificacao_di" bpmnElement="GW_TemNotificacao" isMarkerVisible="true">
+        <dc:Bounds x="395" y="520" width="50" height="50"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="369" y="577" width="103" height="27"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="SP_ProcessaNotificacoes_di" bpmnElement="SP_ProcessaNotificacoes" isExpanded="true">
+        <dc:Bounds x="492" y="482" width="440" height="125"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Start_SP2_di" bpmnElement="Start_SP2">
+        <dc:Bounds x="510" y="527" width="30" height="30"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_EnviarEmail_di" bpmnElement="ST_EnviarEmail">
+        <dc:Bounds x="555" y="514" width="110" height="58"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="GW_EmailOK_di" bpmnElement="GW_EmailOK" isMarkerVisible="true">
+        <dc:Bounds x="685" y="527" width="30" height="30"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="661" y="564" width="79" height="27"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_MarcarEnviado_di" bpmnElement="ST_MarcarEnviado">
+        <dc:Bounds x="735" y="492" width="120" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_MarcarErro_di" bpmnElement="ST_MarcarErro">
+        <dc:Bounds x="735" y="552" width="120" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="End_SP2_di" bpmnElement="End_SP2">
+        <dc:Bounds x="872" y="527" width="30" height="30"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_RegistraRotinaEmail_di" bpmnElement="ST_RegistraRotinaEmail">
+        <dc:Bounds x="980" y="505" width="130" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="End_EnvioEmails_di" bpmnElement="End_EnvioEmails">
+        <dc:Bounds x="1172" y="527" width="36" height="36"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="1149" y="570" width="82" height="27"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- Pool 2 edges -->
+      <bpmndi:BPMNEdge id="SF_Start2_Consulta_di" bpmnElement="SF_Start2_Consulta">
+        <di:waypoint x="148" y="435"/>
+        <di:waypoint x="148" y="545"/>
+        <di:waypoint x="200" y="545"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_Consulta2_GW_di" bpmnElement="SF_Consulta2_GW">
+        <di:waypoint x="340" y="545"/>
+        <di:waypoint x="395" y="545"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_GW2_Sim_di" bpmnElement="SF_GW2_Sim">
+        <di:waypoint x="445" y="545"/>
+        <di:waypoint x="492" y="542"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="459" y="527" width="22" height="14"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_GW2_Nao_di" bpmnElement="SF_GW2_Nao">
+        <di:waypoint x="420" y="520"/>
+        <di:waypoint x="420" y="490"/>
+        <di:waypoint x="980" y="490"/>
+        <di:waypoint x="980" y="505"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="634" y="472" width="82" height="14"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_SP2_S_Email_di" bpmnElement="SF_SP2_S_Email">
+        <di:waypoint x="540" y="542"/>
+        <di:waypoint x="555" y="543"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_SP2_Email_GW_di" bpmnElement="SF_SP2_Email_GW">
+        <di:waypoint x="665" y="543"/>
+        <di:waypoint x="685" y="542"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_Email_Enviado_di" bpmnElement="SF_Email_Enviado">
+        <di:waypoint x="700" y="527"/>
+        <di:waypoint x="700" y="517"/>
+        <di:waypoint x="735" y="517"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="704" y="510" width="22" height="14"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_Email_Erro_di" bpmnElement="SF_Email_Erro">
+        <di:waypoint x="700" y="557"/>
+        <di:waypoint x="700" y="577"/>
+        <di:waypoint x="735" y="577"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="703" y="558" width="22" height="27"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_Enviado_End_di" bpmnElement="SF_Enviado_End">
+        <di:waypoint x="855" y="517"/>
+        <di:waypoint x="887" y="542"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_Erro_End_di" bpmnElement="SF_Erro_End">
+        <di:waypoint x="855" y="577"/>
+        <di:waypoint x="887" y="557"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_SP2_Registra_di" bpmnElement="SF_SP2_Registra">
+        <di:waypoint x="932" y="542"/>
+        <di:waypoint x="980" y="545"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_Registra2_End_di" bpmnElement="SF_Registra2_End">
+        <di:waypoint x="1110" y="545"/>
+        <di:waypoint x="1172" y="545"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- Pool 3 -->
+      <bpmndi:BPMNShape id="Pool_Banrisul_di" bpmnElement="Pool_Banrisul" isHorizontal="true">
+        <dc:Bounds x="0" y="675" width="1470" height="225"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Sched_P3_di" bpmnElement="Lane_Sched_P3" isHorizontal="true">
+        <dc:Bounds x="30" y="675" width="1440" height="100"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Sistema_P3_di" bpmnElement="Lane_Sistema_P3" isHorizontal="true">
+        <dc:Bounds x="30" y="775" width="1440" height="125"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Start_Banrisul_di" bpmnElement="Start_Banrisul">
+        <dc:Bounds x="112" y="707" width="36" height="36"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="84" y="750" width="93" height="40"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_BuscaArquivosCNAB_di" bpmnElement="ST_BuscaArquivosCNAB">
+        <dc:Bounds x="200" y="795" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="GW_TemArquivoCNAB_di" bpmnElement="GW_TemArquivoCNAB" isMarkerVisible="true">
+        <dc:Bounds x="395" y="810" width="50" height="50"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="369" y="867" width="103" height="27"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="SP_ProcessaArquivoCNAB_di" bpmnElement="SP_ProcessaArquivoCNAB" isExpanded="true">
+        <dc:Bounds x="492" y="768" width="660" height="115"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Start_SP3_di" bpmnElement="Start_SP3">
+        <dc:Bounds x="510" y="810" width="30" height="30"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_LerLinhasRetorno_di" bpmnElement="ST_LerLinhasRetorno">
+        <dc:Bounds x="555" y="797" width="130" height="58"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_ProcessarPagamento_di" bpmnElement="ST_ProcessarPagamento">
+        <dc:Bounds x="705" y="797" width="155" height="58"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_MoverArquivoCNAB_di" bpmnElement="ST_MoverArquivoCNAB">
+        <dc:Bounds x="880" y="797" width="130" height="58"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="End_SP3_di" bpmnElement="End_SP3">
+        <dc:Bounds x="1030" y="810" width="30" height="30"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="End_Banrisul_di" bpmnElement="End_Banrisul">
+        <dc:Bounds x="1210" y="818" width="36" height="36"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="1186" y="861" width="84" height="27"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- Pool 3 edges -->
+      <bpmndi:BPMNEdge id="SF_Start3_Busca_di" bpmnElement="SF_Start3_Busca">
+        <di:waypoint x="148" y="725"/>
+        <di:waypoint x="148" y="835"/>
+        <di:waypoint x="200" y="835"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_Busca_GW3_di" bpmnElement="SF_Busca_GW3">
+        <di:waypoint x="340" y="835"/>
+        <di:waypoint x="395" y="835"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_GW3_Sim_di" bpmnElement="SF_GW3_Sim">
+        <di:waypoint x="445" y="835"/>
+        <di:waypoint x="492" y="825"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="459" y="818" width="22" height="14"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_GW3_Nao_di" bpmnElement="SF_GW3_Nao">
+        <di:waypoint x="420" y="810"/>
+        <di:waypoint x="420" y="780"/>
+        <di:waypoint x="1210" y="780"/>
+        <di:waypoint x="1228" y="818"/>
+        <bpmndi:BPMNLabel><dc:Bounds x="782" y="762" width="22" height="14"/></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_SP3_S_Ler_di" bpmnElement="SF_SP3_S_Ler">
+        <di:waypoint x="540" y="825"/>
+        <di:waypoint x="555" y="826"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_SP3_Ler_Proc_di" bpmnElement="SF_SP3_Ler_Proc">
+        <di:waypoint x="685" y="826"/>
+        <di:waypoint x="705" y="826"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_SP3_Proc_Mov_di" bpmnElement="SF_SP3_Proc_Mov">
+        <di:waypoint x="860" y="826"/>
+        <di:waypoint x="880" y="826"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_SP3_Mov_End_di" bpmnElement="SF_SP3_Mov_End">
+        <di:waypoint x="1010" y="826"/>
+        <di:waypoint x="1030" y="825"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF_SP3_End_di" bpmnElement="SF_SP3_End">
+        <di:waypoint x="1152" y="825"/>
+        <di:waypoint x="1210" y="836"/>
+      </bpmndi:BPMNEdge>
+
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</bpmn:definitions>

@@ -1,0 +1,229 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI"
+             xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+             targetNamespace="http://solcbm.procergs.rs.gov.br/bpmn"
+             id="definitions_P14">
+
+  <!-- ================================================================ -->
+  <!-- PROCESSO 14 – CONSULTAS PÚBLICAS (SEM AUTENTICAÇÃO)              -->
+  <!-- Qualquer cidadão acessa o portal público do SOL e consulta       -->
+  <!-- licenciamentos existentes por três critérios:                    -->
+  <!--   1. Número do Alvará / Protocolo                                -->
+  <!--   2. Endereço / Logradouro                                       -->
+  <!--   3. CNPJ ou CPF do Responsável Técnico / Titular               -->
+  <!-- Sistema executa busca → exibe resultados ou mensagem vazia       -->
+  <!-- Cidadão pode ver status, validade e dados públicos do alvará     -->
+  <!-- ================================================================ -->
+  <process id="Proc_14" name="14 - Consultas Públicas (Portal SOL)" isExecutable="false">
+
+    <startEvent id="P14_Start" name="Acesso ao Portal&#10;Público do SOL">
+      <outgoing>P14_sf01</outgoing>
+    </startEvent>
+
+    <exclusiveGateway id="P14_GW01" name="Critério de&#10;Consulta?">
+      <incoming>P14_sf01</incoming>
+      <outgoing>P14_sf02</outgoing>
+      <outgoing>P14_sf03</outgoing>
+      <outgoing>P14_sf04</outgoing>
+    </exclusiveGateway>
+
+    <userTask id="P14_T01" name="Informar Número do&#10;Alvará / Protocolo">
+      <incoming>P14_sf02</incoming>
+      <outgoing>P14_sf05</outgoing>
+    </userTask>
+
+    <userTask id="P14_T02" name="Informar Endereço&#10;ou Logradouro">
+      <incoming>P14_sf03</incoming>
+      <outgoing>P14_sf06</outgoing>
+    </userTask>
+
+    <userTask id="P14_T03" name="Informar CNPJ / CPF&#10;do Responsável / Titular">
+      <incoming>P14_sf04</incoming>
+      <outgoing>P14_sf07</outgoing>
+    </userTask>
+
+    <exclusiveGateway id="P14_GW02" name="Merge">
+      <incoming>P14_sf05</incoming>
+      <incoming>P14_sf06</incoming>
+      <incoming>P14_sf07</incoming>
+      <outgoing>P14_sf08</outgoing>
+    </exclusiveGateway>
+
+    <serviceTask id="P14_T04" name="Executar Consulta&#10;na Base de Dados">
+      <incoming>P14_sf08</incoming>
+      <outgoing>P14_sf09</outgoing>
+    </serviceTask>
+
+    <exclusiveGateway id="P14_GW03" name="Resultado&#10;Encontrado?">
+      <incoming>P14_sf09</incoming>
+      <outgoing>P14_sf10</outgoing>
+      <outgoing>P14_sf11</outgoing>
+    </exclusiveGateway>
+
+    <userTask id="P14_T05" name="Exibir Lista de Alvarás&#10;com Dados Públicos">
+      <incoming>P14_sf10</incoming>
+      <outgoing>P14_sf12</outgoing>
+    </userTask>
+
+    <userTask id="P14_T06" name="Exibir Mensagem:&#10;Nenhum Resultado Encontrado">
+      <incoming>P14_sf11</incoming>
+      <outgoing>P14_sf13</outgoing>
+    </userTask>
+
+    <exclusiveGateway id="P14_GW04" name="Merge">
+      <incoming>P14_sf12</incoming>
+      <incoming>P14_sf13</incoming>
+      <outgoing>P14_sf14</outgoing>
+    </exclusiveGateway>
+
+    <exclusiveGateway id="P14_GW05" name="Cidadão Deseja&#10;Nova Consulta?">
+      <incoming>P14_sf14</incoming>
+      <outgoing>P14_sf15</outgoing>
+      <outgoing>P14_sf16</outgoing>
+    </exclusiveGateway>
+
+    <endEvent id="P14_End" name="Sessão de&#10;Consulta Encerrada">
+      <incoming>P14_sf16</incoming>
+    </endEvent>
+
+    <sequenceFlow id="P14_sf01"  sourceRef="P14_Start"  targetRef="P14_GW01"/>
+    <sequenceFlow id="P14_sf02"  name="Por Número"      sourceRef="P14_GW01" targetRef="P14_T01"/>
+    <sequenceFlow id="P14_sf03"  name="Por Endereço"    sourceRef="P14_GW01" targetRef="P14_T02"/>
+    <sequenceFlow id="P14_sf04"  name="Por CNPJ/CPF"    sourceRef="P14_GW01" targetRef="P14_T03"/>
+    <sequenceFlow id="P14_sf05"  sourceRef="P14_T01"    targetRef="P14_GW02"/>
+    <sequenceFlow id="P14_sf06"  sourceRef="P14_T02"    targetRef="P14_GW02"/>
+    <sequenceFlow id="P14_sf07"  sourceRef="P14_T03"    targetRef="P14_GW02"/>
+    <sequenceFlow id="P14_sf08"  sourceRef="P14_GW02"   targetRef="P14_T04"/>
+    <sequenceFlow id="P14_sf09"  sourceRef="P14_T04"    targetRef="P14_GW03"/>
+    <sequenceFlow id="P14_sf10"  name="Sim"             sourceRef="P14_GW03" targetRef="P14_T05"/>
+    <sequenceFlow id="P14_sf11"  name="Não"             sourceRef="P14_GW03" targetRef="P14_T06"/>
+    <sequenceFlow id="P14_sf12"  sourceRef="P14_T05"    targetRef="P14_GW04"/>
+    <sequenceFlow id="P14_sf13"  sourceRef="P14_T06"    targetRef="P14_GW04"/>
+    <sequenceFlow id="P14_sf14"  sourceRef="P14_GW04"   targetRef="P14_GW05"/>
+    <sequenceFlow id="P14_sf15"  name="Sim (nova)"      sourceRef="P14_GW05" targetRef="P14_GW01"/>
+    <sequenceFlow id="P14_sf16"  name="Não (sair)"      sourceRef="P14_GW05" targetRef="P14_End"/>
+  </process>
+
+  <bpmndi:BPMNDiagram id="diagram_P14">
+    <bpmndi:BPMNPlane id="plane_P14" bpmnElement="Proc_14">
+      <bpmndi:BPMNShape id="shape_P14_Start" bpmnElement="P14_Start">
+        <omgdc:Bounds x="102" y="242" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P14_GW01" bpmnElement="P14_GW01" isMarkerVisible="true">
+        <omgdc:Bounds x="205" y="235" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P14_T01" bpmnElement="P14_T01">
+        <omgdc:Bounds x="315" y="100" width="160" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P14_T02" bpmnElement="P14_T02">
+        <omgdc:Bounds x="315" y="220" width="160" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P14_T03" bpmnElement="P14_T03">
+        <omgdc:Bounds x="315" y="340" width="160" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P14_GW02" bpmnElement="P14_GW02" isMarkerVisible="true">
+        <omgdc:Bounds x="540" y="235" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P14_T04" bpmnElement="P14_T04">
+        <omgdc:Bounds x="650" y="220" width="160" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P14_GW03" bpmnElement="P14_GW03" isMarkerVisible="true">
+        <omgdc:Bounds x="870" y="235" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P14_T05" bpmnElement="P14_T05">
+        <omgdc:Bounds x="980" y="100" width="170" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P14_T06" bpmnElement="P14_T06">
+        <omgdc:Bounds x="980" y="340" width="170" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P14_GW04" bpmnElement="P14_GW04" isMarkerVisible="true">
+        <omgdc:Bounds x="1210" y="235" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P14_GW05" bpmnElement="P14_GW05" isMarkerVisible="true">
+        <omgdc:Bounds x="1320" y="235" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P14_End" bpmnElement="P14_End">
+        <omgdc:Bounds x="1432" y="242" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNEdge id="edge_P14_sf01" bpmnElement="P14_sf01">
+        <omgdi:waypoint x="138" y="260"/>
+        <omgdi:waypoint x="205" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P14_sf02" bpmnElement="P14_sf02">
+        <omgdi:waypoint x="230" y="235"/>
+        <omgdi:waypoint x="230" y="140"/>
+        <omgdi:waypoint x="315" y="140"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P14_sf03" bpmnElement="P14_sf03">
+        <omgdi:waypoint x="255" y="260"/>
+        <omgdi:waypoint x="315" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P14_sf04" bpmnElement="P14_sf04">
+        <omgdi:waypoint x="230" y="285"/>
+        <omgdi:waypoint x="230" y="380"/>
+        <omgdi:waypoint x="315" y="380"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P14_sf05" bpmnElement="P14_sf05">
+        <omgdi:waypoint x="475" y="140"/>
+        <omgdi:waypoint x="565" y="140"/>
+        <omgdi:waypoint x="565" y="235"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P14_sf06" bpmnElement="P14_sf06">
+        <omgdi:waypoint x="475" y="260"/>
+        <omgdi:waypoint x="540" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P14_sf07" bpmnElement="P14_sf07">
+        <omgdi:waypoint x="475" y="380"/>
+        <omgdi:waypoint x="565" y="380"/>
+        <omgdi:waypoint x="565" y="285"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P14_sf08" bpmnElement="P14_sf08">
+        <omgdi:waypoint x="590" y="260"/>
+        <omgdi:waypoint x="650" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P14_sf09" bpmnElement="P14_sf09">
+        <omgdi:waypoint x="810" y="260"/>
+        <omgdi:waypoint x="870" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P14_sf10" bpmnElement="P14_sf10">
+        <omgdi:waypoint x="895" y="235"/>
+        <omgdi:waypoint x="895" y="140"/>
+        <omgdi:waypoint x="980" y="140"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P14_sf11" bpmnElement="P14_sf11">
+        <omgdi:waypoint x="895" y="285"/>
+        <omgdi:waypoint x="895" y="380"/>
+        <omgdi:waypoint x="980" y="380"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P14_sf12" bpmnElement="P14_sf12">
+        <omgdi:waypoint x="1150" y="140"/>
+        <omgdi:waypoint x="1235" y="140"/>
+        <omgdi:waypoint x="1235" y="235"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P14_sf13" bpmnElement="P14_sf13">
+        <omgdi:waypoint x="1150" y="380"/>
+        <omgdi:waypoint x="1235" y="380"/>
+        <omgdi:waypoint x="1235" y="285"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P14_sf14" bpmnElement="P14_sf14">
+        <omgdi:waypoint x="1260" y="260"/>
+        <omgdi:waypoint x="1320" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P14_sf15" bpmnElement="P14_sf15">
+        <omgdi:waypoint x="1345" y="235"/>
+        <omgdi:waypoint x="1345" y="80"/>
+        <omgdi:waypoint x="230"  y="80"/>
+        <omgdi:waypoint x="230"  y="235"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P14_sf16" bpmnElement="P14_sf16">
+        <omgdi:waypoint x="1370" y="260"/>
+        <omgdi:waypoint x="1432" y="260"/>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</definitions>

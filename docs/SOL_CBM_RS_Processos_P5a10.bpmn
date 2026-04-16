@@ -1,0 +1,643 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI"
+             xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+             targetNamespace="http://solcbm.procergs.rs.gov.br/bpmn">
+
+  <!-- ============================================================ -->
+  <!-- PROCESSO 05: ANÁLISE DE INVIABILIDADE TÉCNICA               -->
+  <!-- ============================================================ -->
+  <process id="Proc_05" name="05 - Análise de Inviabilidade Técnica" isExecutable="false">
+    <startEvent id="P05_Start" name="Inviabilidade técnica registrada [status=ANALISE_INVIABILIDADE_PENDENTE]">
+      <outgoing>P05_F01</outgoing>
+    </startEvent>
+    <serviceTask id="P05_T01" name="Validar situação ANALISE_INVIABILIDADE_PENDENTE (RN-048)">
+      <incoming>P05_F01</incoming><outgoing>P05_F02</outgoing>
+    </serviceTask>
+    <userTask id="P05_T02" name="ADM recebe notificação e abre ficha de inviabilidade">
+      <incoming>P05_F02</incoming><outgoing>P05_F03</outgoing>
+    </userTask>
+    <userTask id="P05_T03" name="Analisar especificação NCA fornecida pelo cidadão (RN-047)">
+      <incoming>P05_F03</incoming><outgoing>P05_F04</outgoing>
+    </userTask>
+    <userTask id="P05_T04" name="Verificar viabilidade técnica da medida declarada inviável">
+      <incoming>P05_F04</incoming><outgoing>P05_F05</outgoing>
+    </userTask>
+    <exclusiveGateway id="P05_G01" name="Inviabilidade técnica aceita?">
+      <incoming>P05_F05</incoming><outgoing>P05_F06</outgoing><outgoing>P05_F07</outgoing>
+    </exclusiveGateway>
+    <serviceTask id="P05_T05" name="Aprovar inviabilidade e ajustar medidas de segurança">
+      <incoming>P05_F06</incoming><outgoing>P05_F08</outgoing>
+    </serviceTask>
+    <endEvent id="P05_End_OK" name="Inviabilidade aceita — processo retorna ao Wizard">
+      <incoming>P05_F08</incoming>
+    </endEvent>
+    <userTask id="P05_T06" name="Reprovar inviabilidade com justificativa técnica">
+      <incoming>P05_F07</incoming><outgoing>P05_F09</outgoing>
+    </userTask>
+    <serviceTask id="P05_T07" name="Notificar cidadão: inviabilidade rejeitada — revisar medidas">
+      <incoming>P05_F09</incoming><outgoing>P05_F10</outgoing>
+    </serviceTask>
+    <endEvent id="P05_End_Fail" name="Inviabilidade rejeitada — cidadão deve revisar">
+      <incoming>P05_F10</incoming><errorEventDefinition/>
+    </endEvent>
+    <sequenceFlow id="P05_F01" sourceRef="P05_Start" targetRef="P05_T01"/>
+    <sequenceFlow id="P05_F02" sourceRef="P05_T01" targetRef="P05_T02"/>
+    <sequenceFlow id="P05_F03" sourceRef="P05_T02" targetRef="P05_T03"/>
+    <sequenceFlow id="P05_F04" sourceRef="P05_T03" targetRef="P05_T04"/>
+    <sequenceFlow id="P05_F05" sourceRef="P05_T04" targetRef="P05_G01"/>
+    <sequenceFlow id="P05_F06" name="Sim" sourceRef="P05_G01" targetRef="P05_T05"/>
+    <sequenceFlow id="P05_F07" name="Não" sourceRef="P05_G01" targetRef="P05_T06"/>
+    <sequenceFlow id="P05_F08" sourceRef="P05_T05" targetRef="P05_End_OK"/>
+    <sequenceFlow id="P05_F09" sourceRef="P05_T06" targetRef="P05_T07"/>
+    <sequenceFlow id="P05_F10" sourceRef="P05_T07" targetRef="P05_End_Fail"/>
+  </process>
+
+  <!-- ============================================================ -->
+  <!-- PROCESSO 06: ANÁLISE DE ISENÇÃO DE TAXA                     -->
+  <!-- ============================================================ -->
+  <process id="Proc_06" name="06 - Análise de Isenção de Taxa" isExecutable="false">
+    <startEvent id="P06_Start" name="Cidadão solicita isenção de taxa de licenciamento">
+      <outgoing>P06_F01</outgoing>
+    </startEvent>
+    <userTask id="P06_T01" name="Cidadão preenche pedido de isenção e anexa documentação comprobatória">
+      <incoming>P06_F01</incoming><outgoing>P06_F02</outgoing>
+    </userTask>
+    <serviceTask id="P06_T02" name="Registrar pedido [situacaoIsencao=SOLICITADA ou SOLICITADA_RENOV]">
+      <incoming>P06_F02</incoming><outgoing>P06_F03</outgoing>
+    </serviceTask>
+    <serviceTask id="P06_T03" name="Validar situação SOLICITADA ou SOLICITADA_RENOV (RN-070/071)">
+      <incoming>P06_F03</incoming><outgoing>P06_F04</outgoing>
+    </serviceTask>
+    <userTask id="P06_T04" name="ADM recebe e analisa documentos de isenção">
+      <incoming>P06_F04</incoming><outgoing>P06_F05</outgoing>
+    </userTask>
+    <exclusiveGateway id="P06_G01" name="Isenção aprovada?">
+      <incoming>P06_F05</incoming><outgoing>P06_F06</outgoing><outgoing>P06_F07</outgoing>
+    </exclusiveGateway>
+    <serviceTask id="P06_T05" name="Marcar licenciamento como isento — dispensar geração de boleto">
+      <incoming>P06_F06</incoming><outgoing>P06_F08</outgoing>
+    </serviceTask>
+    <endEvent id="P06_End_OK" name="Isenção concedida">
+      <incoming>P06_F08</incoming>
+    </endEvent>
+    <serviceTask id="P06_T06" name="Negar isenção — manter cobrança normal">
+      <incoming>P06_F07</incoming><outgoing>P06_F09</outgoing>
+    </serviceTask>
+    <serviceTask id="P06_T07" name="Notificar cidadão: isenção negada — prosseguir com pagamento">
+      <incoming>P06_F09</incoming><outgoing>P06_F10</outgoing>
+    </serviceTask>
+    <endEvent id="P06_End_Neg" name="Isenção negada — aguardar pagamento">
+      <incoming>P06_F10</incoming>
+    </endEvent>
+    <sequenceFlow id="P06_F01" sourceRef="P06_Start" targetRef="P06_T01"/>
+    <sequenceFlow id="P06_F02" sourceRef="P06_T01" targetRef="P06_T02"/>
+    <sequenceFlow id="P06_F03" sourceRef="P06_T02" targetRef="P06_T03"/>
+    <sequenceFlow id="P06_F04" sourceRef="P06_T03" targetRef="P06_T04"/>
+    <sequenceFlow id="P06_F05" sourceRef="P06_T04" targetRef="P06_G01"/>
+    <sequenceFlow id="P06_F06" name="Sim" sourceRef="P06_G01" targetRef="P06_T05"/>
+    <sequenceFlow id="P06_F07" name="Não" sourceRef="P06_G01" targetRef="P06_T06"/>
+    <sequenceFlow id="P06_F08" sourceRef="P06_T05" targetRef="P06_End_OK"/>
+    <sequenceFlow id="P06_F09" sourceRef="P06_T06" targetRef="P06_T07"/>
+    <sequenceFlow id="P06_F10" sourceRef="P06_T07" targetRef="P06_End_Neg"/>
+  </process>
+
+  <!-- ============================================================ -->
+  <!-- PROCESSO 07: PROCESSO DE VISTORIA                           -->
+  <!-- ============================================================ -->
+  <process id="Proc_07" name="07 - Processo de Vistoria" isExecutable="false">
+    <startEvent id="P07_Start" name="Licenciamento aprovado (CA) — cidadão solicita vistoria">
+      <outgoing>P07_F01</outgoing>
+    </startEvent>
+    <serviceTask id="P07_T01" name="Validar que RT possui tipo PROJETO_EXECUCAO ou EXECUCAO (RN-091)">
+      <incoming>P07_F01</incoming><outgoing>P07_F02</outgoing>
+    </serviceTask>
+    <userTask id="P07_T02" name="Cidadão preenche solicitação de vistoria (tipo, endereço, RT responsável)">
+      <incoming>P07_F02</incoming><outgoing>P07_F03</outgoing>
+    </userTask>
+    <userTask id="P07_T03" name="Cidadão aceita termo de responsabilidade da vistoria">
+      <incoming>P07_F03</incoming><outgoing>P07_F04</outgoing>
+    </userTask>
+    <serviceTask id="P07_T04" name="Validar situação para aceite (SOLICITADA ou EM_RASCUNHO - RN-089); vistoria pertence ao licenciamento (RN-088)">
+      <incoming>P07_F04</incoming><outgoing>P07_F05</outgoing>
+    </serviceTask>
+    <serviceTask id="P07_T05" name="Registrar solicitação [status vistoria=SOLICITADA]">
+      <incoming>P07_F05</incoming><outgoing>P07_F06</outgoing>
+    </serviceTask>
+    <userTask id="P07_T06" name="ADM lista vistorias para distribuição (permissão VISTORIA/VISTORIAR)">
+      <incoming>P07_F06</incoming><outgoing>P07_F07</outgoing>
+    </userTask>
+    <serviceTask id="P07_T07" name="Validar que analista tem cidades IBGE configuradas no SOE (RN-085); filtros de data válidos (RN-127/128)">
+      <incoming>P07_F07</incoming><outgoing>P07_F08</outgoing>
+    </serviceTask>
+    <userTask id="P07_T08" name="Distribuir vistoria para vistoriador [status vistoria=EM_RASCUNHO]">
+      <incoming>P07_F08</incoming><outgoing>P07_F09</outgoing>
+    </userTask>
+    <userTask id="P07_T09" name="Vistoriador executa vistoria in loco">
+      <incoming>P07_F09</incoming><outgoing>P07_F10</outgoing>
+    </userTask>
+    <userTask id="P07_T10" name="Vistoriador preenche laudos de vistoria (ART/RRT, PDF obrigatórios - RN-049/050)">
+      <incoming>P07_F10</incoming><outgoing>P07_F11</outgoing>
+    </userTask>
+    <serviceTask id="P07_T11" name="Validar documentos obrigatórios do laudo (RN-049/050/051)">
+      <incoming>P07_F11</incoming><outgoing>P07_F12</outgoing>
+    </serviceTask>
+    <exclusiveGateway id="P07_G01" name="Resultado da vistoria?">
+      <incoming>P07_F12</incoming><outgoing>P07_F13</outgoing><outgoing>P07_F14</outgoing>
+    </exclusiveGateway>
+    <!-- Aprovação -->
+    <userTask id="P07_T12" name="Registrar aprovação com observações (máx 2000 chars - RN-097)">
+      <incoming>P07_F13</incoming><outgoing>P07_F15</outgoing>
+    </userTask>
+    <serviceTask id="P07_T13" name="Validar data vistoria (não futura RN-095; não anterior ao período RN-096); status EM_APROVACAO (RN-098)">
+      <incoming>P07_F15</incoming><outgoing>P07_F16</outgoing>
+    </serviceTask>
+    <userTask id="P07_T14" name="ADM homologa deferimento (permissão VISTORIA/HOMOLOGAR)">
+      <incoming>P07_F16</incoming><outgoing>P07_F17</outgoing>
+    </userTask>
+    <serviceTask id="P07_T15" name="Validar situação licenciamento EM_VISTORIA ou EM_VISTORIA_RENOVACAO (RN-099)">
+      <incoming>P07_F17</incoming><outgoing>P07_F18</outgoing>
+    </serviceTask>
+    <serviceTask id="P07_T16" name="Emitir APPCI e liberação [status=AGUARDANDO_PRPCI → ALVARA_VIGENTE]">
+      <incoming>P07_F18</incoming><outgoing>P07_F19</outgoing>
+    </serviceTask>
+    <endEvent id="P07_End_OK" name="Alvará emitido e vigente [status=ALVARA_VIGENTE]">
+      <incoming>P07_F19</incoming>
+    </endEvent>
+    <!-- Reprovação -->
+    <userTask id="P07_T17" name="Registrar reprovação com comunicações de não-conformidade obrigatórias (RN-094)">
+      <incoming>P07_F14</incoming><outgoing>P07_F20</outgoing>
+    </userTask>
+    <userTask id="P07_T18" name="ADM homologa indeferimento com especificação obrigatória (RN-100)">
+      <incoming>P07_F20</incoming><outgoing>P07_F21</outgoing>
+    </userTask>
+    <serviceTask id="P07_T19" name="Notificar cidadão das não-conformidades identificadas">
+      <incoming>P07_F21</incoming><outgoing>P07_F22</outgoing>
+    </serviceTask>
+    <endEvent id="P07_End_Fail" name="Vistoria reprovada — cidadão poderá solicitar nova vistoria">
+      <incoming>P07_F22</incoming>
+    </endEvent>
+    <sequenceFlow id="P07_F01" sourceRef="P07_Start" targetRef="P07_T01"/>
+    <sequenceFlow id="P07_F02" sourceRef="P07_T01" targetRef="P07_T02"/>
+    <sequenceFlow id="P07_F03" sourceRef="P07_T02" targetRef="P07_T03"/>
+    <sequenceFlow id="P07_F04" sourceRef="P07_T03" targetRef="P07_T04"/>
+    <sequenceFlow id="P07_F05" sourceRef="P07_T04" targetRef="P07_T05"/>
+    <sequenceFlow id="P07_F06" sourceRef="P07_T05" targetRef="P07_T06"/>
+    <sequenceFlow id="P07_F07" sourceRef="P07_T06" targetRef="P07_T07"/>
+    <sequenceFlow id="P07_F08" sourceRef="P07_T07" targetRef="P07_T08"/>
+    <sequenceFlow id="P07_F09" sourceRef="P07_T08" targetRef="P07_T09"/>
+    <sequenceFlow id="P07_F10" sourceRef="P07_T09" targetRef="P07_T10"/>
+    <sequenceFlow id="P07_F11" sourceRef="P07_T10" targetRef="P07_T11"/>
+    <sequenceFlow id="P07_F12" sourceRef="P07_T11" targetRef="P07_G01"/>
+    <sequenceFlow id="P07_F13" name="Aprovado" sourceRef="P07_G01" targetRef="P07_T12"/>
+    <sequenceFlow id="P07_F14" name="Reprovado" sourceRef="P07_G01" targetRef="P07_T17"/>
+    <sequenceFlow id="P07_F15" sourceRef="P07_T12" targetRef="P07_T13"/>
+    <sequenceFlow id="P07_F16" sourceRef="P07_T13" targetRef="P07_T14"/>
+    <sequenceFlow id="P07_F17" sourceRef="P07_T14" targetRef="P07_T15"/>
+    <sequenceFlow id="P07_F18" sourceRef="P07_T15" targetRef="P07_T16"/>
+    <sequenceFlow id="P07_F19" sourceRef="P07_T16" targetRef="P07_End_OK"/>
+    <sequenceFlow id="P07_F20" sourceRef="P07_T17" targetRef="P07_T18"/>
+    <sequenceFlow id="P07_F21" sourceRef="P07_T18" targetRef="P07_T19"/>
+    <sequenceFlow id="P07_F22" sourceRef="P07_T19" targetRef="P07_End_Fail"/>
+  </process>
+
+  <!-- ============================================================ -->
+  <!-- PROCESSO 08: RENOVAÇÃO DE ALVARÁ                            -->
+  <!-- ============================================================ -->
+  <process id="Proc_08" name="08 - Renovação de Alvará" isExecutable="false">
+    <startEvent id="P08_Start" name="Alvará vencido ou próximo do vencimento [status=ALVARA_VENCIDO]">
+      <outgoing>P08_F01</outgoing>
+    </startEvent>
+    <userTask id="P08_T01" name="RT com tipo RENOVACAO_APPCI inicia processo de renovação">
+      <incoming>P08_F01</incoming><outgoing>P08_F02</outgoing>
+    </userTask>
+    <serviceTask id="P08_T02" name="Validar situação para edição: ALVARA_VENCIDO, ALVARA_VIGENTE, AGUARDANDO_ACEITE_RENOVACAO ou CIV (RN-101)">
+      <incoming>P08_F02</incoming><outgoing>P08_F03</outgoing>
+    </serviceTask>
+    <userTask id="P08_T03" name="Confirmar lista de Responsáveis Técnicos de Renovação">
+      <incoming>P08_F03</incoming><outgoing>P08_F04</outgoing>
+    </userTask>
+    <serviceTask id="P08_T04" name="Validar: lista RTs não vazia (RN-102); RT solicitante tem tipo RENOVACAO_APPCI (RN-103/104)">
+      <incoming>P08_F04</incoming><outgoing>P08_F05</outgoing>
+    </serviceTask>
+    <serviceTask id="P08_T05" name="Gerar boleto TAXA_RENOVACAO [status=AGUARDANDO_PAGAMENTO_RENOVACAO] (RN-055)">
+      <incoming>P08_F05</incoming><outgoing>P08_F06</outgoing>
+    </serviceTask>
+    <userTask id="P08_T06" name="Cidadão paga taxa de renovação no Banrisul">
+      <incoming>P08_F06</incoming><outgoing>P08_F07</outgoing>
+    </userTask>
+    <intermediateCatchEvent id="P08_ICE" name="Aguardar confirmação de pagamento da renovação">
+      <incoming>P08_F07</incoming><outgoing>P08_F08</outgoing>
+      <messageEventDefinition/>
+    </intermediateCatchEvent>
+    <serviceTask id="P08_T07" name="Confirmar pagamento [status=AGUARDANDO_DISTRIBUICAO_RENOV]">
+      <incoming>P08_F08</incoming><outgoing>P08_F09</outgoing>
+    </serviceTask>
+    <userTask id="P08_T08" name="ADM distribui licenciamento para análise de renovação">
+      <incoming>P08_F09</incoming><outgoing>P08_F10</outgoing>
+    </userTask>
+    <callActivity id="P08_CA01" name="Análise Técnica ADM&#10;(Processo 04)" calledElement="Proc_04">
+      <incoming>P08_F10</incoming><outgoing>P08_F11</outgoing>
+    </callActivity>
+    <exclusiveGateway id="P08_G01" name="Resultado análise de renovação?">
+      <incoming>P08_F11</incoming><outgoing>P08_F12</outgoing><outgoing>P08_F13</outgoing>
+    </exclusiveGateway>
+    <userTask id="P08_T09" name="Assinar PRPCI de renovação [status=AGUARDANDO_ACEITE_PRPCI] (RN-105/106/107/108)">
+      <incoming>P08_F12</incoming><outgoing>P08_F14</outgoing>
+    </userTask>
+    <serviceTask id="P08_T10" name="Emitir novo APPCI e liberar alvará [status=ALVARA_VIGENTE]">
+      <incoming>P08_F14</incoming><outgoing>P08_F15</outgoing>
+    </serviceTask>
+    <endEvent id="P08_End_OK" name="Alvará renovado com sucesso [status=ALVARA_VIGENTE]">
+      <incoming>P08_F15</incoming>
+    </endEvent>
+    <endEvent id="P08_End_Fail" name="Renovação reprovada — CIA emitido">
+      <incoming>P08_F13</incoming><errorEventDefinition/>
+    </endEvent>
+    <sequenceFlow id="P08_F01" sourceRef="P08_Start" targetRef="P08_T01"/>
+    <sequenceFlow id="P08_F02" sourceRef="P08_T01" targetRef="P08_T02"/>
+    <sequenceFlow id="P08_F03" sourceRef="P08_T02" targetRef="P08_T03"/>
+    <sequenceFlow id="P08_F04" sourceRef="P08_T03" targetRef="P08_T04"/>
+    <sequenceFlow id="P08_F05" sourceRef="P08_T04" targetRef="P08_T05"/>
+    <sequenceFlow id="P08_F06" sourceRef="P08_T05" targetRef="P08_T06"/>
+    <sequenceFlow id="P08_F07" sourceRef="P08_T06" targetRef="P08_ICE"/>
+    <sequenceFlow id="P08_F08" sourceRef="P08_ICE" targetRef="P08_T07"/>
+    <sequenceFlow id="P08_F09" sourceRef="P08_T07" targetRef="P08_T08"/>
+    <sequenceFlow id="P08_F10" sourceRef="P08_T08" targetRef="P08_CA01"/>
+    <sequenceFlow id="P08_F11" sourceRef="P08_CA01" targetRef="P08_G01"/>
+    <sequenceFlow id="P08_F12" name="Aprovado" sourceRef="P08_G01" targetRef="P08_T09"/>
+    <sequenceFlow id="P08_F13" name="Reprovado" sourceRef="P08_G01" targetRef="P08_End_Fail"/>
+    <sequenceFlow id="P08_F14" sourceRef="P08_T09" targetRef="P08_T10"/>
+    <sequenceFlow id="P08_F15" sourceRef="P08_T10" targetRef="P08_End_OK"/>
+  </process>
+
+  <!-- ============================================================ -->
+  <!-- PROCESSO 09: TROCA DE ENVOLVIDOS                            -->
+  <!-- ============================================================ -->
+  <process id="Proc_09" name="09 - Troca de Envolvidos (PPCI/PSPCIM)" isExecutable="false">
+    <startEvent id="P09_Start" name="Envolvido inicia pedido de troca de responsáveis">
+      <outgoing>P09_F01</outgoing>
+    </startEvent>
+    <serviceTask id="P09_T01" name="Validar tipo de licenciamento: apenas PPCI ou PSPCIM (RN-109)">
+      <incoming>P09_F01</incoming><outgoing>P09_F02</outgoing>
+    </serviceTask>
+    <userTask id="P09_T02" name="Pesquisar licenciamento por Número OU (Logradouro + UF + Cidade + Nº) (RN-118)">
+      <incoming>P09_F02</incoming><outgoing>P09_F03</outgoing>
+    </userTask>
+    <serviceTask id="P09_T03" name="Validar filtro obrigatório de pesquisa (RN-118)">
+      <incoming>P09_F03</incoming><outgoing>P09_F04</outgoing>
+    </serviceTask>
+    <userTask id="P09_T04" name="Selecionar envolvidos para substituição (ao menos 1 - RN-110)">
+      <incoming>P09_F04</incoming><outgoing>P09_F05</outgoing>
+    </userTask>
+    <serviceTask id="P09_T05" name="Validar: usuário logado é envolvido (RN-111); situação licenciamento válida para troca (RN-113)">
+      <incoming>P09_F05</incoming><outgoing>P09_F06</outgoing>
+    </serviceTask>
+    <serviceTask id="P09_T06" name="Registrar solicitação de troca [situacaoTroca=SOLICITADO]">
+      <incoming>P09_F06</incoming><outgoing>P09_F07</outgoing>
+    </serviceTask>
+    <serviceTask id="P09_T07" name="Notificar todos os envolvidos sobre pedido de troca (RN-116)">
+      <incoming>P09_F07</incoming><outgoing>P09_F08</outgoing>
+    </serviceTask>
+    <parallelGateway id="P09_PG01" name="Aguardar autorizações de todos os envolvidos">
+      <incoming>P09_F08</incoming><outgoing>P09_F09</outgoing>
+    </parallelGateway>
+    <userTask id="P09_T08" name="Cada envolvido autoriza ou recusa a troca (RN-112/114)">
+      <incoming>P09_F09</incoming><outgoing>P09_F10</outgoing>
+    </userTask>
+    <serviceTask id="P09_T09" name="Validar: situação troca SOLICITADO (RN-112); autorização PENDENTE do usuário (RN-114)">
+      <incoming>P09_F10</incoming><outgoing>P09_F11</outgoing>
+    </serviceTask>
+    <exclusiveGateway id="P09_G01" name="Todos autorizaram?">
+      <incoming>P09_F11</incoming><outgoing>P09_F12</outgoing><outgoing>P09_F13</outgoing>
+    </exclusiveGateway>
+    <serviceTask id="P09_T10" name="Efetivar troca de envolvidos e atualizar dados do licenciamento">
+      <incoming>P09_F12</incoming><outgoing>P09_F14</outgoing>
+    </serviceTask>
+    <endEvent id="P09_End_OK" name="Troca de envolvidos efetivada com sucesso">
+      <incoming>P09_F14</incoming>
+    </endEvent>
+    <userTask id="P09_T11" name="Solicitante cancela pedido de troca se situação=SOLICITADO (RN-115/117)">
+      <incoming>P09_F13</incoming><outgoing>P09_F15</outgoing>
+    </userTask>
+    <endEvent id="P09_End_Canc" name="Troca cancelada (por falta de autorização ou pelo solicitante)">
+      <incoming>P09_F15</incoming>
+    </endEvent>
+    <sequenceFlow id="P09_F01" sourceRef="P09_Start" targetRef="P09_T01"/>
+    <sequenceFlow id="P09_F02" sourceRef="P09_T01" targetRef="P09_T02"/>
+    <sequenceFlow id="P09_F03" sourceRef="P09_T02" targetRef="P09_T03"/>
+    <sequenceFlow id="P09_F04" sourceRef="P09_T03" targetRef="P09_T04"/>
+    <sequenceFlow id="P09_F05" sourceRef="P09_T04" targetRef="P09_T05"/>
+    <sequenceFlow id="P09_F06" sourceRef="P09_T05" targetRef="P09_T06"/>
+    <sequenceFlow id="P09_F07" sourceRef="P09_T06" targetRef="P09_T07"/>
+    <sequenceFlow id="P09_F08" sourceRef="P09_T07" targetRef="P09_PG01"/>
+    <sequenceFlow id="P09_F09" sourceRef="P09_PG01" targetRef="P09_T08"/>
+    <sequenceFlow id="P09_F10" sourceRef="P09_T08" targetRef="P09_T09"/>
+    <sequenceFlow id="P09_F11" sourceRef="P09_T09" targetRef="P09_G01"/>
+    <sequenceFlow id="P09_F12" name="Sim" sourceRef="P09_G01" targetRef="P09_T10"/>
+    <sequenceFlow id="P09_F13" name="Não / Cancelado" sourceRef="P09_G01" targetRef="P09_T11"/>
+    <sequenceFlow id="P09_F14" sourceRef="P09_T10" targetRef="P09_End_OK"/>
+    <sequenceFlow id="P09_F15" sourceRef="P09_T11" targetRef="P09_End_Canc"/>
+  </process>
+
+  <!-- ============================================================ -->
+  <!-- PROCESSO 10: RECURSO / CONTESTAÇÃO                          -->
+  <!-- ============================================================ -->
+  <process id="Proc_10" name="10 - Recurso e Contestação de CIA/CIV" isExecutable="false">
+    <startEvent id="P10_Start" name="Cidadão contesta CIA ou CIV recebido">
+      <outgoing>P10_F01</outgoing>
+    </startEvent>
+    <userTask id="P10_T01" name="Preencher formulário de recurso">
+      <incoming>P10_F01</incoming><outgoing>P10_F02</outgoing>
+    </userTask>
+    <serviceTask id="P10_T02" name="Validar campos obrigatórios: TipoSolicitacao (RN-073), TipoRecurso (RN-074), Instância 1 ou 2 (RN-075), FundamentacaoLegal (RN-076), idLicenciamento (RN-077), idArquivoCiaCiv (RN-078), ao menos 1 envolvido (RN-079)">
+      <incoming>P10_F02</incoming><outgoing>P10_F03</outgoing>
+    </serviceTask>
+    <userTask id="P10_T03" name="Anexar documentação complementar de suporte (PDF obrigatório)">
+      <incoming>P10_F03</incoming><outgoing>P10_F04</outgoing>
+    </userTask>
+    <serviceTask id="P10_T04" name="Registrar recurso no sistema">
+      <incoming>P10_F04</incoming><outgoing>P10_F05</outgoing>
+    </serviceTask>
+    <exclusiveGateway id="P10_G01" name="Instância do recurso?">
+      <incoming>P10_F05</incoming><outgoing>P10_F06</outgoing><outgoing>P10_F07</outgoing>
+    </exclusiveGateway>
+    <userTask id="P10_T05" name="Comissão analisa recurso em 1ª Instância (CIA)">
+      <incoming>P10_F06</incoming><outgoing>P10_F08</outgoing>
+    </userTask>
+    <userTask id="P10_T06" name="Comissão analisa recurso em 2ª Instância (avalista externo)">
+      <incoming>P10_F07</incoming><outgoing>P10_F09</outgoing>
+    </userTask>
+    <exclusiveGateway id="P10_G02" name="Decisão do recurso?">
+      <incoming>P10_F08</incoming><incoming>P10_F09</incoming>
+      <outgoing>P10_F10</outgoing><outgoing>P10_F11</outgoing>
+    </exclusiveGateway>
+    <serviceTask id="P10_T07" name="Rever resultado da análise técnica (recalcular CA/CIA)">
+      <incoming>P10_F10</incoming><outgoing>P10_F12</outgoing>
+    </serviceTask>
+    <serviceTask id="P10_T08" name="Notificar cidadão: recurso PROVIDO — análise revisada">
+      <incoming>P10_F12</incoming><outgoing>P10_F13</outgoing>
+    </serviceTask>
+    <endEvent id="P10_End_Provido" name="Recurso provido — licenciamento revisado">
+      <incoming>P10_F13</incoming>
+    </endEvent>
+    <serviceTask id="P10_T09" name="Manter decisão original — emitir nova CIA/CIV">
+      <incoming>P10_F11</incoming><outgoing>P10_F14</outgoing>
+    </serviceTask>
+    <serviceTask id="P10_T10" name="Notificar cidadão: recurso IMPROVIDO">
+      <incoming>P10_F14</incoming><outgoing>P10_F15</outgoing>
+    </serviceTask>
+    <endEvent id="P10_End_Improvido" name="Recurso improvido — decisão mantida">
+      <incoming>P10_F15</incoming>
+    </endEvent>
+    <sequenceFlow id="P10_F01" sourceRef="P10_Start" targetRef="P10_T01"/>
+    <sequenceFlow id="P10_F02" sourceRef="P10_T01" targetRef="P10_T02"/>
+    <sequenceFlow id="P10_F03" sourceRef="P10_T02" targetRef="P10_T03"/>
+    <sequenceFlow id="P10_F04" sourceRef="P10_T03" targetRef="P10_T04"/>
+    <sequenceFlow id="P10_F05" sourceRef="P10_T04" targetRef="P10_G01"/>
+    <sequenceFlow id="P10_F06" name="1ª Instância" sourceRef="P10_G01" targetRef="P10_T05"/>
+    <sequenceFlow id="P10_F07" name="2ª Instância" sourceRef="P10_G01" targetRef="P10_T06"/>
+    <sequenceFlow id="P10_F08" sourceRef="P10_T05" targetRef="P10_G02"/>
+    <sequenceFlow id="P10_F09" sourceRef="P10_T06" targetRef="P10_G02"/>
+    <sequenceFlow id="P10_F10" name="Provido" sourceRef="P10_G02" targetRef="P10_T07"/>
+    <sequenceFlow id="P10_F11" name="Improvido" sourceRef="P10_G02" targetRef="P10_T09"/>
+    <sequenceFlow id="P10_F12" sourceRef="P10_T07" targetRef="P10_T08"/>
+    <sequenceFlow id="P10_F13" sourceRef="P10_T08" targetRef="P10_End_Provido"/>
+    <sequenceFlow id="P10_F14" sourceRef="P10_T09" targetRef="P10_T10"/>
+    <sequenceFlow id="P10_F15" sourceRef="P10_T10" targetRef="P10_End_Improvido"/>
+  </process>
+
+  <!-- ============================================================
+       BPMN DIAGRAM INTERCHANGE - PROCESSO 05
+       ============================================================ -->
+  <bpmndi:BPMNDiagram id="Diagram_05" name="05 - Inviabilidade Técnica">
+    <bpmndi:BPMNPlane id="Plane_05" bpmnElement="Proc_05">
+      <bpmndi:BPMNShape id="Sh_P05_Start" bpmnElement="P05_Start"><omgdc:Bounds x="62" y="242" width="36" height="36"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P05_T01" bpmnElement="P05_T01"><omgdc:Bounds x="160" y="220" width="160" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P05_T02" bpmnElement="P05_T02"><omgdc:Bounds x="380" y="220" width="140" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P05_T03" bpmnElement="P05_T03"><omgdc:Bounds x="580" y="220" width="140" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P05_T04" bpmnElement="P05_T04"><omgdc:Bounds x="780" y="220" width="140" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P05_G01" bpmnElement="P05_G01" isMarkerVisible="true"><omgdc:Bounds x="975" y="235" width="50" height="50"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P05_T05" bpmnElement="P05_T05"><omgdc:Bounds x="1080" y="220" width="140" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P05_End_OK" bpmnElement="P05_End_OK"><omgdc:Bounds x="1282" y="242" width="36" height="36"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P05_T06" bpmnElement="P05_T06"><omgdc:Bounds x="1080" y="370" width="140" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P05_T07" bpmnElement="P05_T07"><omgdc:Bounds x="1280" y="370" width="140" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P05_End_Fail" bpmnElement="P05_End_Fail"><omgdc:Bounds x="1482" y="392" width="36" height="36"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Ed_P05_F01" bpmnElement="P05_F01"><omgdi:waypoint x="98" y="260"/><omgdi:waypoint x="160" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P05_F02" bpmnElement="P05_F02"><omgdi:waypoint x="320" y="260"/><omgdi:waypoint x="380" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P05_F03" bpmnElement="P05_F03"><omgdi:waypoint x="520" y="260"/><omgdi:waypoint x="580" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P05_F04" bpmnElement="P05_F04"><omgdi:waypoint x="720" y="260"/><omgdi:waypoint x="780" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P05_F05" bpmnElement="P05_F05"><omgdi:waypoint x="920" y="260"/><omgdi:waypoint x="975" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P05_F06" bpmnElement="P05_F06"><omgdi:waypoint x="1025" y="260"/><omgdi:waypoint x="1080" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P05_F07" bpmnElement="P05_F07"><omgdi:waypoint x="1000" y="285"/><omgdi:waypoint x="1000" y="410"/><omgdi:waypoint x="1080" y="410"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P05_F08" bpmnElement="P05_F08"><omgdi:waypoint x="1220" y="260"/><omgdi:waypoint x="1282" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P05_F09" bpmnElement="P05_F09"><omgdi:waypoint x="1220" y="410"/><omgdi:waypoint x="1280" y="410"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P05_F10" bpmnElement="P05_F10"><omgdi:waypoint x="1420" y="410"/><omgdi:waypoint x="1482" y="410"/></bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+  <!-- ============================================================
+       BPMN DIAGRAM INTERCHANGE - PROCESSO 06
+       ============================================================ -->
+  <bpmndi:BPMNDiagram id="Diagram_06" name="06 - Isenção de Taxa">
+    <bpmndi:BPMNPlane id="Plane_06" bpmnElement="Proc_06">
+      <bpmndi:BPMNShape id="Sh_P06_Start" bpmnElement="P06_Start"><omgdc:Bounds x="62" y="242" width="36" height="36"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P06_T01" bpmnElement="P06_T01"><omgdc:Bounds x="160" y="220" width="140" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P06_T02" bpmnElement="P06_T02"><omgdc:Bounds x="360" y="220" width="140" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P06_T03" bpmnElement="P06_T03"><omgdc:Bounds x="560" y="220" width="140" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P06_T04" bpmnElement="P06_T04"><omgdc:Bounds x="760" y="220" width="140" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P06_G01" bpmnElement="P06_G01" isMarkerVisible="true"><omgdc:Bounds x="955" y="235" width="50" height="50"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P06_T05" bpmnElement="P06_T05"><omgdc:Bounds x="1060" y="220" width="140" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P06_End_OK" bpmnElement="P06_End_OK"><omgdc:Bounds x="1262" y="242" width="36" height="36"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P06_T06" bpmnElement="P06_T06"><omgdc:Bounds x="1060" y="370" width="140" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P06_T07" bpmnElement="P06_T07"><omgdc:Bounds x="1260" y="370" width="140" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P06_End_Neg" bpmnElement="P06_End_Neg"><omgdc:Bounds x="1462" y="392" width="36" height="36"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Ed_P06_F01" bpmnElement="P06_F01"><omgdi:waypoint x="98" y="260"/><omgdi:waypoint x="160" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P06_F02" bpmnElement="P06_F02"><omgdi:waypoint x="300" y="260"/><omgdi:waypoint x="360" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P06_F03" bpmnElement="P06_F03"><omgdi:waypoint x="500" y="260"/><omgdi:waypoint x="560" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P06_F04" bpmnElement="P06_F04"><omgdi:waypoint x="700" y="260"/><omgdi:waypoint x="760" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P06_F05" bpmnElement="P06_F05"><omgdi:waypoint x="900" y="260"/><omgdi:waypoint x="955" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P06_F06" bpmnElement="P06_F06"><omgdi:waypoint x="1005" y="260"/><omgdi:waypoint x="1060" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P06_F07" bpmnElement="P06_F07"><omgdi:waypoint x="980" y="285"/><omgdi:waypoint x="980" y="410"/><omgdi:waypoint x="1060" y="410"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P06_F08" bpmnElement="P06_F08"><omgdi:waypoint x="1200" y="260"/><omgdi:waypoint x="1262" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P06_F09" bpmnElement="P06_F09"><omgdi:waypoint x="1200" y="410"/><omgdi:waypoint x="1260" y="410"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P06_F10" bpmnElement="P06_F10"><omgdi:waypoint x="1400" y="410"/><omgdi:waypoint x="1462" y="410"/></bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+  <!-- ============================================================
+       BPMN DIAGRAM INTERCHANGE - PROCESSO 07
+       ============================================================ -->
+  <bpmndi:BPMNDiagram id="Diagram_07" name="07 - Processo de Vistoria">
+    <bpmndi:BPMNPlane id="Plane_07" bpmnElement="Proc_07">
+      <bpmndi:BPMNShape id="Sh_P07_Start" bpmnElement="P07_Start"><omgdc:Bounds x="62" y="242" width="36" height="36"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P07_T01" bpmnElement="P07_T01"><omgdc:Bounds x="160" y="220" width="160" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P07_T02" bpmnElement="P07_T02"><omgdc:Bounds x="380" y="220" width="140" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P07_T03" bpmnElement="P07_T03"><omgdc:Bounds x="580" y="220" width="140" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P07_T04" bpmnElement="P07_T04"><omgdc:Bounds x="780" y="220" width="160" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P07_T05" bpmnElement="P07_T05"><omgdc:Bounds x="1000" y="220" width="140" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P07_T06" bpmnElement="P07_T06"><omgdc:Bounds x="1200" y="220" width="140" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P07_T07" bpmnElement="P07_T07"><omgdc:Bounds x="1400" y="220" width="160" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P07_T08" bpmnElement="P07_T08"><omgdc:Bounds x="1620" y="220" width="140" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P07_T09" bpmnElement="P07_T09"><omgdc:Bounds x="1820" y="220" width="140" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P07_T10" bpmnElement="P07_T10"><omgdc:Bounds x="2020" y="220" width="160" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P07_T11" bpmnElement="P07_T11"><omgdc:Bounds x="2240" y="220" width="160" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P07_G01" bpmnElement="P07_G01" isMarkerVisible="true"><omgdc:Bounds x="2455" y="235" width="50" height="50"/></bpmndi:BPMNShape>
+      <!-- Aprovação path -->
+      <bpmndi:BPMNShape id="Sh_P07_T12" bpmnElement="P07_T12"><omgdc:Bounds x="2560" y="100" width="160" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P07_T13" bpmnElement="P07_T13"><omgdc:Bounds x="2780" y="100" width="160" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P07_T14" bpmnElement="P07_T14"><omgdc:Bounds x="3000" y="100" width="140" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P07_T15" bpmnElement="P07_T15"><omgdc:Bounds x="3200" y="100" width="160" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P07_T16" bpmnElement="P07_T16"><omgdc:Bounds x="3420" y="100" width="160" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P07_End_OK" bpmnElement="P07_End_OK"><omgdc:Bounds x="3642" y="122" width="36" height="36"/></bpmndi:BPMNShape>
+      <!-- Reprovação path -->
+      <bpmndi:BPMNShape id="Sh_P07_T17" bpmnElement="P07_T17"><omgdc:Bounds x="2560" y="380" width="160" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P07_T18" bpmnElement="P07_T18"><omgdc:Bounds x="2780" y="380" width="140" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P07_T19" bpmnElement="P07_T19"><omgdc:Bounds x="2980" y="380" width="140" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P07_End_Fail" bpmnElement="P07_End_Fail"><omgdc:Bounds x="3182" y="402" width="36" height="36"/></bpmndi:BPMNShape>
+      <!-- Edges -->
+      <bpmndi:BPMNEdge id="Ed_P07_F01" bpmnElement="P07_F01"><omgdi:waypoint x="98" y="260"/><omgdi:waypoint x="160" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P07_F02" bpmnElement="P07_F02"><omgdi:waypoint x="320" y="260"/><omgdi:waypoint x="380" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P07_F03" bpmnElement="P07_F03"><omgdi:waypoint x="520" y="260"/><omgdi:waypoint x="580" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P07_F04" bpmnElement="P07_F04"><omgdi:waypoint x="720" y="260"/><omgdi:waypoint x="780" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P07_F05" bpmnElement="P07_F05"><omgdi:waypoint x="940" y="260"/><omgdi:waypoint x="1000" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P07_F06" bpmnElement="P07_F06"><omgdi:waypoint x="1140" y="260"/><omgdi:waypoint x="1200" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P07_F07" bpmnElement="P07_F07"><omgdi:waypoint x="1340" y="260"/><omgdi:waypoint x="1400" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P07_F08" bpmnElement="P07_F08"><omgdi:waypoint x="1560" y="260"/><omgdi:waypoint x="1620" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P07_F09" bpmnElement="P07_F09"><omgdi:waypoint x="1760" y="260"/><omgdi:waypoint x="1820" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P07_F10" bpmnElement="P07_F10"><omgdi:waypoint x="1960" y="260"/><omgdi:waypoint x="2020" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P07_F11" bpmnElement="P07_F11"><omgdi:waypoint x="2180" y="260"/><omgdi:waypoint x="2240" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P07_F12" bpmnElement="P07_F12"><omgdi:waypoint x="2400" y="260"/><omgdi:waypoint x="2455" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P07_F13" bpmnElement="P07_F13"><omgdi:waypoint x="2480" y="235"/><omgdi:waypoint x="2480" y="140"/><omgdi:waypoint x="2560" y="140"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P07_F14" bpmnElement="P07_F14"><omgdi:waypoint x="2480" y="285"/><omgdi:waypoint x="2480" y="420"/><omgdi:waypoint x="2560" y="420"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P07_F15" bpmnElement="P07_F15"><omgdi:waypoint x="2720" y="140"/><omgdi:waypoint x="2780" y="140"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P07_F16" bpmnElement="P07_F16"><omgdi:waypoint x="2940" y="140"/><omgdi:waypoint x="3000" y="140"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P07_F17" bpmnElement="P07_F17"><omgdi:waypoint x="3140" y="140"/><omgdi:waypoint x="3200" y="140"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P07_F18" bpmnElement="P07_F18"><omgdi:waypoint x="3360" y="140"/><omgdi:waypoint x="3420" y="140"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P07_F19" bpmnElement="P07_F19"><omgdi:waypoint x="3580" y="140"/><omgdi:waypoint x="3642" y="140"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P07_F20" bpmnElement="P07_F20"><omgdi:waypoint x="2720" y="420"/><omgdi:waypoint x="2780" y="420"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P07_F21" bpmnElement="P07_F21"><omgdi:waypoint x="2920" y="420"/><omgdi:waypoint x="2980" y="420"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P07_F22" bpmnElement="P07_F22"><omgdi:waypoint x="3120" y="420"/><omgdi:waypoint x="3182" y="420"/></bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+  <!-- ============================================================
+       BPMN DIAGRAM INTERCHANGE - PROCESSO 08
+       ============================================================ -->
+  <bpmndi:BPMNDiagram id="Diagram_08" name="08 - Renovação de Alvará">
+    <bpmndi:BPMNPlane id="Plane_08" bpmnElement="Proc_08">
+      <bpmndi:BPMNShape id="Sh_P08_Start" bpmnElement="P08_Start"><omgdc:Bounds x="62" y="242" width="36" height="36"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P08_T01" bpmnElement="P08_T01"><omgdc:Bounds x="160" y="220" width="140" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P08_T02" bpmnElement="P08_T02"><omgdc:Bounds x="360" y="220" width="160" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P08_T03" bpmnElement="P08_T03"><omgdc:Bounds x="580" y="220" width="140" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P08_T04" bpmnElement="P08_T04"><omgdc:Bounds x="780" y="220" width="160" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P08_T05" bpmnElement="P08_T05"><omgdc:Bounds x="1000" y="220" width="140" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P08_T06" bpmnElement="P08_T06"><omgdc:Bounds x="1200" y="220" width="140" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P08_ICE" bpmnElement="P08_ICE"><omgdc:Bounds x="1402" y="242" width="36" height="36"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P08_T07" bpmnElement="P08_T07"><omgdc:Bounds x="1500" y="220" width="140" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P08_T08" bpmnElement="P08_T08"><omgdc:Bounds x="1700" y="220" width="140" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P08_CA01" bpmnElement="P08_CA01"><omgdc:Bounds x="1900" y="220" width="140" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P08_G01" bpmnElement="P08_G01" isMarkerVisible="true"><omgdc:Bounds x="2095" y="235" width="50" height="50"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P08_T09" bpmnElement="P08_T09"><omgdc:Bounds x="2200" y="220" width="140" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P08_T10" bpmnElement="P08_T10"><omgdc:Bounds x="2400" y="220" width="140" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P08_End_OK" bpmnElement="P08_End_OK"><omgdc:Bounds x="2602" y="242" width="36" height="36"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P08_End_Fail" bpmnElement="P08_End_Fail"><omgdc:Bounds x="2197" y="362" width="36" height="36"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Ed_P08_F01" bpmnElement="P08_F01"><omgdi:waypoint x="98" y="260"/><omgdi:waypoint x="160" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P08_F02" bpmnElement="P08_F02"><omgdi:waypoint x="300" y="260"/><omgdi:waypoint x="360" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P08_F03" bpmnElement="P08_F03"><omgdi:waypoint x="520" y="260"/><omgdi:waypoint x="580" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P08_F04" bpmnElement="P08_F04"><omgdi:waypoint x="720" y="260"/><omgdi:waypoint x="780" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P08_F05" bpmnElement="P08_F05"><omgdi:waypoint x="940" y="260"/><omgdi:waypoint x="1000" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P08_F06" bpmnElement="P08_F06"><omgdi:waypoint x="1140" y="260"/><omgdi:waypoint x="1200" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P08_F07" bpmnElement="P08_F07"><omgdi:waypoint x="1340" y="260"/><omgdi:waypoint x="1402" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P08_F08" bpmnElement="P08_F08"><omgdi:waypoint x="1438" y="260"/><omgdi:waypoint x="1500" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P08_F09" bpmnElement="P08_F09"><omgdi:waypoint x="1640" y="260"/><omgdi:waypoint x="1700" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P08_F10" bpmnElement="P08_F10"><omgdi:waypoint x="1840" y="260"/><omgdi:waypoint x="1900" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P08_F11" bpmnElement="P08_F11"><omgdi:waypoint x="2040" y="260"/><omgdi:waypoint x="2095" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P08_F12" bpmnElement="P08_F12"><omgdi:waypoint x="2145" y="260"/><omgdi:waypoint x="2200" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P08_F13" bpmnElement="P08_F13"><omgdi:waypoint x="2120" y="285"/><omgdi:waypoint x="2120" y="380"/><omgdi:waypoint x="2197" y="380"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P08_F14" bpmnElement="P08_F14"><omgdi:waypoint x="2340" y="260"/><omgdi:waypoint x="2400" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P08_F15" bpmnElement="P08_F15"><omgdi:waypoint x="2540" y="260"/><omgdi:waypoint x="2602" y="260"/></bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+  <!-- ============================================================
+       BPMN DIAGRAM INTERCHANGE - PROCESSO 09
+       ============================================================ -->
+  <bpmndi:BPMNDiagram id="Diagram_09" name="09 - Troca de Envolvidos">
+    <bpmndi:BPMNPlane id="Plane_09" bpmnElement="Proc_09">
+      <bpmndi:BPMNShape id="Sh_P09_Start" bpmnElement="P09_Start"><omgdc:Bounds x="62" y="242" width="36" height="36"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P09_T01" bpmnElement="P09_T01"><omgdc:Bounds x="160" y="220" width="140" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P09_T02" bpmnElement="P09_T02"><omgdc:Bounds x="360" y="220" width="140" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P09_T03" bpmnElement="P09_T03"><omgdc:Bounds x="560" y="220" width="140" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P09_T04" bpmnElement="P09_T04"><omgdc:Bounds x="760" y="220" width="140" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P09_T05" bpmnElement="P09_T05"><omgdc:Bounds x="960" y="220" width="160" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P09_T06" bpmnElement="P09_T06"><omgdc:Bounds x="1180" y="220" width="140" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P09_T07" bpmnElement="P09_T07"><omgdc:Bounds x="1380" y="220" width="140" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P09_PG01" bpmnElement="P09_PG01"><omgdc:Bounds x="1575" y="235" width="50" height="50"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P09_T08" bpmnElement="P09_T08"><omgdc:Bounds x="1680" y="220" width="140" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P09_T09" bpmnElement="P09_T09"><omgdc:Bounds x="1880" y="220" width="160" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P09_G01" bpmnElement="P09_G01" isMarkerVisible="true"><omgdc:Bounds x="2095" y="235" width="50" height="50"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P09_T10" bpmnElement="P09_T10"><omgdc:Bounds x="2200" y="220" width="140" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P09_End_OK" bpmnElement="P09_End_OK"><omgdc:Bounds x="2402" y="242" width="36" height="36"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P09_T11" bpmnElement="P09_T11"><omgdc:Bounds x="2200" y="370" width="140" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P09_End_Canc" bpmnElement="P09_End_Canc"><omgdc:Bounds x="2402" y="392" width="36" height="36"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Ed_P09_F01" bpmnElement="P09_F01"><omgdi:waypoint x="98" y="260"/><omgdi:waypoint x="160" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P09_F02" bpmnElement="P09_F02"><omgdi:waypoint x="300" y="260"/><omgdi:waypoint x="360" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P09_F03" bpmnElement="P09_F03"><omgdi:waypoint x="500" y="260"/><omgdi:waypoint x="560" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P09_F04" bpmnElement="P09_F04"><omgdi:waypoint x="700" y="260"/><omgdi:waypoint x="760" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P09_F05" bpmnElement="P09_F05"><omgdi:waypoint x="900" y="260"/><omgdi:waypoint x="960" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P09_F06" bpmnElement="P09_F06"><omgdi:waypoint x="1120" y="260"/><omgdi:waypoint x="1180" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P09_F07" bpmnElement="P09_F07"><omgdi:waypoint x="1320" y="260"/><omgdi:waypoint x="1380" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P09_F08" bpmnElement="P09_F08"><omgdi:waypoint x="1520" y="260"/><omgdi:waypoint x="1575" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P09_F09" bpmnElement="P09_F09"><omgdi:waypoint x="1625" y="260"/><omgdi:waypoint x="1680" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P09_F10" bpmnElement="P09_F10"><omgdi:waypoint x="1820" y="260"/><omgdi:waypoint x="1880" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P09_F11" bpmnElement="P09_F11"><omgdi:waypoint x="2040" y="260"/><omgdi:waypoint x="2095" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P09_F12" bpmnElement="P09_F12"><omgdi:waypoint x="2145" y="260"/><omgdi:waypoint x="2200" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P09_F13" bpmnElement="P09_F13"><omgdi:waypoint x="2120" y="285"/><omgdi:waypoint x="2120" y="410"/><omgdi:waypoint x="2200" y="410"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P09_F14" bpmnElement="P09_F14"><omgdi:waypoint x="2340" y="260"/><omgdi:waypoint x="2402" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P09_F15" bpmnElement="P09_F15"><omgdi:waypoint x="2340" y="410"/><omgdi:waypoint x="2402" y="410"/></bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+  <!-- ============================================================
+       BPMN DIAGRAM INTERCHANGE - PROCESSO 10
+       ============================================================ -->
+  <bpmndi:BPMNDiagram id="Diagram_10" name="10 - Recurso e Contestação">
+    <bpmndi:BPMNPlane id="Plane_10" bpmnElement="Proc_10">
+      <bpmndi:BPMNShape id="Sh_P10_Start" bpmnElement="P10_Start"><omgdc:Bounds x="62" y="242" width="36" height="36"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P10_T01" bpmnElement="P10_T01"><omgdc:Bounds x="160" y="220" width="140" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P10_T02" bpmnElement="P10_T02"><omgdc:Bounds x="360" y="220" width="160" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P10_T03" bpmnElement="P10_T03"><omgdc:Bounds x="580" y="220" width="140" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P10_T04" bpmnElement="P10_T04"><omgdc:Bounds x="780" y="220" width="140" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P10_G01" bpmnElement="P10_G01" isMarkerVisible="true"><omgdc:Bounds x="975" y="235" width="50" height="50"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P10_T05" bpmnElement="P10_T05"><omgdc:Bounds x="1080" y="100" width="140" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P10_T06" bpmnElement="P10_T06"><omgdc:Bounds x="1080" y="370" width="140" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P10_G02" bpmnElement="P10_G02" isMarkerVisible="true"><omgdc:Bounds x="1275" y="235" width="50" height="50"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P10_T07" bpmnElement="P10_T07"><omgdc:Bounds x="1380" y="100" width="140" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P10_T08" bpmnElement="P10_T08"><omgdc:Bounds x="1580" y="100" width="140" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P10_End_Provido" bpmnElement="P10_End_Provido"><omgdc:Bounds x="1782" y="122" width="36" height="36"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P10_T09" bpmnElement="P10_T09"><omgdc:Bounds x="1380" y="370" width="140" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P10_T10" bpmnElement="P10_T10"><omgdc:Bounds x="1580" y="370" width="140" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sh_P10_End_Improvido" bpmnElement="P10_End_Improvido"><omgdc:Bounds x="1782" y="392" width="36" height="36"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Ed_P10_F01" bpmnElement="P10_F01"><omgdi:waypoint x="98" y="260"/><omgdi:waypoint x="160" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P10_F02" bpmnElement="P10_F02"><omgdi:waypoint x="300" y="260"/><omgdi:waypoint x="360" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P10_F03" bpmnElement="P10_F03"><omgdi:waypoint x="520" y="260"/><omgdi:waypoint x="580" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P10_F04" bpmnElement="P10_F04"><omgdi:waypoint x="720" y="260"/><omgdi:waypoint x="780" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P10_F05" bpmnElement="P10_F05"><omgdi:waypoint x="920" y="260"/><omgdi:waypoint x="975" y="260"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P10_F06" bpmnElement="P10_F06"><omgdi:waypoint x="1000" y="235"/><omgdi:waypoint x="1000" y="140"/><omgdi:waypoint x="1080" y="140"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P10_F07" bpmnElement="P10_F07"><omgdi:waypoint x="1000" y="285"/><omgdi:waypoint x="1000" y="410"/><omgdi:waypoint x="1080" y="410"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P10_F08" bpmnElement="P10_F08"><omgdi:waypoint x="1220" y="140"/><omgdi:waypoint x="1300" y="140"/><omgdi:waypoint x="1300" y="235"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P10_F09" bpmnElement="P10_F09"><omgdi:waypoint x="1220" y="410"/><omgdi:waypoint x="1300" y="410"/><omgdi:waypoint x="1300" y="285"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P10_F10" bpmnElement="P10_F10"><omgdi:waypoint x="1300" y="235"/><omgdi:waypoint x="1300" y="140"/><omgdi:waypoint x="1380" y="140"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P10_F11" bpmnElement="P10_F11"><omgdi:waypoint x="1300" y="285"/><omgdi:waypoint x="1300" y="410"/><omgdi:waypoint x="1380" y="410"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P10_F12" bpmnElement="P10_F12"><omgdi:waypoint x="1520" y="140"/><omgdi:waypoint x="1580" y="140"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P10_F13" bpmnElement="P10_F13"><omgdi:waypoint x="1720" y="140"/><omgdi:waypoint x="1782" y="140"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P10_F14" bpmnElement="P10_F14"><omgdi:waypoint x="1520" y="410"/><omgdi:waypoint x="1580" y="410"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Ed_P10_F15" bpmnElement="P10_F15"><omgdi:waypoint x="1720" y="410"/><omgdi:waypoint x="1782" y="410"/></bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</definitions>

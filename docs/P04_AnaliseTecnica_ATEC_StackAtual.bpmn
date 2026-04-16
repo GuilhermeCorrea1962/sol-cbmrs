@@ -1,0 +1,2018 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+             id="Definitions_P04_ATEC"
+             targetNamespace="http://sol.cbm.rs.gov.br/bpmn/p04"
+             exporter="Camunda Modeler"
+             exporterVersion="5.0.0">
+
+  <!-- ================================================================
+       P04 — ANÁLISE TÉCNICA DE LICENCIAMENTO (ATEC)
+       Sistema SOL — CBM-RS
+       Stack: Java EE 8 / WildFly, JAX-RS, CDI, JPA/Hibernate, Alfresco, SOE PROCERGS
+       Pacote principal: com.procergs.solcbm.analiselicenciamentotecnica
+       Autor do modelo: levantamento de requisitos SOL
+       ================================================================ -->
+
+  <error id="Error_CancelamentoAdm" name="Cancelamento Administrativo da Análise"/>
+
+  <collaboration id="Collaboration_P04">
+    <participant id="Pool_P04"
+                 name="P04 — Análise Técnica de Licenciamento (ATEC)"
+                 processRef="Process_P04"/>
+  </collaboration>
+
+  <process id="Process_P04"
+           name="P04 — Análise Técnica de Licenciamento (ATEC)"
+           isExecutable="false">
+
+    <documentation>
+      PROCESSO P04 — ANÁLISE TÉCNICA DE LICENCIAMENTO (ATEC)
+
+      PRÉ-CONDIÇÃO:
+        Licenciamento na situação SituacaoLicenciamento.AGUARDANDO_DISTRIBUICAO.
+        Gerada após aprovação do wizard P03 (pagamento e aceites concluídos).
+
+      STACK TECNOLÓGICA (sem alterações):
+        Backend: Java EE 8, WildFly/JBoss
+        Camada REST: JAX-RS (@Path, @GET, @POST, @Stateless EJB)
+        Injeção: CDI @Inject / @Stateless
+        Persistência: JPA + Hibernate (DetachedCriteria / HQL)
+        Segurança: @Permissao(objeto, acao) via SOE PROCERGS / SessionMB
+        ECM: Alfresco (identificadorAlfresco = nodeRef Alfresco)
+        Auditoria: @Audited (Hibernate Envers) → tabelas *_AUD
+
+      PARTICIPANTES:
+        Coordenador CBM-RS: distribui análises e homologa resultados
+        Analista CBM-RS: registra resultados dos 11 tipos de item
+        RT / Proprietário: recebem documentos emitidos (CIA, CA, APPCI)
+        Sistema SOL: automatiza validações, geração de documentos e transições de estado
+
+      PACOTES ENVOLVIDOS:
+        com.procergs.solcbm.analiselicenciamentotecnica (RNs principais)
+        com.procergs.solcbm.analiselicenciamentotecnica.documento (geração de PDFs)
+        com.procergs.solcbm.analiselicenciamentotecnica.resultado (Strategy Pattern 11 itens)
+        com.procergs.solcbm.licenciamento (LicenciamentoAdmRN, trocaEstado)
+        com.procergs.solcbm.licenciamentomarco (LicenciamentoMarcoInclusaoRN)
+        com.procergs.solcbm.licenciamentointegracaolai (integração LAI)
+        com.procergs.solcbm.appci (AppciRN, AppciDocComplementarRN)
+
+      STATUS FLUXO DA ANÁLISE (StatusAnaliseLicenciamentoTecnica):
+        EM_ANALISE → EM_APROVACAO → APROVADO
+        EM_ANALISE → REPROVADO
+        EM_ANALISE → CANCELADA
+
+      SITUAÇÃO FLUXO DO LICENCIAMENTO (SituacaoLicenciamento):
+        AGUARDANDO_DISTRIBUICAO → EM_ANALISE → AGUARDANDO_CIENCIA (CIA)
+        AGUARDANDO_DISTRIBUICAO → EM_ANALISE → CA (CA PPCI)
+        AGUARDANDO_DISTRIBUICAO → EM_ANALISE → ALVARA_VIGENTE (APPCI PSPCIM)
+    </documentation>
+
+    <laneSet id="LaneSet_P04">
+
+      <lane id="Lane_Coordenador" name="Coordenador CBM-RS">
+        <flowNodeRef>Start_P04</flowNodeRef>
+        <flowNodeRef>T01_ConsultarPendentes</flowNodeRef>
+        <flowNodeRef>T02_SelecionarDistribuir</flowNodeRef>
+        <flowNodeRef>T20_ConsultarPendentesHom</flowNodeRef>
+        <flowNodeRef>T21_RevisarAnalise</flowNodeRef>
+        <flowNodeRef>GW05_DeferirIndeferir</flowNodeRef>
+        <flowNodeRef>T22I_ConfirmarIndeferimento</flowNodeRef>
+      </lane>
+
+      <lane id="Lane_Analista" name="Analista CBM-RS">
+        <flowNodeRef>T07_AcessarAnalise</flowNodeRef>
+        <flowNodeRef>SP_RegistrarResultados</flowNodeRef>
+        <flowNodeRef>T13_VisualizarRascunhoCIA</flowNodeRef>
+        <flowNodeRef>GW02_ResultadoAnalise</flowNodeRef>
+        <flowNodeRef>T14C_ConfirmarCIA</flowNodeRef>
+        <flowNodeRef>T14A_ConfirmarCA</flowNodeRef>
+      </lane>
+
+      <lane id="Lane_RT" name="RT / Proprietário (Notificações e Documentos)">
+        <flowNodeRef>End_CIA</flowNodeRef>
+        <flowNodeRef>End_CA</flowNodeRef>
+        <flowNodeRef>End_APPCI</flowNodeRef>
+      </lane>
+
+      <lane id="Lane_Sistema" name="Sistema SOL — Backend Java EE">
+        <flowNodeRef>T03_ExecutarDistribuicao</flowNodeRef>
+        <flowNodeRef>T_Cancel_Executar</flowNodeRef>
+        <flowNodeRef>End_Cancelado</flowNodeRef>
+        <flowNodeRef>T15C_ExecutarCIA</flowNodeRef>
+        <flowNodeRef>T15A_ExecutarCA</flowNodeRef>
+        <flowNodeRef>T23I_ExecutarIndeferimento</flowNodeRef>
+        <flowNodeRef>GW06_TipoLicDefer</flowNodeRef>
+        <flowNodeRef>GW07_TipoEdif</flowNodeRef>
+        <flowNodeRef>T24D_GerarCANovo</flowNodeRef>
+        <flowNodeRef>T25D_GerarCAExistente</flowNodeRef>
+        <flowNodeRef>GW08_JoinEdif</flowNodeRef>
+        <flowNodeRef>T26D_ConcluirDeferPPCI</flowNodeRef>
+        <flowNodeRef>GW09_LAI</flowNodeRef>
+        <flowNodeRef>T30D_CadastrarLAI</flowNodeRef>
+        <flowNodeRef>T23S_GerarAPPCI</flowNodeRef>
+        <flowNodeRef>T24S_ConcluirDeferPSPCIM</flowNodeRef>
+      </lane>
+
+    </laneSet>
+
+    <!-- ================================================================
+         START EVENT
+         ================================================================ -->
+    <startEvent id="Start_P04"
+                name="Licenciamento em&#10;AGUARDANDO_DISTRIBUICAO">
+      <documentation>
+        EVENTO DE INÍCIO DO PROCESSO P04
+
+        Disparador: Licenciamento com SituacaoLicenciamento.AGUARDANDO_DISTRIBUICAO,
+        gerada ao fim do processo P03 (wizard de nova solicitação), após:
+          - Aceite de todos os envolvidos (RT e Proprietário)
+          - Pagamento de taxa (se aplicável)
+          - Distribuição automática ou manual para fila de análise
+
+        Entidade associada: LicenciamentoED.situacao = AGUARDANDO_DISTRIBUICAO
+        O coordenador acessa a lista via:
+          REST: GET /adm/distribuicao-analise/
+          RN: AnaliseLicenciamentoTecnicaDistribuicaoRN
+      </documentation>
+      <outgoing>SF_Start_T01</outgoing>
+    </startEvent>
+
+    <!-- ================================================================
+         FASE 1 — DISTRIBUIÇÃO
+         ================================================================ -->
+    <userTask id="T01_ConsultarPendentes"
+              name="Consultar licenciamentos&#10;pendentes de distribuição"
+              camunda:assignee="${coordenadorCBMRS}"
+              camunda:formKey="distribuicao-analise-lista">
+      <documentation>
+        TAREFA: Coordenador consulta lista de licenciamentos aguardando distribuição.
+
+        PERFIL REQUERIDO: Coordenador CBM-RS
+        PERMISSÃO: @Permissao(objeto="ANALISETECNICA", acao="DISTRIBUIR")
+
+        REST ENDPOINT: GET /adm/distribuicao-analise/
+        CLASSE RN: AnaliseLicenciamentoTecnicaDistribuicaoRN
+        MÉTODO: listaAnalisePendentesDistribuicao(AnaliseLicenciamentoTecnicaPesqED ped)
+        CAMADA BD: AnaliseLicenciamentoTecnicaBD (DetachedCriteria / JPA)
+
+        FILTROS DISPONÍVEIS NA PESQUISA:
+          - Município (código IBGE)
+          - Tipo de licenciamento (PPCI / PSPCIM)
+          - Número PPCI
+          - Endereço do imóvel
+          - Nome do requerente / RT
+
+        DADOS RETORNADOS (DTO: ListaPaginadaRetorno&lt;LicenciamentoAnaliseTecnica&gt;):
+          - idLicenciamento
+          - numeroPPCI (formato: [Tipo][8d][2L][3d])
+          - nomeRequerente / nomeRT
+          - enderecoImovel
+          - tipoLicenciamento (PPCI / PSPCIM)
+          - dataSubmissao
+          - indicadorPrioridade
+
+        STATUS ESPERADO DOS LICENCIAMENTOS: SituacaoLicenciamento.AGUARDANDO_DISTRIBUICAO
+        O coordenador seleciona um licenciamento para iniciar a distribuição.
+      </documentation>
+      <incoming>SF_Start_T01</incoming>
+      <outgoing>SF_T01_T02</outgoing>
+    </userTask>
+
+    <userTask id="T02_SelecionarDistribuir"
+              name="Selecionar licenciamento&#10;e atribuir analista"
+              camunda:assignee="${coordenadorCBMRS}"
+              camunda:formKey="distribuicao-analise-form">
+      <documentation>
+        TAREFA: Coordenador seleciona licenciamento e atribui analista para análise.
+
+        PERFIL REQUERIDO: Coordenador CBM-RS
+        PERMISSÃO: @Permissao(objeto="ANALISETECNICA", acao="DISTRIBUIR")
+
+        CONSULTA DE ANALISTAS DISPONÍVEIS:
+          REST: GET /adm/distribuicao-analise/analistas-disponiveis/{idLicenciamento}
+          DTO: AnalistaDisponivelDTO {
+            idUsuarioSoe, nomeAnalista, batalhaoOBM,
+            qtdAnalisesEmAndamento, municipiosCompetencia
+          }
+
+        REGRAS DE NEGÓCIO (validadas em T03):
+          RN-P04-D01: Licenciamento DEVE estar em AGUARDANDO_DISTRIBUICAO
+          RN-P04-D02: Analista selecionado deve pertencer ao batalhão/OBM responsável
+                      pelo município do imóvel licenciado
+          RN-P04-D03: Município do licenciamento deve estar na competência geográfica
+                      do coordenador logado
+
+        INPUT PARA CONFIRMAÇÃO:
+          Body POST: List&lt;AnaliseLicenciamentoTecnicaDTO&gt; com:
+            - idLicenciamento: Long
+            - idUsuarioSoe: Long (analista selecionado)
+            - nomeAnalista: String
+
+        Ao confirmar a seleção → T03_ExecutarDistribuicao é disparado.
+        Em caso de erro de validação (BusinessException), o usuário permanece
+        nesta tela com mensagem de feedback.
+      </documentation>
+      <incoming>SF_T01_T02</incoming>
+      <outgoing>SF_T02_T03</outgoing>
+    </userTask>
+
+    <serviceTask id="T03_ExecutarDistribuicao"
+                 name="Executar distribuição:&#10;criar AnaliseTecnicaED e transitar estado"
+                 camunda:class="com.procergs.solcbm.analiselicenciamentotecnica.AnaliseLicenciamentoTecnicaDistribuicaoRN">
+      <documentation>
+        TAREFA SISTEMA: Executa a distribuição da análise técnica.
+
+        CLASSE: AnaliseLicenciamentoTecnicaDistribuicaoRN
+        MÉTODO: incluir(List&lt;AnaliseLicenciamentoTecnicaDTO&gt; dtos)
+        TRANSAÇÃO: @TransactionAttribute(TransactionAttributeType.REQUIRED)
+        REST: POST /adm/distribuicao-analise/
+
+        PASSOS EXECUTADOS PELA RN:
+          1. AnaliseLicenciamentoTecnicaDistribuicaoRNVal.validar(dto):
+               RN-P04-D01: licenciamento.situacao == AGUARDANDO_DISTRIBUICAO
+               RN-P04-D02: analista.batalhao == municipio.batalhaoResponsavel
+               RN-P04-D03: municipio pertence à competência do coordenador logado
+               → Em caso de falha: lança BusinessException → HTTP 422 Unprocessable Entity
+
+          2. Cria AnaliseLicenciamentoTecnicaED:
+               status = StatusAnaliseLicenciamentoTecnica.EM_ANALISE
+               idUsuarioSoe = Long (analista atribuído, via SessionMB / DTO)
+               nomeUsuarioSoe = String (nome do analista)
+               licenciamento = LicenciamentoED (FK)
+               dthDistribuicao = DataAtualHelper.getDataAtual()
+               dthStatus = DataAtualHelper.getDataAtual()
+
+          3. Persiste AnaliseLicenciamentoTecnicaED (INSERT)
+
+          4. TrocaEstadoLicenciamentoRN (qualifier: EM_ANALISE_PARA_AGUARDANDO... reversed):
+               Na verdade: TrocaEstado de AGUARDANDO_DISTRIBUICAO → EM_ANALISE
+               @TrocaEstadoLicenciamentoQualifier(trocaEstado=AGUARDANDO_DISTRIBUICAO_PARA_EM_ANALISE)
+               SituacaoLicenciamento: AGUARDANDO_DISTRIBUICAO → EM_ANALISE
+
+          5. LicenciamentoMarcoInclusaoRN.inclui(TipoMarco.DISTRIBUICAO_ANALISE, licenciamento)
+               @LicenciamentoMarcoQualifier(tipoResponsavel=TipoResponsavelMarco.BOMBEIROS)
+               INSERT em LICEN_MARCO
+
+        TABELAS AFETADAS:
+          ANAL_LIC_TECNICA — INSERT (nova análise)
+          LICENCIAMENTO    — UPDATE (situacao = EM_ANALISE)
+          LICEN_MARCO      — INSERT (marco DISTRIBUICAO_ANALISE)
+          *_AUD            — registros @Audited pelo Hibernate Envers
+
+        APÓS EXECUÇÃO:
+          Licenciamento em SituacaoLicenciamento.EM_ANALISE.
+          Analista pode acessar a análise via lista de análises sob sua responsabilidade.
+      </documentation>
+      <incoming>SF_T02_T03</incoming>
+      <outgoing>SF_T03_T07</outgoing>
+    </serviceTask>
+
+    <!-- ================================================================
+         FASE 2 — ANÁLISE TÉCNICA (REGISTRO DE RESULTADOS)
+         ================================================================ -->
+    <userTask id="T07_AcessarAnalise"
+              name="Acessar licenciamento&#10;em análise técnica"
+              camunda:assignee="${analistaCBMRS}"
+              camunda:formKey="analise-tecnica-detalhe">
+      <documentation>
+        TAREFA: Analista acessa a lista de análises e seleciona o licenciamento.
+
+        PERFIL REQUERIDO: Analista CBM-RS (idUsuarioSoe da análise)
+        PERMISSÃO: @Permissao(objeto="ANALISETECNICA", acao="ANALISAR")
+
+        CONSULTA DE ANÁLISES DO ANALISTA LOGADO:
+          REST: GET /adm/analise-tecnica/
+          RN: AnaliseLicenciamentoTecnicaConsultaRN.listaAnalises(ped)
+          Filtro automático: idUsuarioSoe = SessionMB.getUser().getId()
+          Status listado: StatusAnaliseLicenciamentoTecnica.EM_ANALISE
+          DTO: ListaPaginadaRetorno&lt;LicenciamentoAnaliseTecnica&gt;
+
+        DETALHE DA ANÁLISE (com todos os resultados):
+          REST: GET /adm/analise-tecnica/{idAnaliseTecnica}/resultado
+          RN: AnaliseLicenciamentoTecnicaResultadoRN.efetuaConsultaComResultados(ed)
+          DTO: AnaliseLicenciamentoTecnicaDTO {
+            idAnaliseTecnica, idLicenciamento, numeroPPCI,
+            nomeAnalista, dataDistribuicao, status, indeferimentoHomolog,
+            List&lt;ResultadoAtecDTO&gt; (um por TipoItemAnaliseTecnica)
+          }
+
+        CONTEXTO: Esta tarefa também é o PONTO DE RETORNO após indeferimento
+        em homologação. Nesse caso:
+          StatusAnaliseLicenciamentoTecnica volta a EM_ANALISE
+          AnaliseLicenciamentoTecnicaED.indeferimentoHomolog contém a justificativa
+          do coordenador — exibida ao analista como feedback.
+
+        SEGURANÇA ADICIONAL (ao salvar resultados):
+          AnaliseLicenciamentoTecnicaRN.validaIsAnaliseAssociadaUsuarioItem()
+          → garante que apenas o analista proprietário da análise pode salvar resultados
+      </documentation>
+      <incoming>SF_T03_T07</incoming>
+      <incoming>SF_T23I_T07</incoming>
+      <outgoing>SF_T07_SP</outgoing>
+    </userTask>
+
+    <subProcess id="SP_RegistrarResultados"
+                name="Registrar resultados da análise&#10;técnica (11 tipos de item)">
+      <documentation>
+        SUB-PROCESSO: Registro de resultados para os 11 tipos de item de análise técnica.
+
+        PERFIL: Analista CBM-RS
+        PERMISSÃO: @Permissao(objeto="ANALISETECNICA", acao="ANALISAR")
+
+        OS 11 TIPOS DE ITEM (TipoItemAnaliseTecnica — em ordem de exibição):
+          1.  RT                   — Responsável Técnico
+          2.  RU                   — Responsável pelo Uso
+          3.  PROPRIETARIO         — Dados do Proprietário
+          4.  TIPO_EDIFICACAO      — Tipo/classificação da edificação
+          5.  OCUPACAO             — Ocupação da edificação
+          6.  ISOLAMENTO_RISCO     — Isolamento de risco entre edificações
+          7.  GERAL                — Itens gerais (saídas, escadas, etc.)
+          8.  MEDIDA_SEGURANCA     — Medidas de segurança obrigatórias
+          9.  MEDIDA_SEGURANCA_OUTRA — Outras medidas de segurança
+          10. RISCO_ESPECIFICO     — Riscos específicos da edificação
+          11. ELEMENTO_GRAFICO     — Elementos gráficos do projeto (plantas, cortes)
+
+        PARA CADA ITEM, O ANALISTA:
+          1. Acessa a aba do item (form por tipo)
+          2. Avalia conformidade com normas NBR / Decreto RS
+          3. Registra resultado: APROVADO ou REPROVADO
+          4. Se REPROVADO: obrigatoriamente preenche List&lt;JustificativaNcs&gt;
+             (Norma de Controle e Segurança — código e descrição da não conformidade)
+
+        ENDPOINT DE SALVAMENTO DE RESULTADO:
+          REST: POST /adm/analise-tecnica/resultado
+          BODY: ResultadoAtecDTO {
+            idAnaliseTecnica, tipoItemAnaliseTecnica, statusResultadoAtec (APROVADO/REPROVADO),
+            List&lt;JustificativaNcs&gt; {idNcs, codigoNcs, descricaoNcs},
+            campos específicos por tipo (ex: numeroART para RT, cnpj para RU)
+          }
+
+        PROCESSAMENTO DO SALVAMENTO (ResultadoAnaliseTecnicaSalvarRN.salvarResultado):
+          1. ResultadoAnaliseTecnicaStrategyResolver.getStrategy(tipoItemAnaliseTecnica)
+             → resolve uma das 11 implementações de ResultadoAnaliseTecnicaStrategy
+          2. AnaliseLicenciamentoTecnicaRN.validaIsAnaliseAssociadaUsuarioItem() — segurança
+          3. strategy.validar(resultadoAtecDTO) — validação de campos obrigatórios por tipo
+          4. JustificativaNcsRNVal.validarJustificativaReprovacao() — se REPROVADO
+          5. strategy.consulta(dto) → verifica se já existe ResultadoAtecED (upsert)
+          6a. Se existente: strategy.excluirJustificativas(id) + strategy.editar(dto)
+          6b. Se novo: strategy.incluir(dto)
+          7. Se REPROVADO: strategy.incluirJustificativas(justificativas, ed)
+
+        ENDPOINT ESPECIAL — OUTRAS MEDIDAS DE SEGURANÇA:
+          REST: POST /adm/analise-tecnica/resultado/outras-medidas
+          RN: ResultadoAnaliseTecnicaSalvarRN.salvarResultadoOutrasMedidas(dto)
+          → AnaliseTecnicaRNVal.validarAnaliseDoUsuarioLogado() + validarSituacaoEmAnalise()
+          → JustificativaAtecOutraMedidaSegurancaRN.exclui(dto) + inclui(dto)
+          Tabela: JUSTIF_ATEC_OUTRA_MEDIDA
+
+        DOWNLOAD RASCUNHO CIA (para revisão durante análise):
+          REST: GET /adm/analise-tecnica/{id}/rascunho-cia
+          RN: AnaliseLicenciamentoTecnicaDocumentoRN.downloadRascunhoCIA(id)
+          → DocumentoCiaAnaliseRascunhoRN.gerar(idLicenciamento, inconformidades)
+          Retorna: InputStream PDF (sem autenticação — apenas rascunho)
+
+        DOWNLOAD RASCUNHO CA (para verificação antes de enviar para homologação):
+          REST: GET /adm/analise-tecnica/{id}/rascunho-ca
+          RN: AnaliseLicenciamentoTecnicaDocumentoRN.downloadRascunhoCA(id)
+          → DocumentoCaRascunhoRN.gerar(id) — variante por TipoEdificacao
+
+        TABELAS AFETADAS:
+          RESULTADO_ATEC          — INSERT/UPDATE por tipo de item
+          JUSTIFICATIVA_NCS       — INSERT/DELETE (lista de NCS por resultado)
+          JUSTIF_ATEC_OUTRA_MEDIDA — INSERT/DELETE (item MEDIDA_SEGURANCA_OUTRA)
+
+        CANCELAMENTO ADMINISTRATIVO (Boundary Event de interrupção):
+          Qualquer administrador autorizado pode cancelar a análise enquanto
+          ela está neste sub-processo (em EM_ANALISE).
+          REST: DELETE /adm/analise-tecnica/{idAnaliseTecnica}/cancelar
+          → BE_Cancelar é acionado, interrompendo este sub-processo.
+      </documentation>
+      <incoming>SF_T07_SP</incoming>
+      <outgoing>SF_SP_T13</outgoing>
+    </subProcess>
+
+    <boundaryEvent id="BE_Cancelar"
+                   name="Cancelamento&#10;Administrativo"
+                   attachedToRef="SP_RegistrarResultados"
+                   cancelActivity="true">
+      <documentation>
+        EVENTO DE FRONTEIRA — INTERRUPÇÃO POR CANCELAMENTO ADMINISTRATIVO
+
+        Acionado quando um administrador do sistema cancela a análise em andamento.
+        INTERROMPE o sub-processo SP_RegistrarResultados imediatamente.
+
+        PERFIL: Administrador do Sistema / Perfil com permissão especial de cancelamento
+        REST: DELETE /adm/analise-tecnica/{idAnaliseTecnica}/cancelar
+        (ou endpoint administrativo específico de cancelamento)
+
+        Após interrupção → fluxo vai para T_Cancel_Executar (Sistema SOL).
+      </documentation>
+      <outgoing>SF_BE_TCancel</outgoing>
+      <errorEventDefinition id="ErrDef_Cancelar" errorRef="Error_CancelamentoAdm"/>
+    </boundaryEvent>
+
+    <serviceTask id="T_Cancel_Executar"
+                 name="Executar cancelamento&#10;administrativo da análise"
+                 camunda:class="com.procergs.solcbm.analiselicenciamentotecnica.AnaliseLicenciamentoTecnicaCancelamentoAdmRN">
+      <documentation>
+        TAREFA SISTEMA: Executa o cancelamento administrativo da análise técnica.
+
+        CLASSE: AnaliseLicenciamentoTecnicaCancelamentoAdmRN
+        MÉTODO: cancela(Long idAnaliseTecnica)
+        TRANSAÇÃO: @TransactionAttribute(TransactionAttributeType.REQUIRED)
+        REST: DELETE /adm/analise-tecnica/{idAnaliseTecnica}/cancelar
+
+        PASSOS EXECUTADOS:
+          1. Carrega AnaliseLicenciamentoTecnicaED pelo id
+          2. Valida que status == EM_ANALISE (BusinessException se diferente)
+          3. ResultadoAnaliseTecnicaExclusaoRN.excluirResultados(analise)
+             → Exclui todos ResultadoAtecED e JustificativaNcs associados
+             Tabela: RESULTADO_ATEC (DELETE em cascata)
+          4. NotaRN.concluirNota(licenciamento.getId())
+             → Conclui a nota de serviço vinculada
+          5. analise.setStatus(StatusAnaliseLicenciamentoTecnica.CANCELADA)
+          6. Persiste analise (UPDATE)
+          7. TrocaEstadoLicenciamentoRN (qualifier: EM_ANALISE → AGUARDANDO_DISTRIBUICAO)
+             → SituacaoLicenciamento retorna para AGUARDANDO_DISTRIBUICAO
+             → Licenciamento fica disponível para nova distribuição
+          8. LicenciamentoMarcoInclusaoRN.inclui(TipoMarco.CANCELA_DISTRIBUICAO_ANALISE, lic)
+
+        TABELAS AFETADAS:
+          ANAL_LIC_TECNICA — UPDATE (status = CANCELADA)
+          RESULTADO_ATEC   — DELETE (todos os resultados da análise cancelada)
+          LICENCIAMENTO    — UPDATE (situacao = AGUARDANDO_DISTRIBUICAO)
+          LICEN_MARCO      — INSERT (CANCELA_DISTRIBUICAO_ANALISE)
+          NOTAS            — UPDATE (nota concluída)
+          *_AUD            — registros de auditoria @Audited
+      </documentation>
+      <incoming>SF_BE_TCancel</incoming>
+      <outgoing>SF_TCancel_EndCancelado</outgoing>
+    </serviceTask>
+
+    <endEvent id="End_Cancelado"
+              name="Análise cancelada&#10;(retorna AGUARDANDO_DISTRIBUICAO)">
+      <documentation>
+        FIM: Análise técnica cancelada administrativamente.
+
+        ESTADO FINAL DA ANÁLISE:
+          StatusAnaliseLicenciamentoTecnica = CANCELADA
+          SituacaoLicenciamento = AGUARDANDO_DISTRIBUICAO
+          TipoMarco registrado = CANCELA_DISTRIBUICAO_ANALISE
+
+        O licenciamento fica disponível para nova distribuição pelo coordenador
+        (processo P04 reinicia do início para este licenciamento).
+      </documentation>
+      <incoming>SF_TCancel_EndCancelado</incoming>
+    </endEvent>
+
+    <userTask id="T13_VisualizarRascunhoCIA"
+              name="Visualizar rascunho CIA&#10;e decidir conclusão da análise"
+              camunda:assignee="${analistaCBMRS}"
+              camunda:formKey="analise-tecnica-conclusao">
+      <documentation>
+        TAREFA: Analista revisa os resultados registrados e decide como concluir a análise.
+
+        PERFIL REQUERIDO: Analista CBM-RS
+        PERMISSÃO: @Permissao(objeto="ANALISETECNICA", acao="ANALISAR")
+
+        AÇÕES DISPONÍVEIS:
+          a) Baixar rascunho CIA para revisão antes da emissão definitiva:
+             REST: GET /adm/analise-tecnica/{idAnaliseTecnica}/rascunho-cia
+             RN: AnaliseLicenciamentoTecnicaDocumentoRN.downloadRascunhoCIA(id)
+             Processo de geração do rascunho:
+               1. Carrega AnaliseLicenciamentoTecnicaED
+               2. Percorre TIPO_ITENS_ORDENADOS = [RT, RU, PROPRIETARIO, TIPO_EDIFICACAO,
+                  OCUPACAO, ISOLAMENTO_RISCO, GERAL, MEDIDA_SEGURANCA, MEDIDA_SEGURANCA_OUTRA,
+                  RISCO_ESPECIFICO, ELEMENTO_GRAFICO]
+               3. Para cada tipo: strategy.listaInconformidades(analise) → InconformidadeDTO
+               4. Adiciona OutraInconformidade se analise.outraInconformidade != null
+               5. DocumentoCiaAnaliseRascunhoRN.gerar(idLicenciamento, inconformidades)
+                  → InputStream PDF (sem número de autenticação, watermark "RASCUNHO")
+
+          b) Baixar rascunho CA (verificar dados do certificado antes de enviar):
+             REST: GET /adm/analise-tecnica/{idAnaliseTecnica}/rascunho-ca
+             RN: AnaliseLicenciamentoTecnicaDocumentoRN.downloadRascunhoCA(id)
+             → DocumentoCaRascunhoRN.gerar(id) (variante por TipoEdificacao)
+
+          c) Preencher campo "Outras Inconformidades" (texto livre):
+             Campo: AnaliseLicenciamentoTecnicaED.outraInconformidade (texto)
+             REST: PATCH /adm/analise-tecnica/{id}/outras-inconformidades
+
+        DECISÃO FINAL DO ANALISTA:
+          [CIA] → Há inconformidades que impedem a aprovação → emitir CIA (ir para T14C)
+          [CA]  → Análise aprovada → enviar para homologação pelo coordenador (ir para T14A)
+
+        OBSERVAÇÃO: O analista pode emitir CIA mesmo sem itens REPROVADO formalmente,
+        usando o campo outraInconformidade para descrever a não conformidade.
+      </documentation>
+      <incoming>SF_SP_T13</incoming>
+      <outgoing>SF_T13_GW02</outgoing>
+    </userTask>
+
+    <exclusiveGateway id="GW02_ResultadoAnalise"
+                      name="Conclusão&#10;da análise?">
+      <documentation>
+        DECISÃO: Como o analista conclui a análise?
+
+        [CIA] → Reprovação: há inconformidades → emitir Comunicado de Inconformidade na Análise
+        [CA]  → Aprovação: análise favorável → enviar para homologação (Certificado de Aprovação)
+
+        Critério operacional: botão escolhido pelo analista na tela de conclusão.
+        Critério técnico:
+          CIA = existência de ResultadoAtecED.statusResultadoAtec == REPROVADO
+                OR AnaliseLicenciamentoTecnicaED.outraInconformidade != null/empty
+          CA  = todos os itens com statusResultadoAtec == APROVADO E sem outraInconformidade
+      </documentation>
+      <incoming>SF_T13_GW02</incoming>
+      <outgoing>SF_GW02_T14C</outgoing>
+      <outgoing>SF_GW02_T14A</outgoing>
+    </exclusiveGateway>
+
+    <!-- ================================================================
+         FASE 3 — VIA CIA (REPROVAÇÃO)
+         ================================================================ -->
+    <userTask id="T14C_ConfirmarCIA"
+              name="Confirmar emissão&#10;de CIA (Comunicado de Inconformidade)"
+              camunda:assignee="${analistaCBMRS}"
+              camunda:formKey="analise-tecnica-confirma-cia">
+      <documentation>
+        TAREFA: Analista confirma formalmente a emissão do CIA.
+
+        PERFIL REQUERIDO: Analista CBM-RS
+        PERMISSÃO: @Permissao(objeto="ANALISETECNICA", acao="ANALISAR")
+
+        TELA: Exibe resumo das inconformidades identificadas por tipo de item.
+        O analista pode:
+          - Revisar as inconformidades antes de confirmar
+          - Editar o campo "Outras Inconformidades" (outraInconformidade)
+          - Retornar ao sub-processo para corrigir resultados
+          - Confirmar a emissão definitiva do CIA
+
+        REST (confirmação): POST /adm/analise-tecnica/{idAnaliseTecnica}/cia
+        Body: { idAnaliseTecnica: Long, outraInconformidade: String (opcional) }
+
+        DOCUMENTO QUE SERÁ GERADO:
+          cia_analise_tecnica.pdf (autenticado, com número de autenticação único)
+          Armazenado no Alfresco ECM (identificadorAlfresco = nodeRef Alfresco)
+
+        Ao confirmar → T15C_ExecutarCIA.
+      </documentation>
+      <incoming>SF_GW02_T14C</incoming>
+      <outgoing>SF_T14C_T15C</outgoing>
+    </userTask>
+
+    <serviceTask id="T15C_ExecutarCIA"
+                 name="Executar lógica CIA:&#10;validar, gerar PDF, concluir (REPROVADO)"
+                 camunda:class="com.procergs.solcbm.analiselicenciamentotecnica.AnaliseLicenciamentoTecnicaCIARN">
+      <documentation>
+        TAREFA SISTEMA: Executa toda a lógica de emissão do CIA.
+
+        CLASSE: AnaliseLicenciamentoTecnicaCIARN
+        MÉTODO: salvarAnaliseCIA(Long idAnaliseTecnica)
+        TRANSAÇÃO: @TransactionAttribute(TransactionAttributeType.REQUIRED)
+        REST: POST /adm/analise-tecnica/{idAnaliseTecnica}/cia
+
+        PASSOS EXECUTADOS:
+          1. AnaliseLicenciamentoTecnicaCIARNVal.validar(analise):
+               RN-P04-C01: analise.idUsuarioSoe == SessionMB.getUser().getId()
+                            (analista deve ser o responsável pela análise)
+               RN-P04-C02: analise.status == EM_ANALISE
+               RN-P04-C03: existe pelo menos uma inconformidade
+                            (item REPROVADO OU outraInconformidade não vazia)
+               → Falha: BusinessException → HTTP 422
+
+          2. Gera lista de InconformidadeDTO via strategy pattern:
+               TIPO_ITENS_ORDENADOS.forEach(tipo → strategy.listaInconformidades(analise))
+               InconformidadeDTOComparator.getInstance() (ordena dentro de cada tipo)
+               Adiciona OutraInconformidade se presente
+               Constante: DEMAIS_INCONFORMIDADES = "Demais inconformidades"
+
+          3. ArquivoRN.gerarNumeroAutenticacao()
+             → Gera número único de autenticação do documento
+
+          4. DocumentoCiaAnaliseAutenticadoRN.gerar(idLicenciamento, inconformidades, numAutent)
+             → Gera PDF "cia_analise_tecnica.pdf" autenticado
+             → Retorna InputStream
+
+          5. ArquivoRN.incluirArquivo(BuilderArquivoED.of()
+               .nomeArquivo("cia_analise_tecnica.pdf")
+               .inputStream(inputStream)
+               .tipo(TipoArquivo.EDIFICACAO)
+               .codigoAutenticacao(numeroAutenticacao)
+               .instance())
+             → Salva arquivo no Alfresco (identificadorAlfresco = nodeRef)
+             → Persiste ArquivoED no banco (ARQUIVO)
+
+          6. analise.setStatus(StatusAnaliseLicenciamentoTecnica.REPROVADO)
+
+          7. ResultadoAnaliseTecnicaExclusaoRN.excluirResultados(analise)
+             → Exclui ResultadoAtecED e JustificativaNcs (limpeza após emissão CIA)
+
+          8. [Se aplicável] Registra histórico gráfico (linhas de análise)
+
+          9. LicenciamentoMarcoInclusaoRN.incluiComArquivo(
+               TipoMarco.ATEC_CIA, licenciamento, arquivoED)
+             @LicenciamentoMarcoQualifier(tipoResponsavel=TipoResponsavelMarco.BOMBEIROS)
+
+         10. TrocaEstadoLicenciamentoRN (qualifier: EM_ANALISE_PARA_AGUARDANDO_CIENCIA):
+               SituacaoLicenciamento: EM_ANALISE → AGUARDANDO_CIENCIA
+
+         11. LicenciamentoAdmRN.desbloquearRecurso(licenciamento) [se recurso bloqueado]
+
+        TABELAS AFETADAS:
+          ANAL_LIC_TECNICA — UPDATE (status = REPROVADO, idArquivoED)
+          ARQUIVO          — INSERT (cia_analise_tecnica.pdf, identificadorAlfresco)
+          RESULTADO_ATEC   — DELETE (excluídos após emissão CIA)
+          JUSTIFICATIVA_NCS — DELETE (em cascata com RESULTADO_ATEC)
+          LICEN_MARCO      — INSERT (TipoMarco.ATEC_CIA com referência ao arquivo)
+          LICENCIAMENTO    — UPDATE (situacao = AGUARDANDO_CIENCIA)
+          *_AUD            — auditoria @Audited
+
+        ALFRESCO: ArquivoED.identificadorAlfresco = nodeRef do CIA no Alfresco.
+      </documentation>
+      <incoming>SF_T14C_T15C</incoming>
+      <outgoing>SF_T15C_EndCIA</outgoing>
+    </serviceTask>
+
+    <endEvent id="End_CIA"
+              name="CIA emitido&#10;(REPROVADO / AGUARDANDO_CIENCIA)">
+      <documentation>
+        FIM VIA CIA: Análise técnica concluída com reprovação — CIA emitido.
+
+        ESTADO FINAL:
+          StatusAnaliseLicenciamentoTecnica = REPROVADO
+          SituacaoLicenciamento = AGUARDANDO_CIENCIA
+          TipoMarco = ATEC_CIA
+
+        DOCUMENTO EMITIDO:
+          cia_analise_tecnica.pdf
+          (autenticado, armazenado no Alfresco, referenciado em LICEN_MARCO)
+
+        NOTIFICAÇÃO:
+          RT (Responsável Técnico) e Proprietário são notificados por e-mail
+          sobre o CIA emitido e as inconformidades identificadas.
+
+        PRÓXIMO PROCESSO:
+          P05 — Ciência do CIA pelo RT / Proprietário
+          (RT toma ciência, pode solicitar recurso ou corrigir o projeto)
+      </documentation>
+      <incoming>SF_T15C_EndCIA</incoming>
+    </endEvent>
+
+    <!-- ================================================================
+         FASE 4 — VIA CA (ENVIO PARA HOMOLOGAÇÃO)
+         ================================================================ -->
+    <userTask id="T14A_ConfirmarCA"
+              name="Confirmar envio&#10;para homologação (CA/APPCI)"
+              camunda:assignee="${analistaCBMRS}"
+              camunda:formKey="analise-tecnica-confirma-ca">
+      <documentation>
+        TAREFA: Analista confirma que a análise está aprovada e envia para homologação.
+
+        PERFIL REQUERIDO: Analista CBM-RS
+        PERMISSÃO: @Permissao(objeto="ANALISETECNICA", acao="ANALISAR")
+
+        PRÉ-CONDIÇÕES (verificadas pelo analista antes de confirmar):
+          - Todos os 11 tipos de item devem ter resultado registrado
+          - Nenhum item deve estar com statusResultadoAtec = REPROVADO
+          - (ou analista justifica a aprovação mesmo com ressalvas)
+
+        TELA: Exibe resumo da análise aprovada, dados do licenciamento,
+        tipo de documento a ser gerado (CA ou APPCI, dependendo do TipoLicenciamento).
+
+        REST (confirmação): POST /adm/analise-tecnica/{idAnaliseTecnica}/ca
+        Body: { idAnaliseTecnica: Long }
+
+        Ao confirmar → T15A_ExecutarCA (Sistema SOL processa a mudança de status).
+      </documentation>
+      <incoming>SF_GW02_T14A</incoming>
+      <outgoing>SF_T14A_T15A</outgoing>
+    </userTask>
+
+    <serviceTask id="T15A_ExecutarCA"
+                 name="Executar preparação CA:&#10;validar, nota, marco, EM_APROVACAO"
+                 camunda:class="com.procergs.solcbm.analiselicenciamentotecnica.AnaliseLicenciamentoTecnicaCARN">
+      <documentation>
+        TAREFA SISTEMA: Executa a preparação da análise para homologação (via CA).
+
+        CLASSE: AnaliseLicenciamentoTecnicaCARN
+        MÉTODO: salvarAnaliseCA(Long idAnaliseTecnica)
+        TRANSAÇÃO: @TransactionAttribute(TransactionAttributeType.REQUIRED)
+        REST: POST /adm/analise-tecnica/{idAnaliseTecnica}/ca
+
+        PASSOS EXECUTADOS:
+          1. AnaliseLicenciamentoTecnicaCARNVal.validar(analise):
+               RN-P04-A01: analise.idUsuarioSoe == SessionMB.getUser().getId()
+               RN-P04-A02: analise.status == EM_ANALISE
+               RN-P04-A03: todos os tipos de item possuem resultado registrado
+                            (nenhum TipoItemAnaliseTecnica sem ResultadoAtecED associado)
+               → Falha: BusinessException → HTTP 422
+
+          2. NotaRN.concluirNota(licenciamento.getId())
+             → Conclui a nota de serviço vinculada à distribuição
+
+          3. Se TipoLicenciamento.PPCI:
+               LicenciamentoMarcoInclusaoRN.inclui(TipoMarco.ATEC_CA, licenciamento)
+
+             Se TipoLicenciamento.PSPCIM:
+               LicenciamentoMarcoInclusaoRN.inclui(TipoMarco.ATEC_APPCI, licenciamento)
+
+          4. analise.setStatus(StatusAnaliseLicenciamentoTecnica.EM_APROVACAO)
+          5. analise.setDthStatus(DataAtualHelper.getDataAtual())
+          6. Persiste analise (UPDATE)
+
+        OBSERVAÇÃO: SituacaoLicenciamento permanece EM_ANALISE neste ponto.
+        A transição de situação do licenciamento ocorre somente no deferimento
+        (T26D_ConcluirDeferPPCI ou T24S_ConcluirDeferPSPCIM).
+
+        TABELAS AFETADAS:
+          ANAL_LIC_TECNICA — UPDATE (status = EM_APROVACAO, dthStatus)
+          LICEN_MARCO      — INSERT (ATEC_CA ou ATEC_APPCI)
+          NOTAS            — UPDATE (nota concluída)
+          *_AUD            — auditoria
+
+        APÓS EXECUÇÃO: Licenciamento aparece na lista de pendentes de homologação
+        para o Coordenador CBM-RS.
+      </documentation>
+      <incoming>SF_T14A_T15A</incoming>
+      <outgoing>SF_T15A_T20</outgoing>
+    </serviceTask>
+
+    <!-- ================================================================
+         FASE 5 — HOMOLOGAÇÃO PELO COORDENADOR
+         ================================================================ -->
+    <userTask id="T20_ConsultarPendentesHom"
+              name="Consultar análises&#10;pendentes de homologação"
+              camunda:assignee="${coordenadorCBMRS}"
+              camunda:formKey="analise-tecnica-hom-lista">
+      <documentation>
+        TAREFA: Coordenador consulta lista de análises aguardando homologação.
+
+        PERFIL REQUERIDO: Coordenador CBM-RS
+        PERMISSÃO: @Permissao(objeto="ANALISETECNICA", acao="HOMOLOGAR")
+
+        REST ENDPOINT: GET /adm/analise-tecnica-hom/
+        CLASSE RN: AnaliseLicenciamentoTecnicaHomRN
+        MÉTODO: listaAnalisePendentesHomologacao(AnaliseLicenciamentoTecnicaPesqED ped)
+
+        FILTROS AUTOMÁTICOS APLICADOS:
+          ped.setStatus(StatusAnaliseLicenciamentoTecnica.EM_APROVACAO)
+          ped.setCidadesIBGE(licenciamentoAdmRN.getCidadesIBGEUsuarioLogado())
+          ped.setOrdernarPorPrioridade(false)
+
+        DTO RETORNADO: ListaPaginadaRetorno&lt;LicenciamentoAnaliseTecnica&gt;
+        Campos exibidos:
+          - idAnaliseTecnica, numeroPPCI
+          - nomeRequerente, nomeAnalista
+          - dataEnvioParaHomologacao, tipoLicenciamento
+          - prioridade
+
+        O coordenador seleciona uma análise para revisar e homologar.
+      </documentation>
+      <incoming>SF_T15A_T20</incoming>
+      <outgoing>SF_T20_T21</outgoing>
+    </userTask>
+
+    <userTask id="T21_RevisarAnalise"
+              name="Revisar resultados completos&#10;e documentos da análise"
+              camunda:assignee="${coordenadorCBMRS}"
+              camunda:formKey="analise-tecnica-hom-detalhe">
+      <documentation>
+        TAREFA: Coordenador revisa todos os resultados da análise antes de homologar.
+
+        PERFIL REQUERIDO: Coordenador CBM-RS
+        PERMISSÃO: @Permissao(objeto="ANALISETECNICA", acao="HOMOLOGAR")
+
+        CONSULTA COMPLETA COM RESULTADOS:
+          REST: GET /adm/analise-tecnica-hom/{idAnaliseTecnica}/resultado
+          RN: AnaliseLicenciamentoTecnicaHomRN.consultaComResultados(ed)
+              → AnaliseLicenciamentoTecnicaResultadoRN.efetuaConsultaComResultados(ed)
+          DTO: AnaliseLicenciamentoTecnicaDTO {
+            idAnaliseTecnica, idLicenciamento, numeroPPCI,
+            nomeAnalista, nomeCoord, dataDistribuicao, dataEnvioCA,
+            tipoLicenciamento, tipoEdificacao,
+            List&lt;ResultadoAtecDTO&gt; com todos os 11 tipos de item registrados
+          }
+
+        AÇÕES DISPONÍVEIS AO COORDENADOR:
+          a) Baixar rascunho CIA:
+             GET /adm/analise-tecnica-hom/{id}/rascunho-cia
+          b) Baixar rascunho CA:
+             GET /adm/analise-tecnica-hom/{id}/rascunho-ca
+          c) DEFERIR: análise aprovada → gerar CA/APPCI → ir para GW05 [deferir]
+          d) INDEFERIR: devolver ao analista com justificativa → ir para GW05 [indeferir]
+
+        CRITÉRIOS DE HOMOLOGAÇÃO:
+          DEFERIR: todos os resultados são tecnicamente corretos e conformes
+          INDEFERIR: há divergências, erros técnicos ou dados incorretos nos resultados
+      </documentation>
+      <incoming>SF_T20_T21</incoming>
+      <outgoing>SF_T21_GW05</outgoing>
+    </userTask>
+
+    <exclusiveGateway id="GW05_DeferirIndeferir"
+                      name="Decisão de&#10;homologação?">
+      <documentation>
+        DECISÃO DO COORDENADOR CBM-RS:
+
+        [Indeferir] → Coordenador rejeita a análise e devolve ao analista
+                      para revisão e correção. Fluxo vai para T22I.
+
+        [Deferir]   → Coordenador aprova a análise.
+                      Fluxo vai para GW06 (tipo de licenciamento).
+                      Sistema gera documentos (CA ou APPCI) e transita o licenciamento.
+      </documentation>
+      <incoming>SF_T21_GW05</incoming>
+      <outgoing>SF_GW05_T22I</outgoing>
+      <outgoing>SF_GW05_GW06</outgoing>
+    </exclusiveGateway>
+
+    <!-- ================================================================
+         FASE 5a — INDEFERIMENTO DA HOMOLOGAÇÃO (LOOP BACK)
+         ================================================================ -->
+    <userTask id="T22I_ConfirmarIndeferimento"
+              name="Confirmar indeferimento&#10;e inserir justificativa"
+              camunda:assignee="${coordenadorCBMRS}"
+              camunda:formKey="analise-tecnica-hom-indeferir">
+      <documentation>
+        TAREFA: Coordenador fornece justificativa detalhada do indeferimento.
+
+        PERFIL REQUERIDO: Coordenador CBM-RS
+        PERMISSÃO: @Permissao(objeto="ANALISETECNICA", acao="HOMOLOGAR")
+
+        TELA: Formulário de indeferimento com campo de justificativa obrigatório.
+        A justificativa orienta o analista sobre o que corrigir na análise.
+
+        REST (confirmação): POST /adm/analise-tecnica-hom/{idAnaliseTecnica}/indeferir
+        Body: {
+          idAnaliseTecnica: Long,
+          justificativa: String (obrigatório, motivo do indeferimento)
+        }
+
+        A justificativa é armazenada em:
+          AnaliseLicenciamentoTecnicaED.indeferimentoHomolog = justificativa
+
+        Ao confirmar → T23I_ExecutarIndeferimento.
+      </documentation>
+      <incoming>SF_GW05_T22I</incoming>
+      <outgoing>SF_T22I_T23I</outgoing>
+    </userTask>
+
+    <serviceTask id="T23I_ExecutarIndeferimento"
+                 name="Executar indeferimento:&#10;EM_ANALISE + marco + concluir nota"
+                 camunda:class="com.procergs.solcbm.analiselicenciamentotecnica.AnaliseLicenciamentoTecnicaHomRN">
+      <documentation>
+        TAREFA SISTEMA: Executa o indeferimento da homologação.
+
+        CLASSE: AnaliseLicenciamentoTecnicaHomRN
+        MÉTODO: indeferir(Long idAnaliseTecnica, String justificativa)
+        TRANSAÇÃO: @TransactionAttribute(TransactionAttributeType.REQUIRED)
+        REST: POST /adm/analise-tecnica-hom/{idAnaliseTecnica}/indeferir
+
+        PASSOS EXECUTADOS:
+          1. Carrega AnaliseLicenciamentoTecnicaED pelo id
+
+          2. analise.setStatus(StatusAnaliseLicenciamentoTecnica.EM_ANALISE)
+             → Status volta para EM_ANALISE (analista pode editar novamente)
+
+          3. analise.setIndeferimentoHomolog(justificativa)
+             → Armazena a justificativa do coordenador
+
+          4. analise.setDthHomolog(DataAtualHelper.getDataAtual())
+          5. analise.setDthStatus(DataAtualHelper.getDataAtual())
+
+          6. alterarAnaliseHomologada(analise):
+               analise.setNomeUsuarioSoeHomolog(sessionMB.getUser().getNome())
+               analise.setIdUsuarioSoeHomolog(Long.valueOf(sessionMB.getUser().getId()))
+               analise.setDthHomolog(DataAtualHelper.getDataAtual())
+               Chama altera(analise) → UPDATE
+
+          7. LicenciamentoMarcoInclusaoRN.inclui(TipoMarco.HOMOLOG_ATEC_INDEFERIDO, lic)
+             @LicenciamentoMarcoQualifier(tipoResponsavel=TipoResponsavelMarco.BOMBEIROS)
+
+          8. NotaRN.concluirNota(licenciamento.getId())
+
+        OBSERVAÇÃO: SituacaoLicenciamento NÃO MUDA no indeferimento.
+        O licenciamento permanece em EM_ANALISE.
+
+        TABELAS AFETADAS:
+          ANAL_LIC_TECNICA — UPDATE (status=EM_ANALISE, indeferimentoHomolog, dthHomolog,
+                                     nomeUsuarioSoeHomolog, idUsuarioSoeHomolog)
+          LICEN_MARCO      — INSERT (HOMOLOG_ATEC_INDEFERIDO)
+          NOTAS            — UPDATE (nota concluída)
+          *_AUD            — auditoria
+
+        APÓS EXECUÇÃO: Loop back para T07_AcessarAnalise.
+        O analista vê a justificativa do indeferimento e pode corrigir a análise.
+      </documentation>
+      <incoming>SF_T22I_T23I</incoming>
+      <outgoing>SF_T23I_T07</outgoing>
+    </serviceTask>
+
+    <!-- ================================================================
+         FASE 5b — DEFERIMENTO: BIFURCAÇÃO POR TIPO DE LICENCIAMENTO
+         ================================================================ -->
+    <exclusiveGateway id="GW06_TipoLicDefer"
+                      name="Tipo de&#10;licenciamento?">
+      <documentation>
+        BIFURCAÇÃO POR TIPO DE LICENCIAMENTO (no deferimento):
+
+        [PPCI]   → Gerar CA (Certificado de Aprovação)
+                   Documentos: ca_nova_analise_tecnica.pdf OU ca_existente_analise_tecnica.pdf
+                   Situação final: CA
+
+        [PSPCIM] → Gerar APPCI (Alvará de Prevenção e Proteção Contra Incêndio)
+                   + Documento Complementar
+                   Documentos: appci_analise_tecnica.pdf + DocComplementar.pdf
+                   Situação final: ALVARA_VIGENTE
+
+        BASEADO EM: LicenciamentoED.getTipo() == TipoLicenciamento.PPCI ou PSPCIM
+      </documentation>
+      <incoming>SF_GW05_GW06</incoming>
+      <outgoing>SF_GW06_GW07</outgoing>
+      <outgoing>SF_GW06_T23S</outgoing>
+    </exclusiveGateway>
+
+    <!-- ================================================================
+         FASE 6a — DEFERIMENTO PPCI: GERAÇÃO DO CA
+         ================================================================ -->
+    <exclusiveGateway id="GW07_TipoEdif"
+                      name="Tipo de&#10;edificação (PPCI)?">
+      <documentation>
+        BIFURCAÇÃO POR TIPO DE EDIFICAÇÃO (apenas para PPCI):
+
+        [A_CONSTRUIR] → Gerar CA Nova (ca_nova_analise_tecnica.pdf)
+                        Usa: DocumentoCaNovaAnaliseAutenticadoRN
+
+        [Existente]   → Gerar CA Existente (ca_existente_analise_tecnica.pdf)
+                        Usa: DocumentoCaExistenteAnaliseAutenticadoRN
+
+        BASEADO EM:
+          LicenciamentoED.getCaracteristica().getEdificacao() == TipoEdificacao.A_CONSTRUIR
+      </documentation>
+      <incoming>SF_GW06_GW07</incoming>
+      <outgoing>SF_GW07_T24D</outgoing>
+      <outgoing>SF_GW07_T25D</outgoing>
+    </exclusiveGateway>
+
+    <serviceTask id="T24D_GerarCANovo"
+                 name="Gerar CA Nova&#10;(edificação A_CONSTRUIR)"
+                 camunda:class="com.procergs.solcbm.analiselicenciamentotecnica.AnaliseLicenciamentoTecnicaDocumentoRN">
+      <documentation>
+        TAREFA SISTEMA: Gera o CA (Certificado de Aprovação) para edificação A_CONSTRUIR.
+
+        CLASSE: AnaliseLicenciamentoTecnicaDocumentoRN
+        MÉTODO PRIVADO CHAMADO: incluirCANovo(Long idLicenciamento)
+        MÉTODO PÚBLICO: incluirDocumentoCA(LicenciamentoED licenciamentoED)
+          → TipoEdificacao.A_CONSTRUIR → delega para incluirCANovo()
+
+        PASSOS:
+          1. ArquivoRN.gerarNumeroAutenticacao()
+             → Gera código único de autenticação do documento
+
+          2. DocumentoCaNovaAnaliseAutenticadoRN.gerar(idLicenciamento, numeroAutenticacao)
+             → Injeta: @DocumentoCaQualifier(tipoDocumentoCa=TipoDocumentoCa.NOVO)
+             → Gera PDF "ca_nova_analise_tecnica.pdf" autenticado
+             → Retorna InputStream
+
+          3. ArquivoRN.incluirArquivo(BuilderArquivoED.of()
+               .nomeArquivo(CA_NOVA) // = "ca_nova_analise_tecnica.pdf"
+               .inputStream(inputStream)
+               .tipo(TipoArquivo.EDIFICACAO)
+               .codigoAutenticacao(numeroAutenticacao)
+               .instance())
+             → Salva no Alfresco (identificadorAlfresco = nodeRef)
+             → Persiste ArquivoED no banco
+
+        CONSTANTE: AnaliseLicenciamentoTecnicaDocumentoRN.CA_NOVA = "ca_nova_analise_tecnica.pdf"
+
+        TABELAS AFETADAS:
+          ARQUIVO — INSERT (codigoAutenticacao, nomeArquivo, tipo, identificadorAlfresco)
+          Alfresco: arquivo PDF armazenado, nodeRef em identificadorAlfresco
+      </documentation>
+      <incoming>SF_GW07_T24D</incoming>
+      <outgoing>SF_T24D_GW08</outgoing>
+    </serviceTask>
+
+    <serviceTask id="T25D_GerarCAExistente"
+                 name="Gerar CA Existente&#10;(edificação existente)"
+                 camunda:class="com.procergs.solcbm.analiselicenciamentotecnica.AnaliseLicenciamentoTecnicaDocumentoRN">
+      <documentation>
+        TAREFA SISTEMA: Gera o CA (Certificado de Aprovação) para edificação existente.
+
+        CLASSE: AnaliseLicenciamentoTecnicaDocumentoRN
+        MÉTODO PRIVADO CHAMADO: incluirCAExistente(Long idLicenciamento)
+        MÉTODO PÚBLICO: incluirDocumentoCA(LicenciamentoED licenciamentoED)
+          → TipoEdificacao != A_CONSTRUIR → delega para incluirCAExistente()
+
+        PASSOS:
+          1. ArquivoRN.gerarNumeroAutenticacao()
+
+          2. DocumentoCaExistenteAnaliseAutenticadoRN.gerar(idLicenciamento, numeroAutenticacao)
+             → Injeta: @DocumentoCaQualifier(tipoDocumentoCa=TipoDocumentoCa.EXISTENTE)
+             → Gera PDF "ca_existente_analise_tecnica.pdf" autenticado
+             → Retorna InputStream
+
+          3. ArquivoRN.incluirArquivo(BuilderArquivoED.of()
+               .nomeArquivo(CA_EXISTENTE) // = "ca_existente_analise_tecnica.pdf"
+               .inputStream(inputStream)
+               .tipo(TipoArquivo.EDIFICACAO)
+               .codigoAutenticacao(numeroAutenticacao)
+               .instance())
+
+        CONSTANTE: AnaliseLicenciamentoTecnicaDocumentoRN.CA_EXISTENTE = "ca_existente_analise_tecnica.pdf"
+
+        TABELAS AFETADAS:
+          ARQUIVO — INSERT (identificadorAlfresco)
+          Alfresco: PDF armazenado
+      </documentation>
+      <incoming>SF_GW07_T25D</incoming>
+      <outgoing>SF_T25D_GW08</outgoing>
+    </serviceTask>
+
+    <exclusiveGateway id="GW08_JoinEdif"
+                      name="(join)&#10;Edificação">
+      <documentation>
+        GATEWAY DE JUNÇÃO: Une os caminhos CA Nova e CA Existente.
+        Após este ponto, ambas as variantes seguem o mesmo fluxo
+        de conclusão do deferimento PPCI (T26D_ConcluirDeferPPCI).
+      </documentation>
+      <incoming>SF_T24D_GW08</incoming>
+      <incoming>SF_T25D_GW08</incoming>
+      <outgoing>SF_GW08_T26D</outgoing>
+    </exclusiveGateway>
+
+    <serviceTask id="T26D_ConcluirDeferPPCI"
+                 name="Concluir deferimento PPCI:&#10;APROVADO + transitar → CA"
+                 camunda:class="com.procergs.solcbm.analiselicenciamentotecnica.AnaliseLicenciamentoTecnicaHomRN">
+      <documentation>
+        TAREFA SISTEMA: Conclui o deferimento para licenciamento PPCI.
+
+        CLASSE: AnaliseLicenciamentoTecnicaHomRN
+        MÉTODO: deferir(Long idAnaliseTecnica) — ramo PPCI
+        TRANSAÇÃO: @TransactionAttribute(TransactionAttributeType.REQUIRED)
+        REST: POST /adm/analise-tecnica-hom/{idAnaliseTecnica}/deferir
+
+        PASSOS EXECUTADOS (ramo PPCI):
+          1. analise.setStatus(StatusAnaliseLicenciamentoTecnica.APROVADO)
+          2. analise.setIndeferimentoHomolog(null)
+          3. analise.setDthHomolog(DataAtualHelper.getDataAtual())
+          4. analise.setDthStatus(DataAtualHelper.getDataAtual())
+          5. analise.setArquivo(arquivoED) → associa ArquivoED do CA gerado
+
+          6. alterarAnaliseHomologada(analise):
+               analise.setNomeUsuarioSoeHomolog(sessionMB.getUser().getNome())
+               analise.setIdUsuarioSoeHomolog(Long.valueOf(sessionMB.getUser().getId()))
+               altera(analise) → UPDATE
+
+          7. ResultadoAnaliseTecnicaExclusaoRN.excluirResultados(analise)
+             → Exclui todos ResultadoAtecED e JustificativaNcs da análise aprovada
+
+          8. LicenciamentoMarcoInclusaoRN.incluiComArquivo(
+               TipoMarco.HOMOLOG_ATEC_DEFERIDO, licenciamento, arquivoED)
+             @LicenciamentoMarcoQualifier(tipoResponsavel=TipoResponsavelMarco.BOMBEIROS)
+
+          9. TrocaEstadoLicenciamentoRN (qualifier: EM_ANALISE_PARA_CA):
+               trocaEstadoLicenciamentoEmAnaliseParaCARN.trocaEstado(licenciamento.getId())
+               SituacaoLicenciamento: EM_ANALISE → CA
+
+         10. LicenciamentoAdmRN.ativarRecurso(licenciamento)
+             → Ativa o recurso de licenciamento (desbloqueia para consulta pública)
+
+        TABELAS AFETADAS:
+          ANAL_LIC_TECNICA — UPDATE (status=APROVADO, idArquivo, dthHomolog,
+                                     nomeUsuarioSoeHomolog, idUsuarioSoeHomolog)
+          RESULTADO_ATEC   — DELETE (excluídos após aprovação)
+          JUSTIFICATIVA_NCS — DELETE (em cascata)
+          LICEN_MARCO      — INSERT (HOMOLOG_ATEC_DEFERIDO com referência ao CA)
+          LICENCIAMENTO    — UPDATE (situacao = CA)
+          *_AUD            — auditoria
+
+        APÓS EXECUÇÃO: Verifica necessidade de integração LAI (GW09_LAI).
+      </documentation>
+      <incoming>SF_GW08_T26D</incoming>
+      <outgoing>SF_T26D_GW09</outgoing>
+    </serviceTask>
+
+    <exclusiveGateway id="GW09_LAI"
+                      name="Integrar&#10;com LAI?">
+      <documentation>
+        VERIFICAÇÃO DE INTEGRAÇÃO COM SISTEMA LAI (Lei de Acesso à Informação).
+
+        CONDIÇÃO (código original do AnaliseLicenciamentoTecnicaHomRN.deferir()):
+          if (analise.getLicenciamento().getSituacao().equals(SituacaoLicenciamento.CA))
+
+        OBSERVAÇÃO TÉCNICA: A verificação usa a entidade carregada antes da transição
+        de estado. Pode retornar CA se o JPA já refletiu a transição no contexto
+        de persistência atual (mesma transação).
+
+        [Sim — situação == CA] → T30D_CadastrarLAI
+        [Não]                  → End_CA (direto, sem integração LAI)
+      </documentation>
+      <incoming>SF_T26D_GW09</incoming>
+      <outgoing>SF_GW09_T30D</outgoing>
+      <outgoing>SF_GW09_EndCA</outgoing>
+    </exclusiveGateway>
+
+    <serviceTask id="T30D_CadastrarLAI"
+                 name="Cadastrar demanda&#10;no sistema LAI"
+                 camunda:class="com.procergs.solcbm.licenciamentointegracaolai.LicenciamentoIntegracaoLaiRN">
+      <documentation>
+        TAREFA SISTEMA: Integração com o sistema LAI do Estado do RS.
+
+        CLASSE: LicenciamentoIntegracaoLaiRN
+        MÉTODO: cadastrarDemandaUnicaAnalise(LicenciamentoED licenciamento)
+        INJETADO EM: AnaliseLicenciamentoTecnicaHomRN (@Inject private LicenciamentoIntegracaoLaiRN integracaoLAI)
+
+        PROPÓSITO:
+          Registra no sistema LAI (Lei de Acesso à Informação) a demanda
+          de acesso relacionada ao licenciamento aprovado (situação CA).
+          Cumpre obrigação legal de transparência ativa do governo estadual.
+
+        CONDIÇÃO DE ATIVAÇÃO: SituacaoLicenciamento == CA
+        (verificada no gateway GW09_LAI)
+      </documentation>
+      <incoming>SF_GW09_T30D</incoming>
+      <outgoing>SF_T30D_EndCA</outgoing>
+    </serviceTask>
+
+    <endEvent id="End_CA"
+              name="CA gerado e disponível&#10;(APROVADO / situação CA)">
+      <documentation>
+        FIM VIA CA (PPCI): Análise técnica aprovada — CA gerado e disponível.
+
+        ESTADO FINAL:
+          StatusAnaliseLicenciamentoTecnica = APROVADO
+          SituacaoLicenciamento = CA
+          TipoMarco = HOMOLOG_ATEC_DEFERIDO
+
+        DOCUMENTOS GERADOS (armazenados no Alfresco):
+          ca_nova_analise_tecnica.pdf    (se TipoEdificacao.A_CONSTRUIR)
+          ca_existente_analise_tecnica.pdf (demais edificações)
+
+        INTEGRAÇÃO LAI: cadastrada se situação == CA no momento do deferimento.
+
+        PRÓXIMO PROCESSO: P06 — Ciência do CA / Emissão do Alvará
+        RT e Proprietário são notificados sobre a aprovação e disponibilidade do CA.
+      </documentation>
+      <incoming>SF_GW09_EndCA</incoming>
+      <incoming>SF_T30D_EndCA</incoming>
+    </endEvent>
+
+    <!-- ================================================================
+         FASE 6b — DEFERIMENTO PSPCIM: GERAÇÃO DO APPCI
+         ================================================================ -->
+    <serviceTask id="T23S_GerarAPPCI"
+                 name="Gerar APPCI e&#10;Documento Complementar (PSPCIM)"
+                 camunda:class="com.procergs.solcbm.analiselicenciamentotecnica.AnaliseLicenciamentoTecnicaDocumentoRN">
+      <documentation>
+        TAREFA SISTEMA: Gera o APPCI (Alvará) e Documento Complementar para PSPCIM.
+
+        CLASSE: AnaliseLicenciamentoTecnicaDocumentoRN
+        MÉTODOS CHAMADOS:
+          incluirDocumentoAPPCI(analise) → incluirAPPCINovo(analise.getId())
+          incluirDocumentoComplementarAnalise(analise) → incluirDocComplementar(analise.getId())
+
+        GERAÇÃO DO APPCI (incluirAPPCINovo):
+          1. analise = AnaliseLicenciamentoTecnicaRN.consulta(idAnalise)
+          2. licenciamento = analise.getLicenciamento()
+          3. ArquivoRN.gerarNumeroAutenticacao()
+          4. DocumentoAPPCIAnaliseAutenticadoRN.gerar(idAnalise, numeroAutenticacao)
+             → Gera PDF "appci_analise_tecnica.pdf" autenticado
+          5. ArquivoRN.incluirArquivo(BuilderArquivoED.of()
+               .nomeArquivo(APPCI) // = "appci_analise_tecnica.pdf"
+               .inputStream(inputStream)
+               .tipo(TipoArquivo.EDIFICACAO)
+               .codigoAutenticacao(numeroAutenticacao)
+               .instance())
+             → Alfresco, ArquivoED (identificadorAlfresco)
+          6. validade = CalculoValidadeAppciRN.getPrazoValidadeEmAnos(idLicenciamento)
+          7. appciED = FactoryAppci.criar(licenciamento, validade, arquivoED, AppciED.class)
+          8. appciED.setCiencia(false)
+             → SimNaoBooleanConverter: false → 'N' no banco
+          9. AppciRN.inclui(appciED) → INSERT em APPCI
+
+        GERAÇÃO DO DOCUMENTO COMPLEMENTAR (incluirDocComplementar):
+          1. analise = AnaliseLicenciamentoTecnicaRN.consulta(idAnalise)
+          2. validade = CalculoValidadeAppciRN.getPrazoValidadeEmAnos(idLicenciamento)
+          3. ArquivoRN.gerarNumeroAutenticacao()
+          4. DocumentoComplementarAutenticadoRN.gera(licenciamento, numeroAutenticacao)
+             → Gera PDF "DocComplementar.pdf"
+          5. ArquivoRN.incluirArquivo(...) → Alfresco
+          6. AppciDocComplementarRN.inclui(
+               FactoryAppci.criar(licenciamento, validade, arquivoED, AppciDocComplementarED.class))
+             → INSERT em APPCI_DOC_COMPLEMENTAR
+
+        CONSTANTES:
+          APPCI                    = "appci_analise_tecnica.pdf"
+          NOME_DOCUMENTO_COMPLEMENTAR = "DocComplementar.pdf"
+
+        TABELAS AFETADAS:
+          ARQUIVO             — 2x INSERT (APPCI + DocComplementar, identificadorAlfresco)
+          APPCI               — INSERT (idArquivo, validade, ciencia='N')
+          APPCI_DOC_COMPLEMENTAR — INSERT
+          Alfresco: 2 arquivos PDF armazenados
+      </documentation>
+      <incoming>SF_GW06_T23S</incoming>
+      <outgoing>SF_T23S_T24S</outgoing>
+    </serviceTask>
+
+    <serviceTask id="T24S_ConcluirDeferPSPCIM"
+                 name="Concluir deferimento PSPCIM:&#10;APROVADO + transitar → ALVARA_VIGENTE"
+                 camunda:class="com.procergs.solcbm.analiselicenciamentotecnica.AnaliseLicenciamentoTecnicaHomRN">
+      <documentation>
+        TAREFA SISTEMA: Conclui o deferimento para licenciamento PSPCIM.
+
+        CLASSE: AnaliseLicenciamentoTecnicaHomRN
+        MÉTODO: deferir(Long idAnaliseTecnica) — ramo PSPCIM
+        TRANSAÇÃO: @TransactionAttribute(TransactionAttributeType.REQUIRED)
+        REST: POST /adm/analise-tecnica-hom/{idAnaliseTecnica}/deferir
+
+        PASSOS EXECUTADOS (ramo PSPCIM):
+          1. analise.setStatus(StatusAnaliseLicenciamentoTecnica.APROVADO)
+          2. analise.setIndeferimentoHomolog(null)
+          3. analise.setDthHomolog / setDthStatus (DataAtualHelper)
+          4. analise.setArquivo(arquivoAPPCIED) → associa APPCI gerado
+
+          5. alterarAnaliseHomologada(analise):
+               setNomeUsuarioSoeHomolog / setIdUsuarioSoeHomolog (sessionMB)
+               altera(analise) → UPDATE
+
+          6. ResultadoAnaliseTecnicaExclusaoRN.excluirResultados(analise)
+
+          7. LicenciamentoMarcoInclusaoRN.incluiComArquivo(
+               TipoMarco.HOMOLOG_ATEC_APPCI, licenciamento, arquivoAPPCIED)
+
+          8. LicenciamentoMarcoInclusaoRN.incluiComArquivo(
+               TipoMarco.EMISSAO_DOC_COMPLEMENTAR, licenciamento, arquivoDocComplementarED)
+
+          9. TrocaEstadoLicenciamentoRN (qualifier: EM_ANALISE_PARA_ALVARA_VIGENTE):
+               trocaEstadoLicenciamentoEmAnaliseParaAlvaraVigente.trocaEstado(id)
+               SituacaoLicenciamento: EM_ANALISE → ALVARA_VIGENTE
+
+         10. LicenciamentoAdmRN.ativarRecurso(licenciamento)
+
+         11. Se analise.getLicenciamento().getSituacao() == CA:
+               integracaoLAI.cadastrarDemandaUnicaAnalise(licenciamento)
+               (verificação análoga ao PPCI, aplicável a cenários específicos PSPCIM)
+
+        TABELAS AFETADAS:
+          ANAL_LIC_TECNICA — UPDATE (status=APROVADO, idArquivo, dthHomolog,
+                                     nomeUsuarioSoeHomolog, idUsuarioSoeHomolog)
+          RESULTADO_ATEC   — DELETE
+          JUSTIFICATIVA_NCS — DELETE
+          LICEN_MARCO      — 2x INSERT (HOMOLOG_ATEC_APPCI + EMISSAO_DOC_COMPLEMENTAR)
+          LICENCIAMENTO    — UPDATE (situacao = ALVARA_VIGENTE)
+          *_AUD            — auditoria
+      </documentation>
+      <incoming>SF_T23S_T24S</incoming>
+      <outgoing>SF_T24S_EndAPPCI</outgoing>
+    </serviceTask>
+
+    <endEvent id="End_APPCI"
+              name="APPCI e DocComplementar&#10;disponíveis (ALVARA_VIGENTE)">
+      <documentation>
+        FIM VIA APPCI (PSPCIM): Análise técnica aprovada — APPCI e Documento Complementar gerados.
+
+        ESTADO FINAL:
+          StatusAnaliseLicenciamentoTecnica = APROVADO
+          SituacaoLicenciamento = ALVARA_VIGENTE
+          TipoMarcos = HOMOLOG_ATEC_APPCI + EMISSAO_DOC_COMPLEMENTAR
+
+        DOCUMENTOS GERADOS (armazenados no Alfresco):
+          appci_analise_tecnica.pdf (AppciED.ciencia = false → 'N' no BD)
+          DocComplementar.pdf (AppciDocComplementarED)
+
+        PRÓXIMO PROCESSO: Ciência do APPCI pelo RT.
+        RT e Proprietário são notificados sobre a aprovação e disponibilidade do APPCI.
+      </documentation>
+      <incoming>SF_T24S_EndAPPCI</incoming>
+    </endEvent>
+
+    <!-- ================================================================
+         SEQUENCE FLOWS
+         ================================================================ -->
+
+    <!-- Fase 1: Distribuição -->
+    <sequenceFlow id="SF_Start_T01"
+                  name=""
+                  sourceRef="Start_P04"
+                  targetRef="T01_ConsultarPendentes"/>
+
+    <sequenceFlow id="SF_T01_T02"
+                  name=""
+                  sourceRef="T01_ConsultarPendentes"
+                  targetRef="T02_SelecionarDistribuir"/>
+
+    <sequenceFlow id="SF_T02_T03"
+                  name=""
+                  sourceRef="T02_SelecionarDistribuir"
+                  targetRef="T03_ExecutarDistribuicao"/>
+
+    <sequenceFlow id="SF_T03_T07"
+                  name="Distribuição concluída&#10;(EM_ANALISE)"
+                  sourceRef="T03_ExecutarDistribuicao"
+                  targetRef="T07_AcessarAnalise"/>
+
+    <!-- Fase 2: Análise -->
+    <sequenceFlow id="SF_T07_SP"
+                  sourceRef="T07_AcessarAnalise"
+                  targetRef="SP_RegistrarResultados"/>
+
+    <sequenceFlow id="SF_SP_T13"
+                  sourceRef="SP_RegistrarResultados"
+                  targetRef="T13_VisualizarRascunhoCIA"/>
+
+    <!-- Cancelamento -->
+    <sequenceFlow id="SF_BE_TCancel"
+                  sourceRef="BE_Cancelar"
+                  targetRef="T_Cancel_Executar"/>
+
+    <sequenceFlow id="SF_TCancel_EndCancelado"
+                  sourceRef="T_Cancel_Executar"
+                  targetRef="End_Cancelado"/>
+
+    <!-- Decisão CIA ou CA -->
+    <sequenceFlow id="SF_T13_GW02"
+                  sourceRef="T13_VisualizarRascunhoCIA"
+                  targetRef="GW02_ResultadoAnalise"/>
+
+    <sequenceFlow id="SF_GW02_T14C"
+                  name="CIA (inconformidades)"
+                  sourceRef="GW02_ResultadoAnalise"
+                  targetRef="T14C_ConfirmarCIA">
+      <conditionExpression xsi:type="tFormalExpression">#{resultado == 'CIA'}</conditionExpression>
+    </sequenceFlow>
+
+    <sequenceFlow id="SF_GW02_T14A"
+                  name="CA (aprovado)"
+                  sourceRef="GW02_ResultadoAnalise"
+                  targetRef="T14A_ConfirmarCA">
+      <conditionExpression xsi:type="tFormalExpression">#{resultado == 'CA'}</conditionExpression>
+    </sequenceFlow>
+
+    <!-- Fase 3: CIA -->
+    <sequenceFlow id="SF_T14C_T15C"
+                  sourceRef="T14C_ConfirmarCIA"
+                  targetRef="T15C_ExecutarCIA"/>
+
+    <sequenceFlow id="SF_T15C_EndCIA"
+                  sourceRef="T15C_ExecutarCIA"
+                  targetRef="End_CIA"/>
+
+    <!-- Fase 4: CA -->
+    <sequenceFlow id="SF_T14A_T15A"
+                  sourceRef="T14A_ConfirmarCA"
+                  targetRef="T15A_ExecutarCA"/>
+
+    <sequenceFlow id="SF_T15A_T20"
+                  name="Análise em EM_APROVACAO&#10;(aguardando homologação)"
+                  sourceRef="T15A_ExecutarCA"
+                  targetRef="T20_ConsultarPendentesHom"/>
+
+    <!-- Fase 5: Homologação -->
+    <sequenceFlow id="SF_T20_T21"
+                  sourceRef="T20_ConsultarPendentesHom"
+                  targetRef="T21_RevisarAnalise"/>
+
+    <sequenceFlow id="SF_T21_GW05"
+                  sourceRef="T21_RevisarAnalise"
+                  targetRef="GW05_DeferirIndeferir"/>
+
+    <sequenceFlow id="SF_GW05_T22I"
+                  name="Indeferir"
+                  sourceRef="GW05_DeferirIndeferir"
+                  targetRef="T22I_ConfirmarIndeferimento">
+      <conditionExpression xsi:type="tFormalExpression">#{decisao == 'INDEFERIR'}</conditionExpression>
+    </sequenceFlow>
+
+    <sequenceFlow id="SF_GW05_GW06"
+                  name="Deferir"
+                  sourceRef="GW05_DeferirIndeferir"
+                  targetRef="GW06_TipoLicDefer">
+      <conditionExpression xsi:type="tFormalExpression">#{decisao == 'DEFERIR'}</conditionExpression>
+    </sequenceFlow>
+
+    <sequenceFlow id="SF_T22I_T23I"
+                  sourceRef="T22I_ConfirmarIndeferimento"
+                  targetRef="T23I_ExecutarIndeferimento"/>
+
+    <sequenceFlow id="SF_T23I_T07"
+                  name="Volta ao analista&#10;(EM_ANALISE)"
+                  sourceRef="T23I_ExecutarIndeferimento"
+                  targetRef="T07_AcessarAnalise"/>
+
+    <!-- Fase 6a: Deferimento PPCI -->
+    <sequenceFlow id="SF_GW06_GW07"
+                  name="PPCI"
+                  sourceRef="GW06_TipoLicDefer"
+                  targetRef="GW07_TipoEdif">
+      <conditionExpression xsi:type="tFormalExpression">#{tipoLicenciamento == 'PPCI'}</conditionExpression>
+    </sequenceFlow>
+
+    <sequenceFlow id="SF_GW07_T24D"
+                  name="A_CONSTRUIR"
+                  sourceRef="GW07_TipoEdif"
+                  targetRef="T24D_GerarCANovo">
+      <conditionExpression xsi:type="tFormalExpression">#{tipoEdificacao == 'A_CONSTRUIR'}</conditionExpression>
+    </sequenceFlow>
+
+    <sequenceFlow id="SF_GW07_T25D"
+                  name="Existente"
+                  sourceRef="GW07_TipoEdif"
+                  targetRef="T25D_GerarCAExistente">
+      <conditionExpression xsi:type="tFormalExpression">#{tipoEdificacao != 'A_CONSTRUIR'}</conditionExpression>
+    </sequenceFlow>
+
+    <sequenceFlow id="SF_T24D_GW08"
+                  sourceRef="T24D_GerarCANovo"
+                  targetRef="GW08_JoinEdif"/>
+
+    <sequenceFlow id="SF_T25D_GW08"
+                  sourceRef="T25D_GerarCAExistente"
+                  targetRef="GW08_JoinEdif"/>
+
+    <sequenceFlow id="SF_GW08_T26D"
+                  sourceRef="GW08_JoinEdif"
+                  targetRef="T26D_ConcluirDeferPPCI"/>
+
+    <sequenceFlow id="SF_T26D_GW09"
+                  sourceRef="T26D_ConcluirDeferPPCI"
+                  targetRef="GW09_LAI"/>
+
+    <sequenceFlow id="SF_GW09_T30D"
+                  name="Situação == CA&#10;(integrar LAI)"
+                  sourceRef="GW09_LAI"
+                  targetRef="T30D_CadastrarLAI">
+      <conditionExpression xsi:type="tFormalExpression">#{situacaoLicenciamento == 'CA'}</conditionExpression>
+    </sequenceFlow>
+
+    <sequenceFlow id="SF_GW09_EndCA"
+                  name="Situação != CA&#10;(sem LAI)"
+                  sourceRef="GW09_LAI"
+                  targetRef="End_CA"/>
+
+    <sequenceFlow id="SF_T30D_EndCA"
+                  sourceRef="T30D_CadastrarLAI"
+                  targetRef="End_CA"/>
+
+    <!-- Fase 6b: Deferimento PSPCIM -->
+    <sequenceFlow id="SF_GW06_T23S"
+                  name="PSPCIM"
+                  sourceRef="GW06_TipoLicDefer"
+                  targetRef="T23S_GerarAPPCI">
+      <conditionExpression xsi:type="tFormalExpression">#{tipoLicenciamento == 'PSPCIM'}</conditionExpression>
+    </sequenceFlow>
+
+    <sequenceFlow id="SF_T23S_T24S"
+                  sourceRef="T23S_GerarAPPCI"
+                  targetRef="T24S_ConcluirDeferPSPCIM"/>
+
+    <sequenceFlow id="SF_T24S_EndAPPCI"
+                  sourceRef="T24S_ConcluirDeferPSPCIM"
+                  targetRef="End_APPCI"/>
+
+  </process>
+
+  <!-- ================================================================
+       BPMN DIAGRAM — DI (posicionamento visual para Camunda Modeler)
+       Pool: x=100, y=80, w=5300, h=1060
+       Lanes (y absolutas):
+         Coordenador: 80–280   (h=200)
+         Analista:    280–540  (h=260)
+         RT:          540–640  (h=100)
+         Sistema:     640–1140 (h=500)
+       ================================================================ -->
+  <bpmndi:BPMNDiagram id="BPMNDiagram_P04">
+    <bpmndi:BPMNPlane id="BPMNPlane_P04" bpmnElement="Collaboration_P04">
+
+      <!-- Pool -->
+      <bpmndi:BPMNShape id="Pool_P04_di" bpmnElement="Pool_P04" isHorizontal="true">
+        <dc:Bounds x="100" y="80" width="5300" height="1060"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- Lane Coordenador -->
+      <bpmndi:BPMNShape id="Lane_Coordenador_di" bpmnElement="Lane_Coordenador" isHorizontal="true">
+        <dc:Bounds x="130" y="80" width="5270" height="200"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- Lane Analista -->
+      <bpmndi:BPMNShape id="Lane_Analista_di" bpmnElement="Lane_Analista" isHorizontal="true">
+        <dc:Bounds x="130" y="280" width="5270" height="260"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- Lane RT -->
+      <bpmndi:BPMNShape id="Lane_RT_di" bpmnElement="Lane_RT" isHorizontal="true">
+        <dc:Bounds x="130" y="540" width="5270" height="100"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- Lane Sistema -->
+      <bpmndi:BPMNShape id="Lane_Sistema_di" bpmnElement="Lane_Sistema" isHorizontal="true">
+        <dc:Bounds x="130" y="640" width="5270" height="500"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- ============================================================
+           START EVENT — Coord lane
+           ============================================================ -->
+      <bpmndi:BPMNShape id="Start_P04_di" bpmnElement="Start_P04">
+        <dc:Bounds x="162" y="162" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="143" y="205" width="74" height="40"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- ============================================================
+           DISTRIBUIÇÃO — Coord lane (y=140, h=80, center y=180)
+           ============================================================ -->
+      <bpmndi:BPMNShape id="T01_di" bpmnElement="T01_ConsultarPendentes">
+        <dc:Bounds x="250" y="140" width="200" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="T02_di" bpmnElement="T02_SelecionarDistribuir">
+        <dc:Bounds x="510" y="140" width="200" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- Sistema lane — T03 (row 1, y=750) -->
+      <bpmndi:BPMNShape id="T03_di" bpmnElement="T03_ExecutarDistribuicao">
+        <dc:Bounds x="760" y="750" width="200" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- ============================================================
+           ANÁLISE — Analista lane (y=370, h=80, center y=410)
+           ============================================================ -->
+      <bpmndi:BPMNShape id="T07_di" bpmnElement="T07_AcessarAnalise">
+        <dc:Bounds x="1030" y="370" width="200" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- SubProcess — Analista lane (collapsed) -->
+      <bpmndi:BPMNShape id="SP_di" bpmnElement="SP_RegistrarResultados" isExpanded="false">
+        <dc:Bounds x="1290" y="350" width="240" height="140"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- BoundaryEvent no SP (bottom-center do SP: 1290+120=1410, 350+140=490) -->
+      <bpmndi:BPMNShape id="BE_Cancelar_di" bpmnElement="BE_Cancelar">
+        <dc:Bounds x="1392" y="472" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1372" y="515" width="76" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- Sistema lane — T_Cancel e End_Cancelado (baixo, y=990) -->
+      <bpmndi:BPMNShape id="TCancel_di" bpmnElement="T_Cancel_Executar">
+        <dc:Bounds x="1390" y="990" width="200" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="End_Cancelado_di" bpmnElement="End_Cancelado">
+        <dc:Bounds x="1652" y="1013" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1630" y="1056" width="80" height="40"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- Analista lane — T13 e GW02 -->
+      <bpmndi:BPMNShape id="T13_di" bpmnElement="T13_VisualizarRascunhoCIA">
+        <dc:Bounds x="1600" y="370" width="200" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="GW02_di" bpmnElement="GW02_ResultadoAnalise" isMarkerVisible="true">
+        <dc:Bounds x="1875" y="385" width="50" height="50"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1858" y="355" width="84" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- Analista lane — T14C (CIA, y=290 no topo) e T14A (CA, y=460 na base) -->
+      <bpmndi:BPMNShape id="T14C_di" bpmnElement="T14C_ConfirmarCIA">
+        <dc:Bounds x="1990" y="290" width="200" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="T14A_di" bpmnElement="T14A_ConfirmarCA">
+        <dc:Bounds x="1990" y="460" width="200" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- Sistema lane — T15C (CIA, row1 y=750) -->
+      <bpmndi:BPMNShape id="T15C_di" bpmnElement="T15C_ExecutarCIA">
+        <dc:Bounds x="2260" y="750" width="200" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- RT lane — End_CIA (y=572, center 590) -->
+      <bpmndi:BPMNShape id="End_CIA_di" bpmnElement="End_CIA">
+        <dc:Bounds x="2532" y="572" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2510" y="615" width="80" height="40"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- Sistema lane — T15A (CA, row2 y=870) -->
+      <bpmndi:BPMNShape id="T15A_di" bpmnElement="T15A_ExecutarCA">
+        <dc:Bounds x="2260" y="870" width="200" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- ============================================================
+           HOMOLOGAÇÃO — Coord lane (y=140)
+           ============================================================ -->
+      <bpmndi:BPMNShape id="T20_di" bpmnElement="T20_ConsultarPendentesHom">
+        <dc:Bounds x="2760" y="140" width="200" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="T21_di" bpmnElement="T21_RevisarAnalise">
+        <dc:Bounds x="3020" y="140" width="200" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="GW05_di" bpmnElement="GW05_DeferirIndeferir" isMarkerVisible="true">
+        <dc:Bounds x="3290" y="155" width="50" height="50"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3268" y="123" width="94" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="T22I_di" bpmnElement="T22I_ConfirmarIndeferimento">
+        <dc:Bounds x="3410" y="140" width="200" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- Sistema lane — T23I (indeferimento, y=870) -->
+      <bpmndi:BPMNShape id="T23I_di" bpmnElement="T23I_ExecutarIndeferimento">
+        <dc:Bounds x="3410" y="870" width="200" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- ============================================================
+           DEFERIMENTO — Sistema lane
+           ============================================================ -->
+      <bpmndi:BPMNShape id="GW06_di" bpmnElement="GW06_TipoLicDefer" isMarkerVisible="true">
+        <dc:Bounds x="3690" y="882" width="50" height="50"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3668" y="940" width="94" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- PPCI path -->
+      <bpmndi:BPMNShape id="GW07_di" bpmnElement="GW07_TipoEdif" isMarkerVisible="true">
+        <dc:Bounds x="3830" y="840" width="50" height="50"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3808" y="898" width="94" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="T24D_di" bpmnElement="T24D_GerarCANovo">
+        <dc:Bounds x="3950" y="760" width="200" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="T25D_di" bpmnElement="T25D_GerarCAExistente">
+        <dc:Bounds x="3950" y="880" width="200" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="GW08_di" bpmnElement="GW08_JoinEdif" isMarkerVisible="true">
+        <dc:Bounds x="4230" y="847" width="50" height="50"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="4208" y="905" width="94" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="T26D_di" bpmnElement="T26D_ConcluirDeferPPCI">
+        <dc:Bounds x="4360" y="830" width="200" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="GW09_di" bpmnElement="GW09_LAI" isMarkerVisible="true">
+        <dc:Bounds x="4640" y="855" width="50" height="50"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="4618" y="913" width="94" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="T30D_di" bpmnElement="T30D_CadastrarLAI">
+        <dc:Bounds x="4760" y="840" width="200" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- RT lane — End_CA -->
+      <bpmndi:BPMNShape id="End_CA_di" bpmnElement="End_CA">
+        <dc:Bounds x="5032" y="572" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="5010" y="615" width="80" height="40"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- PSPCIM path — Sistema lane (y=1000) -->
+      <bpmndi:BPMNShape id="T23S_di" bpmnElement="T23S_GerarAPPCI">
+        <dc:Bounds x="3830" y="1000" width="200" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="T24S_di" bpmnElement="T24S_ConcluirDeferPSPCIM">
+        <dc:Bounds x="4100" y="1000" width="200" height="80"/>
+        <bpmndi:BPMNLabel/>
+      </bpmndi:BPMNShape>
+
+      <!-- RT lane — End_APPCI -->
+      <bpmndi:BPMNShape id="End_APPCI_di" bpmnElement="End_APPCI">
+        <dc:Bounds x="4372" y="572" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="4350" y="615" width="80" height="40"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- ============================================================
+           SEQUENCE FLOW EDGES
+           ============================================================ -->
+
+      <!-- Start → T01 -->
+      <bpmndi:BPMNEdge id="SF_Start_T01_di" bpmnElement="SF_Start_T01">
+        <di:waypoint x="198" y="180"/>
+        <di:waypoint x="250" y="180"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- T01 → T02 -->
+      <bpmndi:BPMNEdge id="SF_T01_T02_di" bpmnElement="SF_T01_T02">
+        <di:waypoint x="450" y="180"/>
+        <di:waypoint x="510" y="180"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- T02 → T03: Coord → Sistema (desce ao longo do eixo x=610) -->
+      <bpmndi:BPMNEdge id="SF_T02_T03_di" bpmnElement="SF_T02_T03">
+        <di:waypoint x="610" y="220"/>
+        <di:waypoint x="610" y="790"/>
+        <di:waypoint x="760" y="790"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- T03 → T07: Sistema → Analista (sobe ao longo do eixo x=995) -->
+      <bpmndi:BPMNEdge id="SF_T03_T07_di" bpmnElement="SF_T03_T07">
+        <di:waypoint x="960" y="790"/>
+        <di:waypoint x="995" y="790"/>
+        <di:waypoint x="995" y="410"/>
+        <di:waypoint x="1030" y="410"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="960" y="588" width="90" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- T07 → SP -->
+      <bpmndi:BPMNEdge id="SF_T07_SP_di" bpmnElement="SF_T07_SP">
+        <di:waypoint x="1230" y="410"/>
+        <di:waypoint x="1290" y="420"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SP → T13 -->
+      <bpmndi:BPMNEdge id="SF_SP_T13_di" bpmnElement="SF_SP_T13">
+        <di:waypoint x="1530" y="420"/>
+        <di:waypoint x="1600" y="410"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- BE → T_Cancel: desce x=1410 até Sistema lane -->
+      <bpmndi:BPMNEdge id="SF_BE_TCancel_di" bpmnElement="SF_BE_TCancel">
+        <di:waypoint x="1410" y="508"/>
+        <di:waypoint x="1410" y="750"/>
+        <di:waypoint x="1490" y="750"/>
+        <di:waypoint x="1490" y="990"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- T_Cancel → End_Cancelado -->
+      <bpmndi:BPMNEdge id="SF_TCancel_EndCancelado_di" bpmnElement="SF_TCancel_EndCancelado">
+        <di:waypoint x="1590" y="1031"/>
+        <di:waypoint x="1652" y="1031"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- T13 → GW02 -->
+      <bpmndi:BPMNEdge id="SF_T13_GW02_di" bpmnElement="SF_T13_GW02">
+        <di:waypoint x="1800" y="410"/>
+        <di:waypoint x="1875" y="410"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW02 → T14C: sobe para topo da faixa Analista -->
+      <bpmndi:BPMNEdge id="SF_GW02_T14C_di" bpmnElement="SF_GW02_T14C">
+        <di:waypoint x="1900" y="385"/>
+        <di:waypoint x="1900" y="330"/>
+        <di:waypoint x="1990" y="330"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1910" y="350" width="70" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW02 → T14A: desce para base da faixa Analista -->
+      <bpmndi:BPMNEdge id="SF_GW02_T14A_di" bpmnElement="SF_GW02_T14A">
+        <di:waypoint x="1900" y="435"/>
+        <di:waypoint x="1900" y="500"/>
+        <di:waypoint x="1990" y="500"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1910" y="458" width="60" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- T14C → T15C: Analista → Sistema (desce x=2090) -->
+      <bpmndi:BPMNEdge id="SF_T14C_T15C_di" bpmnElement="SF_T14C_T15C">
+        <di:waypoint x="2090" y="370"/>
+        <di:waypoint x="2090" y="790"/>
+        <di:waypoint x="2260" y="790"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- T15C → End_CIA: Sistema → RT (sobe x=2550) -->
+      <bpmndi:BPMNEdge id="SF_T15C_EndCIA_di" bpmnElement="SF_T15C_EndCIA">
+        <di:waypoint x="2460" y="790"/>
+        <di:waypoint x="2550" y="790"/>
+        <di:waypoint x="2550" y="608"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- T14A → T15A: Analista → Sistema (desce x=2090) -->
+      <bpmndi:BPMNEdge id="SF_T14A_T15A_di" bpmnElement="SF_T14A_T15A">
+        <di:waypoint x="2090" y="500"/>
+        <di:waypoint x="2090" y="910"/>
+        <di:waypoint x="2260" y="910"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- T15A → T20: Sistema → Coord (sobe x=2710, depois direita a T20) -->
+      <bpmndi:BPMNEdge id="SF_T15A_T20_di" bpmnElement="SF_T15A_T20">
+        <di:waypoint x="2460" y="910"/>
+        <di:waypoint x="2710" y="910"/>
+        <di:waypoint x="2710" y="180"/>
+        <di:waypoint x="2760" y="180"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2720" y="540" width="90" height="40"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- T20 → T21 -->
+      <bpmndi:BPMNEdge id="SF_T20_T21_di" bpmnElement="SF_T20_T21">
+        <di:waypoint x="2960" y="180"/>
+        <di:waypoint x="3020" y="180"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- T21 → GW05 -->
+      <bpmndi:BPMNEdge id="SF_T21_GW05_di" bpmnElement="SF_T21_GW05">
+        <di:waypoint x="3220" y="180"/>
+        <di:waypoint x="3290" y="180"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW05 → T22I (indeferir, continua direita) -->
+      <bpmndi:BPMNEdge id="SF_GW05_T22I_di" bpmnElement="SF_GW05_T22I">
+        <di:waypoint x="3340" y="180"/>
+        <di:waypoint x="3410" y="180"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3348" y="158" width="50" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW05 → GW06 (deferir: desce x=3315 até Sistema) -->
+      <bpmndi:BPMNEdge id="SF_GW05_GW06_di" bpmnElement="SF_GW05_GW06">
+        <di:waypoint x="3315" y="205"/>
+        <di:waypoint x="3315" y="907"/>
+        <di:waypoint x="3690" y="907"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3323" y="548" width="38" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- T22I → T23I: Coord → Sistema (desce x=3510) -->
+      <bpmndi:BPMNEdge id="SF_T22I_T23I_di" bpmnElement="SF_T22I_T23I">
+        <di:waypoint x="3510" y="220"/>
+        <di:waypoint x="3510" y="870"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- T23I → T07: LOOP BACK (vai à esquerda pela base do Sistema, sobe x=990) -->
+      <bpmndi:BPMNEdge id="SF_T23I_T07_di" bpmnElement="SF_T23I_T07">
+        <di:waypoint x="3410" y="910"/>
+        <di:waypoint x="990" y="910"/>
+        <di:waypoint x="990" y="410"/>
+        <di:waypoint x="1030" y="410"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1870" y="918" width="90" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW06 → GW07 (PPCI) -->
+      <bpmndi:BPMNEdge id="SF_GW06_GW07_di" bpmnElement="SF_GW06_GW07">
+        <di:waypoint x="3740" y="907"/>
+        <di:waypoint x="3785" y="907"/>
+        <di:waypoint x="3785" y="865"/>
+        <di:waypoint x="3830" y="865"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3768" y="883" width="34" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW06 → T23S (PSPCIM: desce y=1040) -->
+      <bpmndi:BPMNEdge id="SF_GW06_T23S_di" bpmnElement="SF_GW06_T23S">
+        <di:waypoint x="3715" y="932"/>
+        <di:waypoint x="3715" y="1040"/>
+        <di:waypoint x="3830" y="1040"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3720" y="982" width="46" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW07 → T24D (A_CONSTRUIR: sobe y=800) -->
+      <bpmndi:BPMNEdge id="SF_GW07_T24D_di" bpmnElement="SF_GW07_T24D">
+        <di:waypoint x="3855" y="840"/>
+        <di:waypoint x="3855" y="800"/>
+        <di:waypoint x="3950" y="800"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3858" y="815" width="70" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW07 → T25D (Existente: desce y=920) -->
+      <bpmndi:BPMNEdge id="SF_GW07_T25D_di" bpmnElement="SF_GW07_T25D">
+        <di:waypoint x="3855" y="890"/>
+        <di:waypoint x="3855" y="920"/>
+        <di:waypoint x="3950" y="920"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3858" y="898" width="50" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- T24D → GW08 -->
+      <bpmndi:BPMNEdge id="SF_T24D_GW08_di" bpmnElement="SF_T24D_GW08">
+        <di:waypoint x="4150" y="800"/>
+        <di:waypoint x="4255" y="800"/>
+        <di:waypoint x="4255" y="847"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- T25D → GW08 -->
+      <bpmndi:BPMNEdge id="SF_T25D_GW08_di" bpmnElement="SF_T25D_GW08">
+        <di:waypoint x="4150" y="920"/>
+        <di:waypoint x="4255" y="920"/>
+        <di:waypoint x="4255" y="897"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW08 → T26D -->
+      <bpmndi:BPMNEdge id="SF_GW08_T26D_di" bpmnElement="SF_GW08_T26D">
+        <di:waypoint x="4280" y="872"/>
+        <di:waypoint x="4360" y="870"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- T26D → GW09 -->
+      <bpmndi:BPMNEdge id="SF_T26D_GW09_di" bpmnElement="SF_T26D_GW09">
+        <di:waypoint x="4560" y="870"/>
+        <di:waypoint x="4640" y="880"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW09 → T30D (LAI) -->
+      <bpmndi:BPMNEdge id="SF_GW09_T30D_di" bpmnElement="SF_GW09_T30D">
+        <di:waypoint x="4690" y="880"/>
+        <di:waypoint x="4760" y="880"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="4695" y="858" width="60" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- GW09 → End_CA (sem LAI: sobe x=4665 até RT lane) -->
+      <bpmndi:BPMNEdge id="SF_GW09_EndCA_di" bpmnElement="SF_GW09_EndCA">
+        <di:waypoint x="4665" y="855"/>
+        <di:waypoint x="4665" y="720"/>
+        <di:waypoint x="5050" y="720"/>
+        <di:waypoint x="5050" y="608"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="4830" y="700" width="60" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- T30D → End_CA -->
+      <bpmndi:BPMNEdge id="SF_T30D_EndCA_di" bpmnElement="SF_T30D_EndCA">
+        <di:waypoint x="4960" y="880"/>
+        <di:waypoint x="5050" y="880"/>
+        <di:waypoint x="5050" y="608"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- T23S → T24S -->
+      <bpmndi:BPMNEdge id="SF_T23S_T24S_di" bpmnElement="SF_T23S_T24S">
+        <di:waypoint x="4030" y="1040"/>
+        <di:waypoint x="4100" y="1040"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- T24S → End_APPCI: Sistema → RT (sobe x=4390) -->
+      <bpmndi:BPMNEdge id="SF_T24S_EndAPPCI_di" bpmnElement="SF_T24S_EndAPPCI">
+        <di:waypoint x="4300" y="1040"/>
+        <di:waypoint x="4390" y="1040"/>
+        <di:waypoint x="4390" y="608"/>
+      </bpmndi:BPMNEdge>
+
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</definitions>

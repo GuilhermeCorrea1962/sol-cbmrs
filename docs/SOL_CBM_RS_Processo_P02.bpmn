@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI"
+             xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+             targetNamespace="http://solcbm.procergs.rs.gov.br/bpmn"
+             id="definitions_P02">
+
+  <!-- ============================================================ -->
+  <!-- PROCESSO 02 – CADASTRO DE USUÁRIO / RESPONSÁVEL TÉCNICO (RT) -->
+  <!-- Cidadão preenche formulário → sistema valida CPF e dados →   -->
+  <!-- ADM analisa e aprova ou rejeita o cadastro →                 -->
+  <!-- notificação por e-mail em ambos os casos.                    -->
+  <!-- ============================================================ -->
+  <process id="Proc_02" name="02 - Cadastro de Usuário / Responsável Técnico" isExecutable="false">
+
+    <startEvent id="P02_Start" name="Solicitar&#10;Cadastro no Sistema">
+      <outgoing>P02_sf01</outgoing>
+    </startEvent>
+
+    <userTask id="P02_T01" name="Preencher Formulário&#10;de Cadastro">
+      <incoming>P02_sf01</incoming>
+      <outgoing>P02_sf02</outgoing>
+    </userTask>
+
+    <serviceTask id="P02_T02" name="Validar CPF, E-mail&#10;e Dados Obrigatórios">
+      <incoming>P02_sf02</incoming>
+      <outgoing>P02_sf03</outgoing>
+    </serviceTask>
+
+    <exclusiveGateway id="P02_GW01" name="Dados&#10;Válidos?">
+      <incoming>P02_sf03</incoming>
+      <outgoing>P02_sf04</outgoing>
+      <outgoing>P02_sf05</outgoing>
+    </exclusiveGateway>
+
+    <endEvent id="P02_EndErr" name="Erro: Dados&#10;Inválidos / Duplicados">
+      <incoming>P02_sf04</incoming>
+      <errorEventDefinition id="P02_ErrDef"/>
+    </endEvent>
+
+    <userTask id="P02_T03" name="ADM Analisa&#10;Cadastro Pendente">
+      <incoming>P02_sf05</incoming>
+      <outgoing>P02_sf06</outgoing>
+    </userTask>
+
+    <exclusiveGateway id="P02_GW02" name="Cadastro&#10;Aprovado?">
+      <incoming>P02_sf06</incoming>
+      <outgoing>P02_sf07</outgoing>
+      <outgoing>P02_sf08</outgoing>
+    </exclusiveGateway>
+
+    <serviceTask id="P02_T04" name="Ativar Usuário e&#10;Notificar por E-mail">
+      <incoming>P02_sf07</incoming>
+      <outgoing>P02_sf09</outgoing>
+    </serviceTask>
+
+    <serviceTask id="P02_T05" name="Rejeitar e Notificar&#10;Usuário por E-mail">
+      <incoming>P02_sf08</incoming>
+      <outgoing>P02_sf10</outgoing>
+    </serviceTask>
+
+    <endEvent id="P02_End1" name="Usuário&#10;Ativo no Sistema">
+      <incoming>P02_sf09</incoming>
+    </endEvent>
+
+    <endEvent id="P02_End2" name="Cadastro&#10;Rejeitado">
+      <incoming>P02_sf10</incoming>
+    </endEvent>
+
+    <sequenceFlow id="P02_sf01" sourceRef="P02_Start"  targetRef="P02_T01"/>
+    <sequenceFlow id="P02_sf02" sourceRef="P02_T01"    targetRef="P02_T02"/>
+    <sequenceFlow id="P02_sf03" sourceRef="P02_T02"    targetRef="P02_GW01"/>
+    <sequenceFlow id="P02_sf04" name="Não"             sourceRef="P02_GW01" targetRef="P02_EndErr"/>
+    <sequenceFlow id="P02_sf05" name="Sim"             sourceRef="P02_GW01" targetRef="P02_T03"/>
+    <sequenceFlow id="P02_sf06" sourceRef="P02_T03"    targetRef="P02_GW02"/>
+    <sequenceFlow id="P02_sf07" name="Sim"             sourceRef="P02_GW02" targetRef="P02_T04"/>
+    <sequenceFlow id="P02_sf08" name="Não"             sourceRef="P02_GW02" targetRef="P02_T05"/>
+    <sequenceFlow id="P02_sf09" sourceRef="P02_T04"    targetRef="P02_End1"/>
+    <sequenceFlow id="P02_sf10" sourceRef="P02_T05"    targetRef="P02_End2"/>
+  </process>
+
+  <bpmndi:BPMNDiagram id="diagram_P02">
+    <bpmndi:BPMNPlane id="plane_P02" bpmnElement="Proc_02">
+      <bpmndi:BPMNShape id="shape_P02_Start" bpmnElement="P02_Start">
+        <omgdc:Bounds x="102" y="242" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P02_T01" bpmnElement="P02_T01">
+        <omgdc:Bounds x="200" y="220" width="150" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P02_T02" bpmnElement="P02_T02">
+        <omgdc:Bounds x="400" y="220" width="150" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P02_GW01" bpmnElement="P02_GW01" isMarkerVisible="true">
+        <omgdc:Bounds x="605" y="235" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P02_EndErr" bpmnElement="P02_EndErr" isMarkerVisible="true">
+        <omgdc:Bounds x="612" y="102" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P02_T03" bpmnElement="P02_T03">
+        <omgdc:Bounds x="710" y="220" width="150" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P02_GW02" bpmnElement="P02_GW02" isMarkerVisible="true">
+        <omgdc:Bounds x="915" y="235" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P02_T04" bpmnElement="P02_T04">
+        <omgdc:Bounds x="1020" y="100" width="160" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P02_T05" bpmnElement="P02_T05">
+        <omgdc:Bounds x="1020" y="340" width="160" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P02_End1" bpmnElement="P02_End1">
+        <omgdc:Bounds x="1242" y="122" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P02_End2" bpmnElement="P02_End2">
+        <omgdc:Bounds x="1242" y="362" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNEdge id="edge_P02_sf01" bpmnElement="P02_sf01">
+        <omgdi:waypoint x="138" y="260"/>
+        <omgdi:waypoint x="200" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P02_sf02" bpmnElement="P02_sf02">
+        <omgdi:waypoint x="350" y="260"/>
+        <omgdi:waypoint x="400" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P02_sf03" bpmnElement="P02_sf03">
+        <omgdi:waypoint x="550" y="260"/>
+        <omgdi:waypoint x="605" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P02_sf04" bpmnElement="P02_sf04">
+        <omgdi:waypoint x="630" y="235"/>
+        <omgdi:waypoint x="630" y="138"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P02_sf05" bpmnElement="P02_sf05">
+        <omgdi:waypoint x="655" y="260"/>
+        <omgdi:waypoint x="710" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P02_sf06" bpmnElement="P02_sf06">
+        <omgdi:waypoint x="860" y="260"/>
+        <omgdi:waypoint x="915" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P02_sf07" bpmnElement="P02_sf07">
+        <omgdi:waypoint x="940" y="235"/>
+        <omgdi:waypoint x="940" y="140"/>
+        <omgdi:waypoint x="1020" y="140"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P02_sf08" bpmnElement="P02_sf08">
+        <omgdi:waypoint x="940" y="285"/>
+        <omgdi:waypoint x="940" y="380"/>
+        <omgdi:waypoint x="1020" y="380"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P02_sf09" bpmnElement="P02_sf09">
+        <omgdi:waypoint x="1180" y="140"/>
+        <omgdi:waypoint x="1242" y="140"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P02_sf10" bpmnElement="P02_sf10">
+        <omgdi:waypoint x="1180" y="380"/>
+        <omgdi:waypoint x="1242" y="380"/>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</definitions>

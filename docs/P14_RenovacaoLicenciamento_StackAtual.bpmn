@@ -1,0 +1,969 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions
+  xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+  xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+  id="Definitions_P14"
+  targetNamespace="http://bpmn.io/schema/bpmn"
+  exporter="Camunda Modeler"
+  exporterVersion="5.x">
+
+  <bpmn:error id="Error_406" name="HTTP 406 — Nao Elegivel" errorCode="406"/>
+
+  <bpmn:collaboration id="Collab_P14">
+    <bpmn:participant id="Pool_P14" name="P14 — Renovacao de Licenciamento (APPCI)" processRef="Process_P14"/>
+  </bpmn:collaboration>
+
+  <bpmn:process id="Process_P14" isExecutable="true">
+
+    <bpmn:laneSet id="LaneSet_P14">
+
+      <bpmn:lane id="Lane_Cidadao" name="Cidadao / RT Renovacao / RU / Proprietario">
+        <bpmn:flowNodeRef>Start_AcessaRenovacao</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>End_NaoElegivel</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>UT_LerAnexoD</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>UT_ConfirmarRenovacao</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>GW_Confirma</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>End_RecusaVigente</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>UT_SolicitarIsencao</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>UT_CienciaCIV</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>UT_PagarBoleto</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>UT_CienciaAPPCI</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>End_AlvaraVigente</bpmn:flowNodeRef>
+      </bpmn:lane>
+
+      <bpmn:lane id="Lane_Sistema" name="Sistema SOL (Backend Java EE / EJB / WildFly)">
+        <bpmn:flowNodeRef>ST_ValidarElegibilidade</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>GW_Elegivel</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>ST_IniciarRenovacao</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>ST_DeterminarEstadoRecusa</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>GW_AlvaraExpirado</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>End_RecusaVencido</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>GW_CIVPendente</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>ST_RegistrarCIV</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>ST_RetornarAceite</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>ST_GerarBoleto</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>ST_ConfirmarPagamentoCNAB</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>ST_EmitirAPPCI</bpmn:flowNodeRef>
+      </bpmn:lane>
+
+      <bpmn:lane id="Lane_Admin" name="Admin CBMRS / Inspetor">
+        <bpmn:flowNodeRef>UT_AnalisarIsencao</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>GW_IsencaoDeferida</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>GW_JoinDistrib</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>UT_DistribuirVistoria</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>UT_RealizarVistoria</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>UT_HomologarVistoria</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>GW_VistoriaAprovada</bpmn:flowNodeRef>
+      </bpmn:lane>
+
+    </bpmn:laneSet>
+
+    <!-- ═══════════════════════════════════════════════
+         FASE 1 — INICIACAO DA RENOVACAO
+         ═══════════════════════════════════════════════ -->
+
+    <bpmn:startEvent id="Start_AcessaRenovacao" name="Cidadao acessa renovacao no portal SOL">
+      <bpmn:documentation>Gatilho: cidadao/RT acessa "Minhas Renovacoes" no portal SOL.
+Situacoes elegiveis: ALVARA_VIGENTE ou ALVARA_VENCIDO (RN-141, RN-155).
+SituacaoLicenciamento.retornaSituacoesRenovacao() = Arrays.asList(ALVARA_VIGENTE, ALVARA_VENCIDO).
+Endpoint listagem: GET /licenciamentos/minha-solicitacoes-renovacao
+Classe: LicenciamentoCidadaoRN.listaMinhaSolicitacoesRenovacao(pedido) [flag ped.setRenovacao(true)].
+Gatilhos possiveis: automatico via notificacoes P13-B (90/59/29 dias), manual com alvara vigente, manual com alvara vencido (P13-A transitou para ALVARA_VENCIDO).</bpmn:documentation>
+      <bpmn:outgoing>SF_StartToValidar</bpmn:outgoing>
+    </bpmn:startEvent>
+
+    <bpmn:serviceTask id="ST_ValidarElegibilidade" name="Validar elegibilidade e permissoes (RN-141, RN-142, RN-143)" camunda:class="com.procergs.solcbm.licenciamentorenovacao.LicenciamentoRenovacaoRNVal">
+      <bpmn:documentation>Executa tres validacoes obrigatorias:
+1. validarSituacaoParaEdicao(situacao) — licenciamento deve estar em ALVARA_VIGENTE, ALVARA_VENCIDO, AGUARDANDO_ACEITE_RENOVACAO ou CIV. Qualquer outra situacao: HTTP 406 + licenciamento.status.editar (RN-141).
+2. validarResponsaveisTecnicosRenovacaoAppci(rus, rts, prop, cpf) — CPF do usuario autenticado deve ser RT RENOVACAO_APPCI, RU, Proprietario PF ou Procurador de Proprietario PJ. HTTP 406 + licenciameto.rt.renovacao.sem.permissao (RN-143).
+3. validarResponsaveisTecnicos(rts, cpf) — lista de RTs nao pode estar vazia; deve conter ao menos um RENOVACAO_APPCI cujo CPF corresponda ao usuario logado. HTTP 406 + licenciameto.rts.renovacao.invalido (lista vazia) ou usuario.sem.permissao.rt.renovacao (RN-142).
+Endpoint: GET /licenciamentos/{idLic}/verificaAlvara
+Stack moderna: Bean Validation (@Valid), SecurityContext.getUserPrincipal(), substituicao de HTTP 406 por 422 Unprocessable Entity.</bpmn:documentation>
+      <bpmn:incoming>SF_StartToValidar</bpmn:incoming>
+      <bpmn:outgoing>SF_ValidarToGW</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:exclusiveGateway id="GW_Elegivel" name="Elegivel para renovacao?">
+      <bpmn:documentation>Resultado das tres validacoes de elegibilidade.
+- Sim (todas passaram): avanca para iniciar renovacao.
+- Nao (qualquer validacao falhou): encerra com erro HTTP 406.
+Default flow: SF_ElegSim (elegivel — caminho feliz).</bpmn:documentation>
+      <bpmn:incoming>SF_ValidarToGW</bpmn:incoming>
+      <bpmn:outgoing>SF_ElegNao</bpmn:outgoing>
+      <bpmn:outgoing>SF_ElegSim</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:endEvent id="End_NaoElegivel" name="Encerrado — nao elegivel (HTTP 406)">
+      <bpmn:documentation>Licenciamento nao esta em situacao valida para renovacao, ou usuario nao possui permissao.
+Mensagens possiveis: licenciamento.status.editar / licenciameto.rts.renovacao.invalido / usuario.sem.permissao.rt.renovacao (RN-141, RN-142, RN-143).
+Stack moderna: excecao mapeada para ResponseEntityExceptionHandler com ProblemDetail RFC 9457.</bpmn:documentation>
+      <bpmn:incoming>SF_ElegNao</bpmn:incoming>
+      <bpmn:errorEventDefinition id="EED_NaoElegivel" errorRef="Error_406"/>
+    </bpmn:endEvent>
+
+    <bpmn:serviceTask id="ST_IniciarRenovacao" name="Iniciar renovacao — transicao de estado para AGUARDANDO_ACEITE_RENOVACAO" camunda:class="com.procergs.solcbm.licenciamentorenovacao.LicenciamentoRenovacaoCidadaoRN">
+      <bpmn:documentation>Executa a transicao de estado do licenciamento para AGUARDANDO_ACEITE_RENOVACAO:
+- ALVARA_VIGENTE → AGUARDANDO_ACEITE_RENOVACAO via TrocaEstadoLicenciamentoAlvaraVigenteParaAguardandoAceiteVistoriaRenovacaoRN (Enum: ALVARA_VIGENTE_PARA_AGUARDANDO_ACEITE_VISTORIA_RENOVACAO).
+- ALVARA_VENCIDO → AGUARDANDO_ACEITE_RENOVACAO via TrocaEstadoLicenciamentoAlvaraVencidoParaAguardandoAceiteVistoriaRenovacaoRN (Enum: ALVARA_VENCIDO_PARA_AGUARDANDO_ACEITE_VISTORIA_RENOVACAO).
+Ambas as classes herdam TrocaEstadoLicenciamentoBaseRN.atualizaSituacaoLicenciamento() que persiste em TB_LICENCIAMENTO e registra em TB_LICENCIAMENTO_HIST via LicenciamentoSituacaoHistRN.inclui().
+Notificacao de inclusao de envolvido em renovacao: LicenciamentoCidadaoNotificacaoRN com template notificacao.email.template.renovacao.incluido (RN-160).
+Endpoint: PUT /licenciamentos/{idLic}/iniciarRenovacao
+Seguranca: @SegurancaEnvolvidoInterceptor valida CPF do token OAuth2/OIDC SOE PROCERGS (RN-159).</bpmn:documentation>
+      <bpmn:incoming>SF_ElegSim</bpmn:incoming>
+      <bpmn:outgoing>SF_IniciarToAnexoD</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- ═══════════════════════════════════════════════
+         FASE 2 — ACEITE OU REJEICAO PELO CIDADAO (ANEXO D)
+         ═══════════════════════════════════════════════ -->
+
+    <bpmn:userTask id="UT_LerAnexoD" name="Ler Anexo D de Renovacao no portal" camunda:assignee="${cpfCidadao}" camunda:formKey="renovacao/anexo-d">
+      <bpmn:documentation>Cidadao/RT le o Anexo D de Renovacao no portal SOL.
+Situacao do licenciamento: AGUARDANDO_ACEITE_RENOVACAO.
+Endpoint: GET /licenciamentos/termo-anexo-d-renovacao/{idLic}
+Classe: TermoLicenciamentoRN.retornoCienciaETermoRenovacao(Long idLic)
+Retorna RetornoCienciaTermoAnexoDDTO com: texto do Anexo D, status de aceite atual, historico de aceites anteriores, AppciRenovacaoDTO (numeroPedido, validade, inicioVigencia, fimVigencia).
+Este task e o ponto de re-entrada apos loop de CIV (RN-153): o cidadao volta aqui apos TrocaEstado CIV → AGUARDANDO_ACEITE_RENOVACAO e pode confirmar novamente (RN-144).</bpmn:documentation>
+      <bpmn:incoming>SF_IniciarToAnexoD</bpmn:incoming>
+      <bpmn:incoming>SF_CIVRetornaAceite</bpmn:incoming>
+      <bpmn:outgoing>SF_AnexoDToConfirmar</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="UT_ConfirmarRenovacao" name="Aceitar Anexo D e confirmar ou recusar renovacao" camunda:assignee="${cpfCidadao}" camunda:formKey="renovacao/confirmar">
+      <bpmn:documentation>Cidadao registra aceite do Anexo D via PUT /licenciamentos/termo-anexo-d-renovacao/{idLic}.
+Metodo: TermoLicenciamentoRN.confirmaInclusaoAnexoDRenovacao(Long idLic).
+Marco registrado: ACEITE_ANEXOD_RENOVACAO (RN-144).
+Aceite pode ser retirado enquanto em AGUARDANDO_ACEITE_RENOVACAO via DELETE /licenciamentos/termo-anexo-d-renovacao/{idLic} (removeAceiteAnexoDRenovacao com removerAceite=true).
+Apos aceitar o Anexo D, cidadao decide: CONFIRMAR a renovacao ou RECUSAR/FECHAR.
+Tabela TB_LICENCIAMENTO: campo IND_SOLICITACAO_ISENCAO_RENOVACAO independente de IND_SOLICITACAO_ISENCAO (RN-157).</bpmn:documentation>
+      <bpmn:incoming>SF_AnexoDToConfirmar</bpmn:incoming>
+      <bpmn:outgoing>SF_ConfirmarToGW</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:exclusiveGateway id="GW_Confirma" name="Cidadao confirma ou recusa renovacao?">
+      <bpmn:documentation>Decisao do cidadao apos aceitar o Anexo D:
+- CONFIRMAR: avanca para verificacao de CIV pendente (RN-145).
+- RECUSAR/FECHAR: retorna ao estado anterior via LicenciamentoRenovacaoCidadaoRN.getTrocaEstadoAnteriorRenovacao() (RN-145).
+Default flow: SF_Confirma.</bpmn:documentation>
+      <bpmn:incoming>SF_ConfirmarToGW</bpmn:incoming>
+      <bpmn:outgoing>SF_Recusa</bpmn:outgoing>
+      <bpmn:outgoing>SF_Confirma</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <!-- RECUSA path -->
+    <bpmn:serviceTask id="ST_DeterminarEstadoRecusa" name="Determinar estado de retorno apos recusa (RN-145)" camunda:class="com.procergs.solcbm.licenciamentorenovacao.LicenciamentoRenovacaoCidadaoRN">
+      <bpmn:documentation>Executa LicenciamentoRenovacaoCidadaoRN.getTrocaEstadoAnteriorRenovacao(idLicenciamento):
+1. Consulta: vistoriaRN.consultaUltimaVistoriaEncerrada(idLicenciamento).
+2. Consulta: appciRN.consultaDataValidadeAlvara(idLicenciamento).
+Logica de decisao (RN-145):
+- Se ultimaVistoria != null &amp;&amp; ultimaVistoria.status == REPROVADO → TrocaEstado AGUARDANDO_ACEITE_RENOVACAO_PARA_CIV → CIV.
+  (Este caso e raro na recusa; mais comum na confirmacao — ver GW_CIVPendente)
+- Else se Calendar.getInstance().after(validadeAlvara) → TrocaEstado AGUARDANDO_ACEITE_RENOVACAO_PARA_ALVARA_VENCIDO → ALVARA_VENCIDO.
+- Else → TrocaEstado AGUARDANDO_ACEITE_RENOVACAO_PARA_ALVARA_VIGENTE → ALVARA_VIGENTE.
+Todas as classes TrocaEstado herdam atualizaSituacaoLicenciamento() via TrocaEstadoLicenciamentoBaseRN.</bpmn:documentation>
+      <bpmn:incoming>SF_Recusa</bpmn:incoming>
+      <bpmn:outgoing>SF_RecusaToGWExp</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:exclusiveGateway id="GW_AlvaraExpirado" name="Alvara ja expirado?">
+      <bpmn:documentation>Verifica se Calendar.getInstance().after(validadeAlvara) (RN-145):
+- Sim (expirado): → End_RecusaVencido (ALVARA_VENCIDO permanece).
+- Nao (ainda vigente): → End_RecusaVigente (ALVARA_VIGENTE permanece).
+Default flow: SF_ExpNao.</bpmn:documentation>
+      <bpmn:incoming>SF_RecusaToGWExp</bpmn:incoming>
+      <bpmn:outgoing>SF_ExpSim</bpmn:outgoing>
+      <bpmn:outgoing>SF_ExpNao</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:endEvent id="End_RecusaVencido" name="Recusa — alvara permanece VENCIDO">
+      <bpmn:documentation>Cidadao recusou a renovacao; alvara ja estava expirado.
+Situacao final: ALVARA_VENCIDO (sem alteracao relevante).
+TrocaEstado: AGUARDANDO_ACEITE_RENOVACAO_PARA_ALVARA_VENCIDO (RN-145).
+Classe: TrocaEstadoLicenciamentoAguardandoAceiteRenovacaoParaAlvaraVencidoRN.</bpmn:documentation>
+      <bpmn:incoming>SF_ExpSim</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <bpmn:endEvent id="End_RecusaVigente" name="Recusa — alvara permanece VIGENTE">
+      <bpmn:documentation>Cidadao recusou a renovacao; alvara ainda esta valido.
+Situacao final: ALVARA_VIGENTE (sem alteracao).
+TrocaEstado: AGUARDANDO_ACEITE_RENOVACAO_PARA_ALVARA_VIGENTE (RN-145).
+Classe: TrocaEstadoLicenciamentoAguardandoAceiteRenovacaoParaAlvaraVigenteRN.</bpmn:documentation>
+      <bpmn:incoming>SF_ExpNao</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <!-- CONFIRMA path -->
+    <bpmn:exclusiveGateway id="GW_CIVPendente" name="Ultima vistoria encerrada foi REPROVADA (CIV pendente)?">
+      <bpmn:documentation>Verificacao: vistoriaRN.consultaUltimaVistoriaEncerrada(idLicenciamento).getStatus() == REPROVADO (RN-145).
+Este gateway diferencia dois cenarios ao CONFIRMAR a renovacao:
+- Sim (CIV pendente da vistoria anterior reprovada): cidadao e redirecionado para tomar ciencia da CIV antes de prosseguir. TrocaEstado: AGUARDANDO_ACEITE_RENOVACAO_PARA_CIV → situacao CIV.
+- Nao (sem CIV pendente): avanca para fase de pagamento ou isencao de taxa.
+Classe: LicenciamentoRenovacaoCidadaoRN.getTrocaEstadoAnteriorRenovacao() (mesmo metodo que decide o estado na recusa).
+Default flow: SF_CIVNao.</bpmn:documentation>
+      <bpmn:incoming>SF_Confirma</bpmn:incoming>
+      <bpmn:outgoing>SF_CIVSim</bpmn:outgoing>
+      <bpmn:outgoing>SF_CIVNao</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <!-- CIV loop path -->
+    <bpmn:serviceTask id="ST_RegistrarCIV" name="Registrar CIV de Renovacao e notificar" camunda:class="com.procergs.solcbm.licenciamento.trocaestado.TrocaEstadoLicenciamentoCivParaAguardandoAceiteVistoriaRenovacaoRN">
+      <bpmn:documentation>Executa transicao para estado CIV (a partir de GW_CIVPendente) ou registra CIV apos vistoria reprovada (a partir de GW_VistoriaAprovada):
+ORIGEM 1 — GW_CIVPendente (CIV pendente ao confirmar):
+  TrocaEstado: AGUARDANDO_ACEITE_RENOVACAO_PARA_CIV.
+  Classe: TrocaEstadoLicAguardandoAceiteRenovacaoParaCivRN.
+ORIGEM 2 — GW_VistoriaAprovada (vistoria reprovada):
+  Marco registrado: VISTORIA_RENOVACAO_CIV.
+  Situacao → CIV.
+  Notificacao e-mail: LicenciamentoCidadaoNotificacaoRN (ContextoNotificacaoEnum.RENOVACAO) (RN-153, RN-160).
+TB_LICENCIAMENTO_MARCO: DTH_MARCO=SYSTIMESTAMP, ID_LICENCIAMENTO, DSC_TIPO_MARCO, DSC_TIPO_RESPONSAVEL_MARCO (RN-158).</bpmn:documentation>
+      <bpmn:incoming>SF_CIVSim</bpmn:incoming>
+      <bpmn:incoming>SF_VistoriaNao</bpmn:incoming>
+      <bpmn:outgoing>SF_CIVRegistrarToUT</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:userTask id="UT_CienciaCIV" name="Tomar ciencia da CIV de Renovacao e corrigir pendencias" camunda:assignee="${cpfCidadao}" camunda:formKey="renovacao/ciencia-civ">
+      <bpmn:documentation>Cidadao/RT toma ciencia da CIV de Renovacao no portal SOL.
+Marco: CIENCIA_CIV_RENOVACAO (TipoResponsavelMarco.CIDADAO) (RN-153).
+Situacao do licenciamento durante este task: CIV.
+Endpoint: PUT /licenciamentos/{idLic}/ciencia (TipoLicenciamentoCiencia.CIV_RENOV).
+Apos corrigir as pendencias apontadas pela CIV, o cidadao pode retomar a renovacao acionando a transicao CIV → AGUARDANDO_ACEITE_RENOVACAO.
+Listagem: GET /licenciamentos/minha-solicitacoes-renovacao retorna licenciamentos em CIV via SituacaoLicenciamento.retornaSituacoesMinhasRenovacoes() (RN-154).</bpmn:documentation>
+      <bpmn:incoming>SF_CIVRegistrarToUT</bpmn:incoming>
+      <bpmn:outgoing>SF_CienciaCIVToRetorno</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:serviceTask id="ST_RetornarAceite" name="Retomar renovacao: CIV → AGUARDANDO_ACEITE_RENOVACAO" camunda:class="com.procergs.solcbm.licenciamento.trocaestado.TrocaEstadoLicenciamentoCivParaAguardandoAceiteVistoriaRenovacaoRN">
+      <bpmn:documentation>Apos cidadao corrigir pendencias da CIV, executa retomada da renovacao.
+TrocaEstado: CIV_PARA_AGUARDANDO_ACEITE_VISTORIA_RENOVACAO.
+Classe: TrocaEstadoLicenciamentoCivParaAguardandoAceiteVistoriaRenovacaoRN.
+Nova situacao: AGUARDANDO_ACEITE_RENOVACAO.
+Marco registrado com TipoResponsavelMarco.CIDADAO (RN-153).
+Notificacao e-mail: LicenciamentoCidadaoNotificacaoRN (ContextoNotificacaoEnum.RENOVACAO) (RN-160).
+Fluxo retorna ao inicio da Fase 2 (UT_LerAnexoD) — loop de correcao de CIV.</bpmn:documentation>
+      <bpmn:incoming>SF_CienciaCIVToRetorno</bpmn:incoming>
+      <bpmn:outgoing>SF_CIVRetornaAceite</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- ═══════════════════════════════════════════════
+         FASE 3 — PAGAMENTO OU ISENCAO DA TAXA DE VISTORIA
+         ═══════════════════════════════════════════════ -->
+
+    <bpmn:userTask id="UT_SolicitarIsencao" name="Solicitar isencao de taxa de vistoria de renovacao (opcional)" camunda:assignee="${cpfCidadao}" camunda:formKey="renovacao/isencao">
+      <bpmn:documentation>Cidadao pode solicitar isencao da taxa de vistoria de renovacao (opcional).
+Endpoint: PUT /licenciamentos/{idLic}/solicitacaoIsencao
+Body: {"solicitacao": boolean, "solicitacaoRenovacao": true}
+Classe: LicenciamentoCidadaoRN.atualizaSolicitacaoIsencao(Long idLic, Boolean solicitacao, Boolean solicitacaoRenovacao).
+Campos em TB_LICENCIAMENTO: IND_SOLICITACAO_ISENCAO (licenciamento original) e IND_SOLICITACAO_ISENCAO_RENOVACAO (renovacao) — persistidos separadamente (RN-147, RN-157).
+Marco: SOLICITACAO_ISENCAO_RENOVACAO (RN-147).
+Se cidadao nao solicitar isencao, UT_AnalisarIsencao o Admin simplesmente indefere e o fluxo segue para pagamento.
+Situacao do licenciamento: AGUARDANDO_PAGAMENTO_RENOVACAO.</bpmn:documentation>
+      <bpmn:incoming>SF_CIVNao</bpmn:incoming>
+      <bpmn:outgoing>SF_IsencaoToAdmin</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="UT_AnalisarIsencao" name="Analisar solicitacao de isencao de taxa de renovacao" camunda:assignee="${cpfAdmin}" camunda:formKey="admin/isencao-renovacao">
+      <bpmn:documentation>Admin CBMRS analisa solicitacao de isencao da taxa de vistoria de renovacao (RN-148):
+- DEFERIDA: Marco ANALISE_ISENCAO_RENOV_APROVADO → transicao para AGUARDANDO_DISTRIBUICAO_RENOV.
+  Classe: TrocaEstadoLicAguardandoAceiteRenovacaoParaAguardandoDistribuicaoRenovacaoRN.
+  Enum: AGUARDANDO_ACEITE_RENOVACAO_PARA_AGUARDANDO_DISTRIBUICAO.
+- INDEFERIDA: Marco ANALISE_ISENCAO_RENOV_REPROVADO → permanece em AGUARDANDO_PAGAMENTO_RENOVACAO (deve pagar boleto).
+Se o cidadao nao solicitou isencao, admin simplesmente registra indeferimento e segue para geracao de boleto.
+Tabela: TB_LICENCIAMENTO_MARCO com DTH_MARCO=SYSTIMESTAMP (RN-158).</bpmn:documentation>
+      <bpmn:incoming>SF_IsencaoToAdmin</bpmn:incoming>
+      <bpmn:outgoing>SF_AdminToGWIsencao</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:exclusiveGateway id="GW_IsencaoDeferida" name="Isencao de taxa deferida?">
+      <bpmn:documentation>Resultado da analise de isencao pelo Admin CBMRS:
+- Sim (deferida): pula fase de pagamento, avanca diretamente para GW_JoinDistrib (AGUARDANDO_DISTRIBUICAO_RENOV) (RN-148).
+- Nao (indeferida ou nao solicitada): cidadao deve pagar boleto → ST_GerarBoleto.
+Default flow: SF_IsencaoNao.</bpmn:documentation>
+      <bpmn:incoming>SF_AdminToGWIsencao</bpmn:incoming>
+      <bpmn:outgoing>SF_IsencaoSim</bpmn:outgoing>
+      <bpmn:outgoing>SF_IsencaoNao</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:serviceTask id="ST_GerarBoleto" name="Gerar boleto Banrisul — taxa de vistoria de renovacao" camunda:class="com.procergs.solcbm.boleto.PagamentoBoletoRN">
+      <bpmn:documentation>Sistema gera boleto bancario Banrisul para taxa de vistoria de renovacao.
+Marco: BOLETO_VISTORIA_RENOVACAO_PPCI (RN-149).
+Responsaveis elegiveis para pagamento (RN-146) — diferente do pagamento padrao:
+  a) RTs com TipoResponsabilidadeTecnica.RENOVACAO_APPCI exclusivamente (nao outros tipos de RT).
+  b) Todos os RUs vinculados.
+  c) Todos os Proprietarios: PF (CPF direto) e PJ (CNPJ + CPF do Procurador).
+Deduplicacao por cpfCnpj via HashMap (chave unica por CPF/CNPJ).
+Endpoint listagem responsaveis: GET /licenciamentos/{idLic}/reponsaveis-pagamento-renovacao (typo no endpoint original — sem segundo 's' em 'responsaveis').
+Classe: LicenciamentoResponsavelPagamentoRN.listaResponsaveisParaPagamentoRenovacao() (RN-146).
+Stack moderna: REST client Banrisul substituido por integracao via Spring WebClient + OpenFeign.</bpmn:documentation>
+      <bpmn:incoming>SF_IsencaoNao</bpmn:incoming>
+      <bpmn:outgoing>SF_BoletoToUT</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:userTask id="UT_PagarBoleto" name="Efetuar pagamento do boleto Banrisul" camunda:assignee="${cpfResponsavelPagamento}" camunda:formKey="renovacao/pagamento">
+      <bpmn:documentation>Cidadao/RT Renovacao/RU/Proprietario efetua pagamento do boleto bancario Banrisul.
+Situacao do licenciamento: AGUARDANDO_PAGAMENTO_RENOVACAO.
+Responsaveis listados por: GET /licenciamentos/{idLic}/reponsaveis-pagamento-renovacao.
+DTO de retorno: ResponsavelPagamentoDTO (cpfCnpj, nome, tipo: RT/RU/PROPRIETARIO_PF/PROPRIETARIO_PJ, cpfProcurador).
+Pagamento e confirmado EXTERNAMENTE pelo banco Banrisul e processado pelo job P13-E via arquivo CNAB 240.</bpmn:documentation>
+      <bpmn:incoming>SF_BoletoToUT</bpmn:incoming>
+      <bpmn:outgoing>SF_PagarToConfirmar</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:serviceTask id="ST_ConfirmarPagamentoCNAB" name="Confirmar pagamento via arquivo CNAB 240 Banrisul (Job P13-E)" camunda:class="com.procergs.solcbm.ejbtimer.EJBTimerService">
+      <bpmn:documentation>Job P13-E (EJBTimerService.verificaPagamentoBanrisul()) processa arquivo CNAB 240 Banrisul.
+Schedule: @Schedule(hour="0,12", minute="0", second="0") — a cada 12 horas (modelado em Pool 3 do P13).
+Apos confirmacao de pagamento:
+  Marco: LIQUIDACAO_VISTORIA_RENOVACAO (RN-149).
+  Transicao: AGUARDANDO_PAGAMENTO_RENOVACAO → AGUARDANDO_DISTRIBUICAO_RENOV.
+  Classe: TrocaEstadoLicenciamentoAguardandoPagamentoVistoriaRenovParaAguardandoDistribuicaoVistoriaRenovRN.
+  Enum: AGUARDANDO_PAGAMENTO_VISTORIA_RENOVACAO_PARA_AGUARDANDO_DISTRIBUICAO_VISTORIA_RENOVACAO.
+SQL: SELECT * FROM TB_ARQUIVO_CNAB WHERE DS_TIPO_ARQUIVO = 'RETORNO' AND DS_SITUACAO = 'PENDENTE'.
+Stack moderna: @Scheduled (Spring) + CompletableFuture para processamento paralelo de arquivos CNAB.</bpmn:documentation>
+      <bpmn:incoming>SF_PagarToConfirmar</bpmn:incoming>
+      <bpmn:outgoing>SF_ConfirmarToDistrib</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:exclusiveGateway id="GW_JoinDistrib" name="">
+      <bpmn:documentation>Gateway de juncao (XOR merge) entre dois caminhos que levam a AGUARDANDO_DISTRIBUICAO_RENOV:
+1. Isencao deferida (SF_IsencaoSim): pula pagamento, chega diretamente aqui.
+2. Pagamento confirmado via CNAB 240 (SF_ConfirmarToDistrib): confirmacao do boleto Banrisul.
+Ambos os caminhos resultam em situacao AGUARDANDO_DISTRIBUICAO_RENOV.
+Avanca para distribuicao da vistoria pelo Admin CBMRS.</bpmn:documentation>
+      <bpmn:incoming>SF_IsencaoSim</bpmn:incoming>
+      <bpmn:incoming>SF_ConfirmarToDistrib</bpmn:incoming>
+      <bpmn:outgoing>SF_JoinToDistribuir</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <!-- ═══════════════════════════════════════════════
+         FASE 4 — DISTRIBUICAO DA VISTORIA DE RENOVACAO
+         ═══════════════════════════════════════════════ -->
+
+    <bpmn:userTask id="UT_DistribuirVistoria" name="Distribuir vistoria de renovacao para inspetor" camunda:assignee="${cpfAdmin}" camunda:formKey="admin/distribuir-vistoria-renovacao">
+      <bpmn:documentation>Admin CBMRS distribui a vistoria de renovacao para um inspetor CBMRS.
+Situacao: AGUARDANDO_DISTRIBUICAO_RENOV → EM_VISTORIA_RENOVACAO (RN-150).
+Classe: TrocaEstadoLicenciamentoAguardandoDistribuicaoRenovacaoParaEmVistoriaRenovacaoRN.
+Qualifier: AGUARDANDO_DISTRIBUICAO_RENOVACAO_PARA_EM_VISTORIA_RENOVACAO.
+Metodo trocaEstado():
+  1. atualizaSituacaoLicenciamento(idLicenciamento) → UPDATE TB_LICENCIAMENTO SET DS_SITUACAO = 'EM_VISTORIA_RENOVACAO'.
+  2. licenciamentoMarcoAdmRN.inclui(TipoMarco.DISTRIBUICAO_VISTORIA_RENOV, licenciamentoED) com TipoResponsavelMarco.BOMBEIROS.
+Notificacao e-mail para todos os envolvidos (RN-160).
+Stack moderna: Spring @Transactional, SecurityContextHolder para identificar o admin.</bpmn:documentation>
+      <bpmn:incoming>SF_JoinToDistribuir</bpmn:incoming>
+      <bpmn:outgoing>SF_DistribuirToVistoria</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <!-- ═══════════════════════════════════════════════
+         FASE 5 — EXECUCAO DA VISTORIA DE RENOVACAO
+         ═══════════════════════════════════════════════ -->
+
+    <bpmn:userTask id="UT_RealizarVistoria" name="Realizar vistoria presencial de renovacao (TipoVistoria.VISTORIA_RENOVACAO)" camunda:assignee="${cpfInspetor}" camunda:formKey="admin/vistoria-renovacao">
+      <bpmn:documentation>Inspetor CBMRS realiza a vistoria presencial de renovacao.
+Tipo de vistoria: TipoVistoria.VISTORIA_RENOVACAO (ordinal 3) — distinto de TipoVistoria.PPCI (0) e TipoVistoria.PSPCIM (1) (RN-151).
+Situacao do licenciamento durante este task: EM_VISTORIA_RENOVACAO.
+Resultado registrado: APROVADO ou REPROVADO (gera CIV de renovacao).
+Marcos possiveis: VISTORIA_RENOVACAO (aprovado) ou VISTORIA_RENOVACAO_CIV (reprovado).
+Qualquer query ou filtro de vistoria deve usar TipoVistoria.VISTORIA_RENOVACAO para nao retornar vistorias de outros processos.</bpmn:documentation>
+      <bpmn:incoming>SF_DistribuirToVistoria</bpmn:incoming>
+      <bpmn:outgoing>SF_VistoriaToHomolog</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="UT_HomologarVistoria" name="Homologar resultado da vistoria de renovacao" camunda:assignee="${cpfAdmin}" camunda:formKey="admin/homologar-vistoria-renovacao">
+      <bpmn:documentation>Admin CBMRS homologa o resultado da vistoria de renovacao registrado pelo inspetor.
+Classe de controle de fluxo interno: TrocaEstadoVistoriaEmAprovacaoRenovacaoParaEmVistoriaRN.
+Qualifier: TrocaEstadoVistoriaEnum.EM_APROVACAO_RENOVACAO_PARA_EM_VISTORIA.
+Esta classe e usada no caso de INDEFERIMENTO da homologacao (vistoria retorna a EM_VISTORIA para reavaliacao):
+  Marco: HOMOLOG_VISTORIA_RENOV_INDEFERIDO (TipoResponsavelMarco.BOMBEIROS).
+  StatusVistoria → EM_VISTORIA (para reavaliacao pelo inspetor).
+No caso de homologacao deferida:
+  Marco: HOMOLOG_VISTORIA_RENOV_DEFERIDO (TipoResponsavelMarco.BOMBEIROS).
+  Resultado (APROVADO ou REPROVADO) e encaminhado ao gateway GW_VistoriaAprovada.</bpmn:documentation>
+      <bpmn:incoming>SF_VistoriaToHomolog</bpmn:incoming>
+      <bpmn:outgoing>SF_HomologToGW</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:exclusiveGateway id="GW_VistoriaAprovada" name="Vistoria de renovacao aprovada?">
+      <bpmn:documentation>Resultado da homologacao da vistoria pelo Admin CBMRS:
+- Aprovada: emissao do novo APPCI → ST_EmitirAPPCI (RN-152).
+  Marco: HOMOLOG_VISTORIA_RENOV_DEFERIDO.
+  Situacao avanca para emissao do novo APPCI.
+- Reprovada (CIV): situacao → CIV (RN-153).
+  Marco: VISTORIA_RENOVACAO_CIV.
+  Fluxo retorna a ST_RegistrarCIV (loop-back para Fase 2 via CIV).
+Default flow: SF_VistoriaSim.</bpmn:documentation>
+      <bpmn:incoming>SF_HomologToGW</bpmn:incoming>
+      <bpmn:outgoing>SF_VistoriaSim</bpmn:outgoing>
+      <bpmn:outgoing>SF_VistoriaNao</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <!-- ═══════════════════════════════════════════════
+         FASE 6 — CONCLUSAO: CIENCIA DO NOVO APPCI
+         ═══════════════════════════════════════════════ -->
+
+    <bpmn:serviceTask id="ST_EmitirAPPCI" name="Emitir novo APPCI de renovacao" camunda:class="com.procergs.solcbm.licenciamentociencia.appci.AppciCienciaCidadaoRenovacaoRN">
+      <bpmn:documentation>Sistema emite o novo APPCI de renovacao (Alvara de Prevencao e Protecao Contra Incendio).
+Classe: AppciCienciaCidadaoRenovacaoRN.
+Qualifier: @LicenciamentoCienciaQualifier(tipoLicenciamentoCiencia = TipoLicenciamentoCiencia.APPCI_RENOV).
+Operacoes:
+  1. alteraLicenciamentoCiencia(): appciRN.altera((AppciED) licenciamentoCiencia) → entityManager.merge() persiste APPCI renovado.
+  2. Marco: LIBERACAO_RENOV_APPCI — nova data de validade do APPCI registrada em TB_LICENCIAMENTO_MARCO.
+isLicenciamentoCienciaAprovado() = true SEMPRE — a ciencia de APPCI de renovacao e sempre aprovada (RN-152).
+getProximoStatusLicenciamentoCienciaReprovado() = ALVARA_VIGENTE (inaplicavel na pratica, mas definido por contrato da interface).
+Notificacao e-mail enviada para todos os envolvidos (RN-160).</bpmn:documentation>
+      <bpmn:incoming>SF_VistoriaSim</bpmn:incoming>
+      <bpmn:outgoing>SF_EmitirToCiencia</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:userTask id="UT_CienciaAPPCI" name="Tomar ciencia do novo APPCI de renovacao" camunda:assignee="${cpfCidadao}" camunda:formKey="renovacao/ciencia-appci">
+      <bpmn:documentation>Cidadao/RT toma ciencia do novo APPCI de renovacao emitido pelo sistema.
+Tipo de ciencia: TipoLicenciamentoCiencia.APPCI_RENOV.
+Marco: CIENCIA_APPCI_RENOVACAO (TipoResponsavelMarco.CIDADAO) (RN-152).
+Apos ciencia:
+  situacao → ALVARA_VIGENTE (RN-152).
+  Marco adicional: CIENCIA_APPCI_RENOVACAO registrado com TipoResponsavelMarco.CIDADAO.
+isLicenciamentoCienciaAprovado() = true → sempre resulta em aprovacao.
+Notificacao final de e-mail enviada para todos os envolvidos (RN-160).</bpmn:documentation>
+      <bpmn:incoming>SF_EmitirToCiencia</bpmn:incoming>
+      <bpmn:outgoing>SF_CienciaAPPCIToEnd</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:endEvent id="End_AlvaraVigente" name="Renovacao concluida — novo APPCI emitido (ALVARA_VIGENTE)">
+      <bpmn:documentation>Processo P14 concluido com sucesso.
+Novo APPCI emitido e ciencia tomada pelo cidadao/RT.
+Situacao final do licenciamento: ALVARA_VIGENTE.
+Marco final: CIENCIA_APPCI_RENOVACAO (RN-152).
+Notificacao final de e-mail enviada para todos os envolvidos (ContextoNotificacaoEnum.RENOVACAO) (RN-160).
+Stack atual: WildFly/JBoss + Oracle + Alfresco (nodeRef em ArquivoED para armazenamento do APPCI PDF).
+Stack moderna: Spring Boot 3 + PostgreSQL + MinIO/S3 para armazenamento de documentos.</bpmn:documentation>
+      <bpmn:incoming>SF_CienciaAPPCIToEnd</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <!-- ═══════════════════════════════════════════════
+         SEQUENCE FLOWS
+         ═══════════════════════════════════════════════ -->
+
+    <!-- Fase 1 -->
+    <bpmn:sequenceFlow id="SF_StartToValidar" sourceRef="Start_AcessaRenovacao" targetRef="ST_ValidarElegibilidade"/>
+    <bpmn:sequenceFlow id="SF_ValidarToGW" sourceRef="ST_ValidarElegibilidade" targetRef="GW_Elegivel"/>
+    <bpmn:sequenceFlow id="SF_ElegNao" name="Nao elegivel" sourceRef="GW_Elegivel" targetRef="End_NaoElegivel"/>
+    <bpmn:sequenceFlow id="SF_ElegSim" name="Elegivel" sourceRef="GW_Elegivel" targetRef="ST_IniciarRenovacao"/>
+    <bpmn:sequenceFlow id="SF_IniciarToAnexoD" sourceRef="ST_IniciarRenovacao" targetRef="UT_LerAnexoD"/>
+
+    <!-- Fase 2 -->
+    <bpmn:sequenceFlow id="SF_AnexoDToConfirmar" sourceRef="UT_LerAnexoD" targetRef="UT_ConfirmarRenovacao"/>
+    <bpmn:sequenceFlow id="SF_ConfirmarToGW" sourceRef="UT_ConfirmarRenovacao" targetRef="GW_Confirma"/>
+    <bpmn:sequenceFlow id="SF_Recusa" name="Recusar" sourceRef="GW_Confirma" targetRef="ST_DeterminarEstadoRecusa"/>
+    <bpmn:sequenceFlow id="SF_Confirma" name="Confirmar" sourceRef="GW_Confirma" targetRef="GW_CIVPendente"/>
+    <bpmn:sequenceFlow id="SF_RecusaToGWExp" sourceRef="ST_DeterminarEstadoRecusa" targetRef="GW_AlvaraExpirado"/>
+    <bpmn:sequenceFlow id="SF_ExpSim" name="Expirado" sourceRef="GW_AlvaraExpirado" targetRef="End_RecusaVencido"/>
+    <bpmn:sequenceFlow id="SF_ExpNao" name="Vigente" sourceRef="GW_AlvaraExpirado" targetRef="End_RecusaVigente"/>
+
+    <!-- CIV loop -->
+    <bpmn:sequenceFlow id="SF_CIVSim" name="CIV pendente" sourceRef="GW_CIVPendente" targetRef="ST_RegistrarCIV"/>
+    <bpmn:sequenceFlow id="SF_CIVNao" name="Sem CIV" sourceRef="GW_CIVPendente" targetRef="UT_SolicitarIsencao"/>
+    <bpmn:sequenceFlow id="SF_CIVRegistrarToUT" sourceRef="ST_RegistrarCIV" targetRef="UT_CienciaCIV"/>
+    <bpmn:sequenceFlow id="SF_CienciaCIVToRetorno" sourceRef="UT_CienciaCIV" targetRef="ST_RetornarAceite"/>
+    <bpmn:sequenceFlow id="SF_CIVRetornaAceite" name="Loop: CIV corrigida, retomar renovacao" sourceRef="ST_RetornarAceite" targetRef="UT_LerAnexoD"/>
+
+    <!-- Fase 3 -->
+    <bpmn:sequenceFlow id="SF_IsencaoToAdmin" sourceRef="UT_SolicitarIsencao" targetRef="UT_AnalisarIsencao"/>
+    <bpmn:sequenceFlow id="SF_AdminToGWIsencao" sourceRef="UT_AnalisarIsencao" targetRef="GW_IsencaoDeferida"/>
+    <bpmn:sequenceFlow id="SF_IsencaoSim" name="Deferida" sourceRef="GW_IsencaoDeferida" targetRef="GW_JoinDistrib"/>
+    <bpmn:sequenceFlow id="SF_IsencaoNao" name="Indeferida / nao solicitada" sourceRef="GW_IsencaoDeferida" targetRef="ST_GerarBoleto"/>
+    <bpmn:sequenceFlow id="SF_BoletoToUT" sourceRef="ST_GerarBoleto" targetRef="UT_PagarBoleto"/>
+    <bpmn:sequenceFlow id="SF_PagarToConfirmar" sourceRef="UT_PagarBoleto" targetRef="ST_ConfirmarPagamentoCNAB"/>
+    <bpmn:sequenceFlow id="SF_ConfirmarToDistrib" sourceRef="ST_ConfirmarPagamentoCNAB" targetRef="GW_JoinDistrib"/>
+
+    <!-- Fase 4 -->
+    <bpmn:sequenceFlow id="SF_JoinToDistribuir" sourceRef="GW_JoinDistrib" targetRef="UT_DistribuirVistoria"/>
+
+    <!-- Fase 5 -->
+    <bpmn:sequenceFlow id="SF_DistribuirToVistoria" sourceRef="UT_DistribuirVistoria" targetRef="UT_RealizarVistoria"/>
+    <bpmn:sequenceFlow id="SF_VistoriaToHomolog" sourceRef="UT_RealizarVistoria" targetRef="UT_HomologarVistoria"/>
+    <bpmn:sequenceFlow id="SF_HomologToGW" sourceRef="UT_HomologarVistoria" targetRef="GW_VistoriaAprovada"/>
+    <bpmn:sequenceFlow id="SF_VistoriaSim" name="Aprovada" sourceRef="GW_VistoriaAprovada" targetRef="ST_EmitirAPPCI"/>
+    <bpmn:sequenceFlow id="SF_VistoriaNao" name="Reprovada (CIV)" sourceRef="GW_VistoriaAprovada" targetRef="ST_RegistrarCIV"/>
+
+    <!-- Fase 6 -->
+    <bpmn:sequenceFlow id="SF_EmitirToCiencia" sourceRef="ST_EmitirAPPCI" targetRef="UT_CienciaAPPCI"/>
+    <bpmn:sequenceFlow id="SF_CienciaAPPCIToEnd" sourceRef="UT_CienciaAPPCI" targetRef="End_AlvaraVigente"/>
+
+  </bpmn:process>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       DI — DIAGRAM INTERCHANGE
+       Pool: x=160 y=80 w=2480 h=740
+       Lane_Cidadao: y=80-310  (cy=195)
+       Lane_Sistema: y=310-540 (cy=425)
+       Lane_Admin:   y=540-820 (cy=680)
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <bpmndi:BPMNDiagram id="BPMNDiagram_P14">
+    <bpmndi:BPMNPlane id="BPMNPlane_P14" bpmnElement="Collab_P14">
+
+      <!-- Pool -->
+      <bpmndi:BPMNShape id="Shape_Pool_P14" bpmnElement="Pool_P14" isHorizontal="true">
+        <dc:Bounds x="160" y="80" width="2480" height="740"/>
+      </bpmndi:BPMNShape>
+
+      <!-- Lane_Cidadao -->
+      <bpmndi:BPMNShape id="Shape_Lane_Cidadao" bpmnElement="Lane_Cidadao" isHorizontal="true">
+        <dc:Bounds x="190" y="80" width="2450" height="230"/>
+      </bpmndi:BPMNShape>
+
+      <!-- Lane_Sistema -->
+      <bpmndi:BPMNShape id="Shape_Lane_Sistema" bpmnElement="Lane_Sistema" isHorizontal="true">
+        <dc:Bounds x="190" y="310" width="2450" height="230"/>
+      </bpmndi:BPMNShape>
+
+      <!-- Lane_Admin -->
+      <bpmndi:BPMNShape id="Shape_Lane_Admin" bpmnElement="Lane_Admin" isHorizontal="true">
+        <dc:Bounds x="190" y="540" width="2450" height="280"/>
+      </bpmndi:BPMNShape>
+
+      <!-- ═══ LANE_CIDADAO SHAPES ═══ -->
+
+      <!-- Start_AcessaRenovacao: cx=245, cy=195 -->
+      <bpmndi:BPMNShape id="Shape_Start_AcessaRenovacao" bpmnElement="Start_AcessaRenovacao">
+        <dc:Bounds x="227" y="177" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="205" y="220" width="80" height="40"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- End_NaoElegivel: cx=450, cy=195 (error end) -->
+      <bpmndi:BPMNShape id="Shape_End_NaoElegivel" bpmnElement="End_NaoElegivel">
+        <dc:Bounds x="432" y="177" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="410" y="220" width="80" height="40"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- UT_LerAnexoD: cx=680, cy=195 -->
+      <bpmndi:BPMNShape id="Shape_UT_LerAnexoD" bpmnElement="UT_LerAnexoD">
+        <dc:Bounds x="630" y="155" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- UT_ConfirmarRenovacao: cx=800, cy=195 -->
+      <bpmndi:BPMNShape id="Shape_UT_ConfirmarRenovacao" bpmnElement="UT_ConfirmarRenovacao">
+        <dc:Bounds x="750" y="155" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- GW_Confirma: cx=900, cy=195 -->
+      <bpmndi:BPMNShape id="Shape_GW_Confirma" bpmnElement="GW_Confirma" isMarkerVisible="true">
+        <dc:Bounds x="875" y="170" width="50" height="50"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="855" y="227" width="90" height="40"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- End_RecusaVigente: cx=1180, cy=195 -->
+      <bpmndi:BPMNShape id="Shape_End_RecusaVigente" bpmnElement="End_RecusaVigente">
+        <dc:Bounds x="1162" y="177" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1140" y="220" width="80" height="40"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- UT_SolicitarIsencao: cx=1350, cy=195 -->
+      <bpmndi:BPMNShape id="Shape_UT_SolicitarIsencao" bpmnElement="UT_SolicitarIsencao">
+        <dc:Bounds x="1300" y="155" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- UT_CienciaCIV: cx=1470, cy=195 -->
+      <bpmndi:BPMNShape id="Shape_UT_CienciaCIV" bpmnElement="UT_CienciaCIV">
+        <dc:Bounds x="1420" y="155" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- UT_PagarBoleto: cx=1690, cy=195 -->
+      <bpmndi:BPMNShape id="Shape_UT_PagarBoleto" bpmnElement="UT_PagarBoleto">
+        <dc:Bounds x="1640" y="155" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- UT_CienciaAPPCI: cx=2450, cy=195 -->
+      <bpmndi:BPMNShape id="Shape_UT_CienciaAPPCI" bpmnElement="UT_CienciaAPPCI">
+        <dc:Bounds x="2400" y="155" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- End_AlvaraVigente: cx=2560, cy=195 -->
+      <bpmndi:BPMNShape id="Shape_End_AlvaraVigente" bpmnElement="End_AlvaraVigente">
+        <dc:Bounds x="2542" y="177" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2520" y="220" width="80" height="40"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- ═══ LANE_SISTEMA SHAPES ═══ -->
+
+      <!-- ST_ValidarElegibilidade: cx=340, cy=425 -->
+      <bpmndi:BPMNShape id="Shape_ST_ValidarElegibilidade" bpmnElement="ST_ValidarElegibilidade">
+        <dc:Bounds x="290" y="385" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- GW_Elegivel: cx=450, cy=425 -->
+      <bpmndi:BPMNShape id="Shape_GW_Elegivel" bpmnElement="GW_Elegivel" isMarkerVisible="true">
+        <dc:Bounds x="425" y="400" width="50" height="50"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="405" y="457" width="90" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- ST_IniciarRenovacao: cx=620, cy=425 -->
+      <bpmndi:BPMNShape id="Shape_ST_IniciarRenovacao" bpmnElement="ST_IniciarRenovacao">
+        <dc:Bounds x="570" y="385" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- ST_DeterminarEstadoRecusa: cx=1005, cy=425 -->
+      <bpmndi:BPMNShape id="Shape_ST_DeterminarEstadoRecusa" bpmnElement="ST_DeterminarEstadoRecusa">
+        <dc:Bounds x="955" y="385" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- GW_AlvaraExpirado: cx=1110, cy=425 -->
+      <bpmndi:BPMNShape id="Shape_GW_AlvaraExpirado" bpmnElement="GW_AlvaraExpirado" isMarkerVisible="true">
+        <dc:Bounds x="1085" y="400" width="50" height="50"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1065" y="457" width="90" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- End_RecusaVencido: cx=1180, cy=425 -->
+      <bpmndi:BPMNShape id="Shape_End_RecusaVencido" bpmnElement="End_RecusaVencido">
+        <dc:Bounds x="1162" y="407" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1140" y="450" width="80" height="40"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- GW_CIVPendente: cx=1250, cy=425 -->
+      <bpmndi:BPMNShape id="Shape_GW_CIVPendente" bpmnElement="GW_CIVPendente" isMarkerVisible="true">
+        <dc:Bounds x="1225" y="400" width="50" height="50"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1205" y="457" width="90" height="40"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- ST_RegistrarCIV: cx=1350, cy=425 -->
+      <bpmndi:BPMNShape id="Shape_ST_RegistrarCIV" bpmnElement="ST_RegistrarCIV">
+        <dc:Bounds x="1300" y="385" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- ST_RetornarAceite: cx=1590, cy=425 -->
+      <bpmndi:BPMNShape id="Shape_ST_RetornarAceite" bpmnElement="ST_RetornarAceite">
+        <dc:Bounds x="1540" y="385" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- ST_GerarBoleto: cx=1690, cy=425 -->
+      <bpmndi:BPMNShape id="Shape_ST_GerarBoleto" bpmnElement="ST_GerarBoleto">
+        <dc:Bounds x="1640" y="385" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- ST_ConfirmarPagamentoCNAB: cx=1810, cy=425 -->
+      <bpmndi:BPMNShape id="Shape_ST_ConfirmarPagamentoCNAB" bpmnElement="ST_ConfirmarPagamentoCNAB">
+        <dc:Bounds x="1760" y="385" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- ST_EmitirAPPCI: cx=2450, cy=425 -->
+      <bpmndi:BPMNShape id="Shape_ST_EmitirAPPCI" bpmnElement="ST_EmitirAPPCI">
+        <dc:Bounds x="2400" y="385" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- ═══ LANE_ADMIN SHAPES ═══ -->
+
+      <!-- UT_AnalisarIsencao: cx=1470, cy=680 -->
+      <bpmndi:BPMNShape id="Shape_UT_AnalisarIsencao" bpmnElement="UT_AnalisarIsencao">
+        <dc:Bounds x="1420" y="640" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- GW_IsencaoDeferida: cx=1600, cy=680 -->
+      <bpmndi:BPMNShape id="Shape_GW_IsencaoDeferida" bpmnElement="GW_IsencaoDeferida" isMarkerVisible="true">
+        <dc:Bounds x="1575" y="655" width="50" height="50"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1555" y="712" width="90" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- GW_JoinDistrib: cx=1910, cy=680 -->
+      <bpmndi:BPMNShape id="Shape_GW_JoinDistrib" bpmnElement="GW_JoinDistrib" isMarkerVisible="true">
+        <dc:Bounds x="1885" y="655" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+
+      <!-- UT_DistribuirVistoria: cx=2030, cy=680 -->
+      <bpmndi:BPMNShape id="Shape_UT_DistribuirVistoria" bpmnElement="UT_DistribuirVistoria">
+        <dc:Bounds x="1980" y="640" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- UT_RealizarVistoria: cx=2150, cy=680 -->
+      <bpmndi:BPMNShape id="Shape_UT_RealizarVistoria" bpmnElement="UT_RealizarVistoria">
+        <dc:Bounds x="2100" y="640" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- UT_HomologarVistoria: cx=2270, cy=680 -->
+      <bpmndi:BPMNShape id="Shape_UT_HomologarVistoria" bpmnElement="UT_HomologarVistoria">
+        <dc:Bounds x="2220" y="640" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- GW_VistoriaAprovada: cx=2390, cy=680 -->
+      <bpmndi:BPMNShape id="Shape_GW_VistoriaAprovada" bpmnElement="GW_VistoriaAprovada" isMarkerVisible="true">
+        <dc:Bounds x="2365" y="655" width="50" height="50"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2345" y="712" width="90" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- ═══════════════════════════════════════════════
+           SEQUENCE FLOW EDGES
+           ═══════════════════════════════════════════════ -->
+
+      <!-- SF_StartToValidar: Cidadao(245,195) → Sistema(340,425) -->
+      <bpmndi:BPMNEdge id="Edge_SF_StartToValidar" bpmnElement="SF_StartToValidar">
+        <di:waypoint x="245" y="213"/>
+        <di:waypoint x="245" y="425"/>
+        <di:waypoint x="290" y="425"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_ValidarToGW: Sistema straight right -->
+      <bpmndi:BPMNEdge id="Edge_SF_ValidarToGW" bpmnElement="SF_ValidarToGW">
+        <di:waypoint x="390" y="425"/>
+        <di:waypoint x="425" y="425"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_ElegNao: GW_Elegivel UP to End_NaoElegivel in Cidadao -->
+      <bpmndi:BPMNEdge id="Edge_SF_ElegNao" bpmnElement="SF_ElegNao">
+        <di:waypoint x="450" y="400"/>
+        <di:waypoint x="450" y="213"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="456" y="298" width="67" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_ElegSim: GW_Elegivel RIGHT to ST_IniciarRenovacao -->
+      <bpmndi:BPMNEdge id="Edge_SF_ElegSim" bpmnElement="SF_ElegSim">
+        <di:waypoint x="475" y="425"/>
+        <di:waypoint x="570" y="425"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="494" y="407" width="42" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_IniciarToAnexoD: Sistema UP to Cidadao -->
+      <bpmndi:BPMNEdge id="Edge_SF_IniciarToAnexoD" bpmnElement="SF_IniciarToAnexoD">
+        <di:waypoint x="620" y="385"/>
+        <di:waypoint x="620" y="195"/>
+        <di:waypoint x="630" y="195"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_AnexoDToConfirmar: Cidadao straight right -->
+      <bpmndi:BPMNEdge id="Edge_SF_AnexoDToConfirmar" bpmnElement="SF_AnexoDToConfirmar">
+        <di:waypoint x="730" y="195"/>
+        <di:waypoint x="750" y="195"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_ConfirmarToGW: Cidadao right to GW_Confirma -->
+      <bpmndi:BPMNEdge id="Edge_SF_ConfirmarToGW" bpmnElement="SF_ConfirmarToGW">
+        <di:waypoint x="850" y="195"/>
+        <di:waypoint x="875" y="195"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_Recusa: GW_Confirma DOWN to ST_DeterminarEstadoRecusa in Sistema -->
+      <bpmndi:BPMNEdge id="Edge_SF_Recusa" bpmnElement="SF_Recusa">
+        <di:waypoint x="900" y="220"/>
+        <di:waypoint x="900" y="425"/>
+        <di:waypoint x="955" y="425"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="908" y="318" width="42" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_Confirma: GW_Confirma RIGHT along Cidadao then DOWN to GW_CIVPendente -->
+      <bpmndi:BPMNEdge id="Edge_SF_Confirma" bpmnElement="SF_Confirma">
+        <di:waypoint x="925" y="195"/>
+        <di:waypoint x="1250" y="195"/>
+        <di:waypoint x="1250" y="400"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1056" y="177" width="48" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_RecusaToGWExp: straight right in Sistema -->
+      <bpmndi:BPMNEdge id="Edge_SF_RecusaToGWExp" bpmnElement="SF_RecusaToGWExp">
+        <di:waypoint x="1055" y="425"/>
+        <di:waypoint x="1085" y="425"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_ExpSim: GW_AlvaraExpirado RIGHT to End_RecusaVencido -->
+      <bpmndi:BPMNEdge id="Edge_SF_ExpSim" bpmnElement="SF_ExpSim">
+        <di:waypoint x="1135" y="425"/>
+        <di:waypoint x="1162" y="425"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1136" y="407" width="44" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_ExpNao: GW_AlvaraExpirado UP to End_RecusaVigente in Cidadao -->
+      <bpmndi:BPMNEdge id="Edge_SF_ExpNao" bpmnElement="SF_ExpNao">
+        <di:waypoint x="1110" y="400"/>
+        <di:waypoint x="1110" y="195"/>
+        <di:waypoint x="1162" y="195"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1118" y="290" width="37" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_CIVSim: GW_CIVPendente RIGHT to ST_RegistrarCIV -->
+      <bpmndi:BPMNEdge id="Edge_SF_CIVSim" bpmnElement="SF_CIVSim">
+        <di:waypoint x="1275" y="425"/>
+        <di:waypoint x="1300" y="425"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1278" y="407" width="62" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_CIVNao: GW_CIVPendente UP to Cidadao then RIGHT to UT_SolicitarIsencao -->
+      <bpmndi:BPMNEdge id="Edge_SF_CIVNao" bpmnElement="SF_CIVNao">
+        <di:waypoint x="1250" y="400"/>
+        <di:waypoint x="1250" y="195"/>
+        <di:waypoint x="1300" y="195"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1258" y="290" width="42" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_CIVRegistrarToUT: ST_RegistrarCIV UP to UT_CienciaCIV in Cidadao -->
+      <bpmndi:BPMNEdge id="Edge_SF_CIVRegistrarToUT" bpmnElement="SF_CIVRegistrarToUT">
+        <di:waypoint x="1350" y="385"/>
+        <di:waypoint x="1350" y="195"/>
+        <di:waypoint x="1420" y="195"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_CienciaCIVToRetorno: UT_CienciaCIV RIGHT then DOWN to ST_RetornarAceite in Sistema -->
+      <bpmndi:BPMNEdge id="Edge_SF_CienciaCIVToRetorno" bpmnElement="SF_CienciaCIVToRetorno">
+        <di:waypoint x="1520" y="195"/>
+        <di:waypoint x="1590" y="195"/>
+        <di:waypoint x="1590" y="385"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_CIVRetornaAceite: ST_RetornarAceite loop-back BELOW pool to UT_LerAnexoD -->
+      <bpmndi:BPMNEdge id="Edge_SF_CIVRetornaAceite" bpmnElement="SF_CIVRetornaAceite">
+        <di:waypoint x="1590" y="465"/>
+        <di:waypoint x="1590" y="840"/>
+        <di:waypoint x="630" y="840"/>
+        <di:waypoint x="630" y="155"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1000" y="845" width="120" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_IsencaoToAdmin: UT_SolicitarIsencao DOWN through Sistema to Admin (routed LEFT of ST_RegistrarCIV) -->
+      <bpmndi:BPMNEdge id="Edge_SF_IsencaoToAdmin" bpmnElement="SF_IsencaoToAdmin">
+        <di:waypoint x="1350" y="235"/>
+        <di:waypoint x="1280" y="235"/>
+        <di:waypoint x="1280" y="680"/>
+        <di:waypoint x="1420" y="680"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_AdminToGWIsencao: Admin straight right -->
+      <bpmndi:BPMNEdge id="Edge_SF_AdminToGWIsencao" bpmnElement="SF_AdminToGWIsencao">
+        <di:waypoint x="1520" y="680"/>
+        <di:waypoint x="1575" y="680"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_IsencaoSim: GW_IsencaoDeferida RIGHT to GW_JoinDistrib in Admin -->
+      <bpmndi:BPMNEdge id="Edge_SF_IsencaoSim" bpmnElement="SF_IsencaoSim">
+        <di:waypoint x="1625" y="680"/>
+        <di:waypoint x="1885" y="680"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1721" y="662" width="44" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_IsencaoNao: GW_IsencaoDeferida UP to ST_GerarBoleto in Sistema -->
+      <bpmndi:BPMNEdge id="Edge_SF_IsencaoNao" bpmnElement="SF_IsencaoNao">
+        <di:waypoint x="1600" y="655"/>
+        <di:waypoint x="1600" y="425"/>
+        <di:waypoint x="1640" y="425"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1608" y="530" width="90" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_BoletoToUT: ST_GerarBoleto UP to UT_PagarBoleto in Cidadao -->
+      <bpmndi:BPMNEdge id="Edge_SF_BoletoToUT" bpmnElement="SF_BoletoToUT">
+        <di:waypoint x="1690" y="385"/>
+        <di:waypoint x="1690" y="235"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_PagarToConfirmar: UT_PagarBoleto RIGHT then DOWN to ST_ConfirmarPagamentoCNAB -->
+      <bpmndi:BPMNEdge id="Edge_SF_PagarToConfirmar" bpmnElement="SF_PagarToConfirmar">
+        <di:waypoint x="1740" y="195"/>
+        <di:waypoint x="1810" y="195"/>
+        <di:waypoint x="1810" y="385"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_ConfirmarToDistrib: ST_ConfirmarPagamentoCNAB DOWN to GW_JoinDistrib in Admin -->
+      <bpmndi:BPMNEdge id="Edge_SF_ConfirmarToDistrib" bpmnElement="SF_ConfirmarToDistrib">
+        <di:waypoint x="1810" y="465"/>
+        <di:waypoint x="1810" y="680"/>
+        <di:waypoint x="1885" y="680"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_JoinToDistribuir: GW_JoinDistrib RIGHT to UT_DistribuirVistoria -->
+      <bpmndi:BPMNEdge id="Edge_SF_JoinToDistribuir" bpmnElement="SF_JoinToDistribuir">
+        <di:waypoint x="1935" y="680"/>
+        <di:waypoint x="1980" y="680"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_DistribuirToVistoria: Admin straight right -->
+      <bpmndi:BPMNEdge id="Edge_SF_DistribuirToVistoria" bpmnElement="SF_DistribuirToVistoria">
+        <di:waypoint x="2080" y="680"/>
+        <di:waypoint x="2100" y="680"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_VistoriaToHomolog: Admin straight right -->
+      <bpmndi:BPMNEdge id="Edge_SF_VistoriaToHomolog" bpmnElement="SF_VistoriaToHomolog">
+        <di:waypoint x="2200" y="680"/>
+        <di:waypoint x="2220" y="680"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_HomologToGW: Admin straight right -->
+      <bpmndi:BPMNEdge id="Edge_SF_HomologToGW" bpmnElement="SF_HomologToGW">
+        <di:waypoint x="2320" y="680"/>
+        <di:waypoint x="2365" y="680"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_VistoriaSim: GW_VistoriaAprovada UP to ST_EmitirAPPCI in Sistema -->
+      <bpmndi:BPMNEdge id="Edge_SF_VistoriaSim" bpmnElement="SF_VistoriaSim">
+        <di:waypoint x="2390" y="655"/>
+        <di:waypoint x="2390" y="425"/>
+        <di:waypoint x="2400" y="425"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2398" y="530" width="47" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_VistoriaNao: GW_VistoriaAprovada loop-back BELOW pool to ST_RegistrarCIV -->
+      <bpmndi:BPMNEdge id="Edge_SF_VistoriaNao" bpmnElement="SF_VistoriaNao">
+        <di:waypoint x="2390" y="705"/>
+        <di:waypoint x="2390" y="850"/>
+        <di:waypoint x="1350" y="850"/>
+        <di:waypoint x="1350" y="465"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1780" y="855" width="90" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_EmitirToCiencia: ST_EmitirAPPCI UP to UT_CienciaAPPCI in Cidadao -->
+      <bpmndi:BPMNEdge id="Edge_SF_EmitirToCiencia" bpmnElement="SF_EmitirToCiencia">
+        <di:waypoint x="2450" y="385"/>
+        <di:waypoint x="2450" y="235"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF_CienciaAPPCIToEnd: Cidadao straight right -->
+      <bpmndi:BPMNEdge id="Edge_SF_CienciaAPPCIToEnd" bpmnElement="SF_CienciaAPPCIToEnd">
+        <di:waypoint x="2500" y="195"/>
+        <di:waypoint x="2542" y="195"/>
+      </bpmndi:BPMNEdge>
+
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</bpmn:definitions>

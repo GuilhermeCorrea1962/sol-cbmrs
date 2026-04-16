@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI"
+             xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+             targetNamespace="http://solcbm.procergs.rs.gov.br/bpmn"
+             id="definitions_P05">
+
+  <!-- ================================================================ -->
+  <!-- PROCESSO 05 – ANÁLISE DE INVIABILIDADE                           -->
+  <!-- Acionado quando analista identifica inviabilidade técnica:        -->
+  <!--   Valida que processo está em ANALISE_INVIABILIDADE_PENDENTE →   -->
+  <!--   ADM registra justificativas técnicas →                         -->
+  <!--   GW: Inviabilidade Confirmada? →                                -->
+  <!--     Sim: Arquivar processo (CIA) e notificar RT/Cidadão           -->
+  <!--     Não: Retornar à análise técnica (Proc_04)                    -->
+  <!-- ================================================================ -->
+  <process id="Proc_05" name="05 - Análise de Inviabilidade Técnica" isExecutable="false">
+
+    <startEvent id="P05_Start" name="Processo em&#10;ANALISE_INVIABILIDADE_PENDENTE">
+      <outgoing>P05_sf01</outgoing>
+    </startEvent>
+
+    <serviceTask id="P05_T01" name="Validar Status:&#10;ANALISE_INVIABILIDADE_PENDENTE">
+      <incoming>P05_sf01</incoming>
+      <outgoing>P05_sf02</outgoing>
+    </serviceTask>
+
+    <exclusiveGateway id="P05_GW01" name="Status&#10;Correto?">
+      <incoming>P05_sf02</incoming>
+      <outgoing>P05_sf03</outgoing>
+      <outgoing>P05_sf04</outgoing>
+    </exclusiveGateway>
+
+    <endEvent id="P05_EndErr" name="Erro: Status&#10;Inválido (406)">
+      <incoming>P05_sf03</incoming>
+      <errorEventDefinition id="P05_ErrDef"/>
+    </endEvent>
+
+    <userTask id="P05_T02" name="ADM Registra Justificativas&#10;de Inviabilidade Técnica">
+      <incoming>P05_sf04</incoming>
+      <outgoing>P05_sf05</outgoing>
+    </userTask>
+
+    <exclusiveGateway id="P05_GW02" name="Inviabilidade&#10;Confirmada?">
+      <incoming>P05_sf05</incoming>
+      <outgoing>P05_sf06</outgoing>
+      <outgoing>P05_sf07</outgoing>
+    </exclusiveGateway>
+
+    <serviceTask id="P05_T03" name="Arquivar Processo (CIA)&#10;e Notificar RT/Cidadão">
+      <incoming>P05_sf06</incoming>
+      <outgoing>P05_sf08</outgoing>
+    </serviceTask>
+
+    <serviceTask id="P05_T04" name="Retornar à Análise&#10;Técnica (Proc_04)">
+      <incoming>P05_sf07</incoming>
+      <outgoing>P05_sf09</outgoing>
+    </serviceTask>
+
+    <endEvent id="P05_EndArquivado" name="Processo&#10;Arquivado (CIA)">
+      <incoming>P05_sf08</incoming>
+    </endEvent>
+
+    <endEvent id="P05_EndRetorno" name="Retornado à&#10;Análise Técnica">
+      <incoming>P05_sf09</incoming>
+    </endEvent>
+
+    <sequenceFlow id="P05_sf01" sourceRef="P05_Start"  targetRef="P05_T01"/>
+    <sequenceFlow id="P05_sf02" sourceRef="P05_T01"    targetRef="P05_GW01"/>
+    <sequenceFlow id="P05_sf03" name="Não"             sourceRef="P05_GW01" targetRef="P05_EndErr"/>
+    <sequenceFlow id="P05_sf04" name="Sim"             sourceRef="P05_GW01" targetRef="P05_T02"/>
+    <sequenceFlow id="P05_sf05" sourceRef="P05_T02"    targetRef="P05_GW02"/>
+    <sequenceFlow id="P05_sf06" name="Sim"             sourceRef="P05_GW02" targetRef="P05_T03"/>
+    <sequenceFlow id="P05_sf07" name="Não (revisar)"   sourceRef="P05_GW02" targetRef="P05_T04"/>
+    <sequenceFlow id="P05_sf08" sourceRef="P05_T03"    targetRef="P05_EndArquivado"/>
+    <sequenceFlow id="P05_sf09" sourceRef="P05_T04"    targetRef="P05_EndRetorno"/>
+  </process>
+
+  <bpmndi:BPMNDiagram id="diagram_P05">
+    <bpmndi:BPMNPlane id="plane_P05" bpmnElement="Proc_05">
+      <bpmndi:BPMNShape id="shape_P05_Start" bpmnElement="P05_Start">
+        <omgdc:Bounds x="102" y="242" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P05_T01" bpmnElement="P05_T01">
+        <omgdc:Bounds x="200" y="220" width="170" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P05_GW01" bpmnElement="P05_GW01" isMarkerVisible="true">
+        <omgdc:Bounds x="425" y="235" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P05_EndErr" bpmnElement="P05_EndErr" isMarkerVisible="true">
+        <omgdc:Bounds x="432" y="102" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P05_T02" bpmnElement="P05_T02">
+        <omgdc:Bounds x="535" y="220" width="190" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P05_GW02" bpmnElement="P05_GW02" isMarkerVisible="true">
+        <omgdc:Bounds x="780" y="235" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P05_T03" bpmnElement="P05_T03">
+        <omgdc:Bounds x="890" y="100" width="180" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P05_T04" bpmnElement="P05_T04">
+        <omgdc:Bounds x="890" y="340" width="180" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P05_EndArquivado" bpmnElement="P05_EndArquivado">
+        <omgdc:Bounds x="1132" y="122" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_P05_EndRetorno" bpmnElement="P05_EndRetorno">
+        <omgdc:Bounds x="1132" y="362" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNEdge id="edge_P05_sf01" bpmnElement="P05_sf01">
+        <omgdi:waypoint x="138" y="260"/>
+        <omgdi:waypoint x="200" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P05_sf02" bpmnElement="P05_sf02">
+        <omgdi:waypoint x="370" y="260"/>
+        <omgdi:waypoint x="425" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P05_sf03" bpmnElement="P05_sf03">
+        <omgdi:waypoint x="450" y="235"/>
+        <omgdi:waypoint x="450" y="138"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P05_sf04" bpmnElement="P05_sf04">
+        <omgdi:waypoint x="475" y="260"/>
+        <omgdi:waypoint x="535" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P05_sf05" bpmnElement="P05_sf05">
+        <omgdi:waypoint x="725" y="260"/>
+        <omgdi:waypoint x="780" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P05_sf06" bpmnElement="P05_sf06">
+        <omgdi:waypoint x="805" y="235"/>
+        <omgdi:waypoint x="805" y="140"/>
+        <omgdi:waypoint x="890" y="140"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P05_sf07" bpmnElement="P05_sf07">
+        <omgdi:waypoint x="805" y="285"/>
+        <omgdi:waypoint x="805" y="380"/>
+        <omgdi:waypoint x="890" y="380"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P05_sf08" bpmnElement="P05_sf08">
+        <omgdi:waypoint x="1070" y="140"/>
+        <omgdi:waypoint x="1132" y="140"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_P05_sf09" bpmnElement="P05_sf09">
+        <omgdi:waypoint x="1070" y="380"/>
+        <omgdi:waypoint x="1132" y="380"/>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</definitions>

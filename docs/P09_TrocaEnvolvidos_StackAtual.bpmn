@@ -1,0 +1,1289 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  id="Definitions_P09"
+                  targetNamespace="http://solcbm.rs.gov.br/p09"
+                  exporter="Camunda Modeler"
+                  exporterVersion="5.0.0">
+
+  <!-- ==================== MENSAGENS ==================== -->
+  <bpmn:message id="Msg_CancelamentoTroca" name="cancelarTroca" />
+  <bpmn:message id="Msg_ReforcoNotificacao" name="reforcarSolicitacao" />
+
+  <!-- ==================== ERROS ==================== -->
+  <bpmn:error id="Error_LicenciamentoBloqueado" name="LicenciamentoBloqueado"
+              errorCode="LICENCIAMENTO_BLOQUEADO" />
+  <bpmn:error id="Error_ValidacaoSolicitacao" name="ValidacaoSolicitacao"
+              errorCode="ERRO_VALIDACAO_SOLICITACAO" />
+
+  <!-- ==================== COLABORACAO ==================== -->
+  <bpmn:collaboration id="Collab_P09">
+    <bpmn:participant id="Pool_P09"
+                      name="P09 - Troca de Envolvidos"
+                      processRef="Process_P09" />
+  </bpmn:collaboration>
+
+  <!-- ==================== PROCESSO ==================== -->
+  <bpmn:process id="Process_P09"
+                name="P09 - Troca de Envolvidos (Stack Atual Java EE)"
+                isExecutable="false">
+
+    <!-- ====== RAIAS ====== -->
+    <bpmn:laneSet id="LaneSet_P09">
+
+      <bpmn:lane id="Lane_Solicitante" name="Solicitante (RT / RU / Proprietario)">
+        <bpmn:flowNodeRef>StartEvent_P09</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_BuscarLicenciamento</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_PreencherSolicitacao</bpmn:flowNodeRef>
+      </bpmn:lane>
+
+      <bpmn:lane id="Lane_Proprietarios" name="Proprietarios (Autorizadores)">
+        <bpmn:flowNodeRef>Task_ProprietarioConsulta</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_ProprietarioDecide</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>BoundaryEvent_Cancelamento</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>BoundaryEvent_ReforcoNotificacao</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>GW_Resposta</bpmn:flowNodeRef>
+      </bpmn:lane>
+
+      <bpmn:lane id="Lane_BE" name="Sistema SOL Backend">
+        <bpmn:flowNodeRef>Task_ConsultaLicenciamento</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>GW_PodeIniciar</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_LicBloqueado</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_ValidarSolicitacao</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>GW_ValidacaoOk</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_ErroValidacao</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_UploadAlfresco</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_CriarTroca</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_CriarAutorizacoes</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_MarcoSolicita</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_NotificarProprietarios</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_GravarAutorizacaoS</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_MarcoAprova</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>GW_TodosAutorizaram</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_GravarRejeicaoN</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_Reprovado</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_GravarCancelamento</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_Cancelado</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_ReforcarNotificacao</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>GW_TemTrocaRT</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_ProcessarTrocaRT</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>GW_JoinRT</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>GW_TemTrocaRU</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_ProcessarTrocaRU</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>GW_JoinRU</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>GW_TemTrocaProprietario</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_ProcessarTrocaProprietario</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>GW_JoinProprietario</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_FinalizarAprovacao</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_Aprovado</bpmn:flowNodeRef>
+      </bpmn:lane>
+
+    </bpmn:laneSet>
+
+    <!-- ====================================================
+         FASE 1 - CONSULTA E PREENCHIMENTO DA SOLICITACAO
+         ==================================================== -->
+
+    <bpmn:startEvent id="StartEvent_P09" name="Solicitante acessa modulo de Troca de Envolvidos">
+      <bpmn:documentation>
+        Ponto de entrada do processo P09. O solicitante (RT, RU ou Proprietario) acessa o modulo de
+        Troca de Envolvidos a partir do licenciamento existente.
+        Frontend: rota /licenciamentos/{idLic}/troca-envolvidos/nova
+      </bpmn:documentation>
+      <bpmn:outgoing>SF1</bpmn:outgoing>
+    </bpmn:startEvent>
+
+    <bpmn:userTask id="Task_BuscarLicenciamento"
+                   name="Pesquisar licenciamento e consultar envolvidos atuais"
+                   camunda:assignee="${solicitante}"
+                   camunda:formKey="troca-envolvidos/pesquisa">
+      <bpmn:documentation>
+        O solicitante informa o numero do licenciamento (ou seleciona da lista) para visualizar os
+        envolvidos atuais (RT, RU, Proprietarios).
+        Endpoint: GET /licenciamentos/{idLic}/troca-envolvidos (LicenciamentoTrocaEnvolvidoRest.listar)
+        Exibe: RT atual, RU atual, lista de proprietarios atuais, situacao do licenciamento.
+        RN02: licenciamento deve estar em SituacaoLicenciamento permitida para troca.
+        RN03: nao pode existir TrocaEnvolvidoED com SIT_TROCA=SOLICITADO para o mesmo licenciamento.
+      </bpmn:documentation>
+      <bpmn:incoming>SF1</bpmn:incoming>
+      <bpmn:outgoing>SF2</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:serviceTask id="Task_ConsultaLicenciamento"
+                      name="Consultar licenciamento e verificar pre-condicoes (RN02 / RN03)"
+                      camunda:class="br.gov.rs.cbm.sol.rn.TrocaEnvolvido.ConsultaTrocaEnvolvidoLicenciamentoRN">
+      <bpmn:documentation>
+        Verifica no backend se o licenciamento esta apto para iniciar nova troca de envolvidos.
+        Endpoints:
+          GET /troca-envolvidos/licenciamentos - lista licenciamentos disponiveis (TrocaEnvolvidoRest)
+          GET /licenciamentos/{idLic} - le situacao do licenciamento
+        RN02: verifica SituacaoLicenciamento permitida (CBM_LICENCIAMENTO.SIT_LICENCIAMENTO).
+        RN03: SELECT COUNT(*) FROM CBM_TROCA_ENVOLVIDO WHERE ID_LICENCIAMENTO=? AND SIT_TROCA=SOLICITADO
+              deve retornar 0; caso contrario bloqueia nova troca.
+        Tabelas: CBM_TROCA_ENVOLVIDO, CBM_LICENCIAMENTO.
+      </bpmn:documentation>
+      <bpmn:incoming>SF2</bpmn:incoming>
+      <bpmn:outgoing>SF3</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:exclusiveGateway id="GW_PodeIniciar" name="Pode iniciar troca?">
+      <bpmn:documentation>
+        Bifurca conforme resultado das validacoes RN02 e RN03.
+        Sim (liberado): licenciamento em situacao valida e sem troca pendente.
+        Nao (bloqueado): licenciamento em situacao invalida ou ja existe troca em andamento.
+      </bpmn:documentation>
+      <bpmn:incoming>SF3</bpmn:incoming>
+      <bpmn:outgoing>SF4_bloqueado</bpmn:outgoing>
+      <bpmn:outgoing>SF5_liberado</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:endEvent id="EndEvent_LicBloqueado" name="Licenciamento bloqueado - troca nao permitida">
+      <bpmn:documentation>
+        Fim do processo com erro: licenciamento nao esta em situacao valida para troca ou
+        ja existe uma troca pendente (SIT_TROCA=SOLICITADO).
+        Codigo de erro: LICENCIAMENTO_BLOQUEADO.
+      </bpmn:documentation>
+      <bpmn:incoming>SF4_bloqueado</bpmn:incoming>
+      <bpmn:errorEventDefinition id="ErrDef_LicBloqueado" errorRef="Error_LicenciamentoBloqueado" />
+    </bpmn:endEvent>
+
+    <bpmn:userTask id="Task_PreencherSolicitacao"
+                   name="Preencher dados da solicitacao de troca (RT / RU / Proprietarios)"
+                   camunda:assignee="${solicitante}"
+                   camunda:formKey="troca-envolvidos/nova">
+      <bpmn:documentation>
+        O solicitante informa os novos envolvidos:
+          Novo RT: CPF, TipoResponsabilidadeTecnica, arquivos (ART/RRT).
+                   Endpoint de verificacao: GET /troca-envolvidos/cpf/{cpf}/responsabilidade/{tipo}
+          Novo RU: CPF do responsavel pelo uso.
+          Novos Proprietarios: lista de CPFs.
+        Campos mapeados: TrocaRTED (cpfRt, tipoResponsabilidade, arquivos multipart),
+                          TrocaRUED (cpfRu), TrocaProprietarioED (cpfProprietario).
+        RN01: pelo menos um envolvido deve ser alterado (RT, RU ou Proprietario).
+        RN04: novo RT deve possuir StatusCadastro=APROVADO (CBM_STATUS_CADASTRO).
+        RN05: novo RT nao pode ser o mesmo ja vinculado ao licenciamento.
+      </bpmn:documentation>
+      <bpmn:incoming>SF5_liberado</bpmn:incoming>
+      <bpmn:outgoing>SF6</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:serviceTask id="Task_ValidarSolicitacao"
+                      name="Validar regras de negocio da solicitacao (RN01 a RN05)"
+                      camunda:class="br.gov.rs.cbm.sol.rn.TrocaEnvolvido.SolicitaTrocaEnvolvidoLicenciamentoRN">
+      <bpmn:documentation>
+        Valida todos os dados informados antes de qualquer persistencia.
+        RN01: verifica se pelo menos um envolvido foi alterado.
+        RN02: revalida SituacaoLicenciamento (CBM_LICENCIAMENTO.SIT_LICENCIAMENTO).
+        RN03: revalida ausencia de troca pendente.
+        RN04: valida StatusCadastro do novo RT = APROVADO (valor 3) em CBM_STATUS_CADASTRO.
+        RN05: verifica CPF_RT_NOVO != CPF_RT_ATUAL (CBM_RESPONSAVEL_TECNICO_LICEN).
+        Endpoint: POST /licenciamentos/{idLic}/troca-envolvidos (fase de validacao).
+        Tabelas: CBM_LICENCIAMENTO, CBM_TROCA_ENVOLVIDO, CBM_STATUS_CADASTRO,
+                 CBM_RESPONSAVEL_TECNICO, CBM_RESPONSAVEL_TECNICO_LICEN.
+      </bpmn:documentation>
+      <bpmn:incoming>SF6</bpmn:incoming>
+      <bpmn:outgoing>SF7</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:exclusiveGateway id="GW_ValidacaoOk" name="Dados validos? (RN01-RN05)">
+      <bpmn:documentation>
+        Sim (valido): prossegue para upload dos arquivos no Alfresco.
+        Nao (erro): retorna mensagens de violacao ao formulario do solicitante.
+      </bpmn:documentation>
+      <bpmn:incoming>SF7</bpmn:incoming>
+      <bpmn:outgoing>SF8_invalido</bpmn:outgoing>
+      <bpmn:outgoing>SF9_valido</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:endEvent id="EndEvent_ErroValidacao" name="Erro de validacao - retorno ao formulario">
+      <bpmn:documentation>
+        Dados invalidos. O frontend recebe a lista de violacoes de RNs e exibe ao solicitante.
+        Codigo de erro: ERRO_VALIDACAO_SOLICITACAO. Nenhum dado e persistido.
+      </bpmn:documentation>
+      <bpmn:incoming>SF8_invalido</bpmn:incoming>
+      <bpmn:errorEventDefinition id="ErrDef_Validacao" errorRef="Error_ValidacaoSolicitacao" />
+    </bpmn:endEvent>
+
+    <bpmn:serviceTask id="Task_UploadAlfresco"
+                      name="Enviar arquivos do novo RT ao Alfresco ECM"
+                      camunda:class="br.gov.rs.cbm.sol.rn.Arquivo.ArquivoRN">
+      <bpmn:documentation>
+        Persiste os arquivos do novo RT (ART/RRT) no repositorio ECM Alfresco.
+        Metodo: ArquivoRN.incluir(multipartFile, tipoArquivo, idLicenciamento).
+        TipoArquivo: EDIFICACAO -> propriedade Alfresco grp:familia=Documentos de Edificacao.
+        Retorno: nodeRef formato workspace://SpacesStore/{UUID} para cada arquivo.
+        O nodeRef e gravado em CBM_ARQUIVO.IDENTIFICADOR_ALFRESCO (@NotNull, max 150 chars).
+        IMPORTANTE: o binario NUNCA e armazenado no banco Oracle - apenas o nodeRef.
+        Tabela: CBM_ARQUIVO (id, identificadorAlfresco, nomeArquivo, tipoArquivo, idLicenciamento).
+      </bpmn:documentation>
+      <bpmn:incoming>SF9_valido</bpmn:incoming>
+      <bpmn:outgoing>SF10</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:serviceTask id="Task_CriarTroca"
+                      name="Persistir TrocaEnvolvidoED + TrocaRTED / TrocaRUED / TrocaProprietarioED"
+                      camunda:class="br.gov.rs.cbm.sol.rn.TrocaEnvolvido.SolicitaTrocaEnvolvidoLicenciamentoRN">
+      <bpmn:documentation>
+        Persiste a solicitacao de troca e seus registros filhos no banco Oracle.
+        INSERT CBM_TROCA_ENVOLVIDO (ID, ID_LICENCIAMENTO, SIT_TROCA=SOLICITADO, DTH_SOLICITACAO, CPF_SOLICITANTE).
+        Se RT informado: INSERT CBM_TROCA_RT (ID, ID_TROCA_ENVOLVIDO, CPF_RT, TIPO_RESPONSABILIDADE).
+        Se RU informado: INSERT CBM_TROCA_RU (ID, ID_TROCA_ENVOLVIDO, CPF_RU).
+        Se proprietarios: INSERT CBM_TROCA_PROPRIETARIO (ID, ID_TROCA_ENVOLVIDO, CPF_PROPRIETARIO) para cada.
+        Entidades: TrocaEnvolvidoED (@Audited), TrocaRTED, TrocaRUED, TrocaProprietarioED.
+        Endpoint: POST /licenciamentos/{idLic}/troca-envolvidos (LicenciamentoTrocaEnvolvidoRest.solicitar).
+      </bpmn:documentation>
+      <bpmn:incoming>SF10</bpmn:incoming>
+      <bpmn:outgoing>SF11</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:serviceTask id="Task_CriarAutorizacoes"
+                      name="Criar TrocaAutorizacaoED por proprietario - IND_AUTORIZADO=NULL (RN06)"
+                      camunda:class="br.gov.rs.cbm.sol.rn.TrocaEnvolvido.SolicitaTrocaEnvolvidoLicenciamentoRN">
+      <bpmn:documentation>
+        RN06: Para cada LicenciamentoProprietarioED do licenciamento, cria TrocaAutorizacaoED
+        com IND_AUTORIZADO=NULL (pendente). A efetivacao ocorre somente quando TODOS tiverem
+        IND_AUTORIZADO=S (SimNaoBooleanConverter: Boolean Java mapeado a S/N/NULL no BD).
+        Metodo: incluiAutorizacoes(trocaEnvolvido, licenciamento).
+        INSERT CBM_TROCA_AUTORIZACAO (ID, ID_TROCA_ENVOLVIDO, ID_PROPRIETARIO, IND_AUTORIZADO=NULL).
+        Tabelas: CBM_TROCA_AUTORIZACAO, CBM_LICENCIAMENTO_PROPRIETARIO.
+      </bpmn:documentation>
+      <bpmn:incoming>SF11</bpmn:incoming>
+      <bpmn:outgoing>SF12</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:serviceTask id="Task_MarcoSolicita"
+                      name="Registrar marco SOLICITA_TROCA_ENVOLVIDO"
+                      camunda:class="br.gov.rs.cbm.sol.rn.Licenciamento.LicenciamentoMarcoInclusaoRN">
+      <bpmn:documentation>
+        Registra o marco historico de solicitacao de troca.
+        TipoMarco: SOLICITA_TROCA_ENVOLVIDO.
+        INSERT CBM_LICENCIAMENTO_MARCO (ID, ID_LICENCIAMENTO, TIPO_MARCO, DTH_MARCO, CPF_USUARIO).
+        Tabela: CBM_LICENCIAMENTO_MARCO.
+      </bpmn:documentation>
+      <bpmn:incoming>SF12</bpmn:incoming>
+      <bpmn:outgoing>SF13</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:serviceTask id="Task_NotificarProprietarios"
+                      name="Notificar cada proprietario para autorizar a troca"
+                      camunda:class="br.gov.rs.cbm.sol.rn.TrocaEnvolvido.NotificaTrocaEnvolvidoRN">
+      <bpmn:documentation>
+        Envia notificacao (e-mail e/ou interna) a cada proprietario listado em CBM_TROCA_AUTORIZACAO,
+        informando sobre a solicitacao pendente de sua autorizacao.
+        Metodo: notificaEnvolvidos(trocaEnvolvido).
+        Link gerado: GET /licenciamentos/{idLic}/troca-envolvidos/{id}/autorizacao
+        Tabela: CBM_NOTIFICACAO (id, idDestinatario, mensagem, dthEnvio, lida=N).
+      </bpmn:documentation>
+      <bpmn:incoming>SF13</bpmn:incoming>
+      <bpmn:outgoing>SF14</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- ====================================================
+         FASE 2 - AUTORIZACAO PELOS PROPRIETARIOS
+         ==================================================== -->
+
+    <bpmn:userTask id="Task_ProprietarioConsulta"
+                   name="Consultar detalhes da solicitacao de troca"
+                   camunda:assignee="${proprietario}"
+                   camunda:formKey="troca-envolvidos/autorizacao">
+      <bpmn:documentation>
+        O proprietario revisa os detalhes completos da troca para decidir.
+        Endpoints:
+          GET /licenciamentos/{idLic}/troca-envolvidos/{id}/autorizacao
+              (dados da troca: RT atual x RT proposto, RU, proprietarios)
+          GET /licenciamentos/{idLic}/troca-envolvidos/{id}/autorizacao/arquivos
+              (download dos documentos do novo RT armazenados no Alfresco)
+        Tabelas: CBM_TROCA_ENVOLVIDO, CBM_TROCA_RT, CBM_TROCA_RU, CBM_TROCA_PROPRIETARIO,
+                 CBM_TROCA_AUTORIZACAO, CBM_ARQUIVO.
+        Este no recebe 3 fluxos: notificacao inicial (SF14), loop de aguardo (SF21_loop)
+        e retorno apos reforco de notificacao (SF40).
+      </bpmn:documentation>
+      <bpmn:incoming>SF14</bpmn:incoming>
+      <bpmn:incoming>SF21_loop</bpmn:incoming>
+      <bpmn:incoming>SF40</bpmn:incoming>
+      <bpmn:outgoing>SF15</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="Task_ProprietarioDecide"
+                   name="Autorizar ou rejeitar a troca de envolvidos"
+                   camunda:assignee="${proprietario}"
+                   camunda:formKey="troca-envolvidos/decisao">
+      <bpmn:documentation>
+        O proprietario toma a decisao: autorizar ou rejeitar.
+        RN07: apenas o proprietario cujo ID_PROPRIETARIO consta em CBM_TROCA_AUTORIZACAO pode decidir
+              (verificacao de identidade via CPF do usuario logado).
+        RN08: cada proprietario so pode registrar sua decisao uma vez por solicitacao.
+        Endpoints:
+          PUT /licenciamentos/{idLic}/troca-envolvidos/{id}/autorizar  (IND_AUTORIZADO=S)
+          PUT /licenciamentos/{idLic}/troca-envolvidos/{id}/rejeitar   (IND_AUTORIZADO=N)
+        Tabela: CBM_TROCA_AUTORIZACAO.
+        Esta task pode ser interrompida por cancelamento (BoundaryEvent_Cancelamento)
+        ou ter reforco de notificacao disparado (BoundaryEvent_ReforcoNotificacao).
+      </bpmn:documentation>
+      <bpmn:incoming>SF15</bpmn:incoming>
+      <bpmn:outgoing>SF16</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <!-- Boundary: Cancelamento (interrompente) -->
+    <bpmn:boundaryEvent id="BoundaryEvent_Cancelamento"
+                        name="Solicitante cancela a troca"
+                        attachedToRef="Task_ProprietarioDecide"
+                        cancelActivity="true">
+      <bpmn:documentation>
+        Evento de cancelamento interrompente: pode ser disparado pelo solicitante original a qualquer
+        momento durante a fase de autorizacao, cancelando toda a solicitacao.
+        Interrompe imediatamente a task de decisao do proprietario corrente.
+        RN10: apenas o CPF que originou a solicitacao pode cancelar
+              (CBM_TROCA_ENVOLVIDO.CPF_SOLICITANTE == usuario logado).
+        RN11: so pode cancelar enquanto SIT_TROCA=SOLICITADO.
+        Endpoint: PUT /troca-envolvidos/{id}/cancelar (TrocaEnvolvidoRest.cancelar).
+      </bpmn:documentation>
+      <bpmn:outgoing>SF37</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="MsgDef_Cancelamento" messageRef="Msg_CancelamentoTroca" />
+    </bpmn:boundaryEvent>
+
+    <!-- Boundary: Reforco de Notificacao (nao-interrompente) -->
+    <bpmn:boundaryEvent id="BoundaryEvent_ReforcoNotificacao"
+                        name="Reforcar notificacao aos proprietarios"
+                        attachedToRef="Task_ProprietarioDecide"
+                        cancelActivity="false">
+      <bpmn:documentation>
+        Evento nao-interrompente: o solicitante pode solicitar reenvio de notificacao aos
+        proprietarios que ainda nao responderam, sem interromper o processo principal.
+        cancelActivity=false: a task de decisao permanece ativa.
+        RN12: pode ser acionado enquanto SIT_TROCA=SOLICITADO; reenvia apenas para
+              proprietarios com IND_AUTORIZADO IS NULL.
+        Endpoint: PUT /troca-envolvidos/{id}/reforcar-notificacao (TrocaEnvolvidoRest.reforcarNotificacao).
+      </bpmn:documentation>
+      <bpmn:outgoing>SF39</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="MsgDef_Reforco" messageRef="Msg_ReforcoNotificacao" />
+    </bpmn:boundaryEvent>
+
+    <bpmn:exclusiveGateway id="GW_Resposta" name="Proprietario autorizou?">
+      <bpmn:documentation>
+        Sim (IND_AUTORIZADO=S): grava autorizacao e verifica se todos autorizaram.
+        Nao (IND_AUTORIZADO=N): grava rejeicao, muda situacao para REPROVADO e encerra.
+      </bpmn:documentation>
+      <bpmn:incoming>SF16</bpmn:incoming>
+      <bpmn:outgoing>SF17_sim</bpmn:outgoing>
+      <bpmn:outgoing>SF18_nao</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:serviceTask id="Task_GravarAutorizacaoS"
+                      name="Gravar autorizacao: IND_AUTORIZADO=S"
+                      camunda:class="br.gov.rs.cbm.sol.rn.TrocaEnvolvido.AutorizacaoTrocaEnvolvidoRN">
+      <bpmn:documentation>
+        Registra a autorizacao do proprietario corrente.
+        Metodo: AutorizacaoTrocaEnvolvidoRN.autoriza(idTroca, idProprietario).
+        UPDATE CBM_TROCA_AUTORIZACAO
+          SET IND_AUTORIZADO=S, DTH_AUTORIZACAO=SYSDATE
+          WHERE ID_TROCA_ENVOLVIDO=? AND ID_PROPRIETARIO=?
+        Endpoint: PUT /licenciamentos/{idLic}/troca-envolvidos/{id}/autorizar.
+        Tabela: CBM_TROCA_AUTORIZACAO.
+      </bpmn:documentation>
+      <bpmn:incoming>SF17_sim</bpmn:incoming>
+      <bpmn:outgoing>SF19</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:serviceTask id="Task_MarcoAprova"
+                      name="Registrar marco APROVA_TROCA_ENVOLVIDO"
+                      camunda:class="br.gov.rs.cbm.sol.rn.Licenciamento.LicenciamentoMarcoInclusaoRN">
+      <bpmn:documentation>
+        Registra o marco parcial de aprovacao (proprietario autorizou) no historico.
+        TipoMarco: APROVA_TROCA_ENVOLVIDO.
+        Registrado para cada proprietario que autoriza, permitindo rastrear o progresso
+        quando ha multiplos proprietarios.
+        INSERT CBM_LICENCIAMENTO_MARCO (ID, ID_LICENCIAMENTO, TIPO_MARCO, DTH_MARCO, CPF_PROPRIETARIO).
+        Tabela: CBM_LICENCIAMENTO_MARCO.
+      </bpmn:documentation>
+      <bpmn:incoming>SF19</bpmn:incoming>
+      <bpmn:outgoing>SF20</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:exclusiveGateway id="GW_TodosAutorizaram" name="Todos os proprietarios autorizaram?">
+      <bpmn:documentation>
+        Verifica se TODOS os TrocaAutorizacaoED possuem IND_AUTORIZADO=S.
+        Metodo: AutorizacaoTrocaEnvolvidoRN.verificaTodosAutorizaram(idTroca).
+        SELECT COUNT(*) FROM CBM_TROCA_AUTORIZACAO
+          WHERE ID_TROCA_ENVOLVIDO=? AND (IND_AUTORIZADO IS NULL OR IND_AUTORIZADO=N)
+        COUNT=0: todos autorizaram, prossegue para efetivacao.
+        COUNT>0: ha proprietarios pendentes, loop-back aguarda proxima autorizacao.
+      </bpmn:documentation>
+      <bpmn:incoming>SF20</bpmn:incoming>
+      <bpmn:outgoing>SF21_loop</bpmn:outgoing>
+      <bpmn:outgoing>SF22_todos</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:serviceTask id="Task_GravarRejeicaoN"
+                      name="Gravar rejeicao, reprovar troca, registrar marco e notificar"
+                      camunda:class="br.gov.rs.cbm.sol.rn.TrocaEnvolvido.AutorizacaoTrocaEnvolvidoRN">
+      <bpmn:documentation>
+        Qualquer rejeicao de proprietario encerra a solicitacao como REPROVADA.
+        Metodo: AutorizacaoTrocaEnvolvidoRN.rejeita(idTroca, idProprietario).
+        Operacoes:
+          1. UPDATE CBM_TROCA_AUTORIZACAO SET IND_AUTORIZADO=N, DTH_AUTORIZACAO=SYSDATE
+          2. UPDATE CBM_TROCA_ENVOLVIDO SET SIT_TROCA=REPROVADO, DTH_REPROVACAO=SYSDATE
+          3. INSERT CBM_LICENCIAMENTO_MARCO (TIPO_MARCO=REPROVA_TROCA_ENVOLVIDO)
+          4. INSERT CBM_NOTIFICACAO notificando o solicitante da reprovacao
+        Endpoint: PUT /licenciamentos/{idLic}/troca-envolvidos/{id}/rejeitar.
+        Tabelas: CBM_TROCA_AUTORIZACAO, CBM_TROCA_ENVOLVIDO, CBM_LICENCIAMENTO_MARCO, CBM_NOTIFICACAO.
+      </bpmn:documentation>
+      <bpmn:incoming>SF18_nao</bpmn:incoming>
+      <bpmn:outgoing>SF36</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:endEvent id="EndEvent_Reprovado" name="Troca REPROVADA">
+      <bpmn:documentation>
+        Fim do processo. SIT_TROCA=REPROVADO em CBM_TROCA_ENVOLVIDO.
+        Marco REPROVA_TROCA_ENVOLVIDO registrado. Solicitante notificado.
+        Os envolvidos do licenciamento permanecem sem alteracao.
+      </bpmn:documentation>
+      <bpmn:incoming>SF36</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <bpmn:serviceTask id="Task_GravarCancelamento"
+                      name="Cancelar troca: SIT_TROCA=CANCELADO (RN10 / RN11)"
+                      camunda:class="br.gov.rs.cbm.sol.rn.TrocaEnvolvido.CancelaTrocaEnvolvidoRN">
+      <bpmn:documentation>
+        Processa o cancelamento da solicitacao, disparado pelo evento de mensagem interrompente.
+        RN10: verifica CPF logado == CBM_TROCA_ENVOLVIDO.CPF_SOLICITANTE.
+        RN11: verifica SIT_TROCA=SOLICITADO antes de cancelar.
+        Metodo: CancelaTrocaEnvolvidoRN.cancela(idTroca, cpfSolicitante).
+        UPDATE CBM_TROCA_ENVOLVIDO SET SIT_TROCA=CANCELADO, DTH_CANCELAMENTO=SYSDATE WHERE ID=?
+        Endpoint: PUT /troca-envolvidos/{id}/cancelar (TrocaEnvolvidoRest.cancelar).
+        Tabela: CBM_TROCA_ENVOLVIDO.
+      </bpmn:documentation>
+      <bpmn:incoming>SF37</bpmn:incoming>
+      <bpmn:outgoing>SF38</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:endEvent id="EndEvent_Cancelado" name="Troca CANCELADA">
+      <bpmn:documentation>
+        Fim do processo. SIT_TROCA=CANCELADO em CBM_TROCA_ENVOLVIDO.
+        Cancelamento realizado pelo solicitante durante a fase de autorizacao.
+        Os envolvidos do licenciamento permanecem sem alteracao.
+      </bpmn:documentation>
+      <bpmn:incoming>SF38</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <bpmn:serviceTask id="Task_ReforcarNotificacao"
+                      name="Reenviar notificacao a proprietarios pendentes (RN12)"
+                      camunda:class="br.gov.rs.cbm.sol.rn.TrocaEnvolvido.NotificaTrocaEnvolvidoRN">
+      <bpmn:documentation>
+        RN12: Reenvia notificacao somente aos proprietarios com IND_AUTORIZADO IS NULL.
+        Metodo: NotificaTrocaEnvolvidoRN.reforcarSolicitacao(idTroca).
+        SELECT CBM_TROCA_AUTORIZACAO WHERE ID_TROCA_ENVOLVIDO=? AND IND_AUTORIZADO IS NULL
+        Para cada: reenvia e-mail e notificacao interna com link de autorizacao.
+        Endpoint: PUT /troca-envolvidos/{id}/reforcar-notificacao.
+        Tabelas: CBM_TROCA_AUTORIZACAO, CBM_NOTIFICACAO.
+      </bpmn:documentation>
+      <bpmn:incoming>SF39</bpmn:incoming>
+      <bpmn:outgoing>SF40</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- ====================================================
+         FASE 3 - EFETIVACAO DA TROCA
+         ==================================================== -->
+
+    <bpmn:exclusiveGateway id="GW_TemTrocaRT" name="Ha troca de RT?">
+      <bpmn:documentation>
+        SELECT COUNT(*) FROM CBM_TROCA_RT WHERE ID_TROCA_ENVOLVIDO=?
+        Sim: processa a troca de Responsavel Tecnico via matriz de AcaoTrocaRT (31 combinacoes).
+        Nao: pula diretamente para verificacao de troca de RU.
+      </bpmn:documentation>
+      <bpmn:incoming>SF22_todos</bpmn:incoming>
+      <bpmn:outgoing>SF23_temRT</bpmn:outgoing>
+      <bpmn:outgoing>SF24_naoRT</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:serviceTask id="Task_ProcessarTrocaRT"
+                      name="Processar troca de RT - matriz 31 combinacoes (AcaoTrocaRT)"
+                      camunda:class="br.gov.rs.cbm.sol.rn.TrocaEnvolvido.ProcessaTrocaRtRN">
+      <bpmn:documentation>
+        Aplica a matriz de 31 combinacoes de TipoResponsabilidadeTecnica (atual x novo)
+        para determinar AcaoTrocaRT a executar.
+        Valores de AcaoTrocaRT:
+          IGNORA                           - nenhuma alteracao necessaria neste tipo
+          INCLUI                           - inclui novo RT para o tipo
+          REMOVE_RT                        - remove RT atual sem substituicao
+          ATUALIZA_SOMENTE_TIPO            - mantem RT, atualiza tipo
+          ATUALIZA_TIPO_SUBSTITUI_ARQUIVOS - atualiza tipo e substitui arquivos vinculados
+          ATUALIZA_TIPO_ADICIONA_ARQUIVOS  - atualiza tipo e adiciona novos arquivos
+        Tabelas: CBM_RESPONSAVEL_TECNICO_LICEN, CBM_ARQUIVO_PPCI, CBM_ARQUIVO,
+                 CBM_RESPONSAVEL_TECNICO.
+      </bpmn:documentation>
+      <bpmn:incoming>SF23_temRT</bpmn:incoming>
+      <bpmn:outgoing>SF25</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:exclusiveGateway id="GW_JoinRT" name="">
+      <bpmn:documentation>
+        Gateway de convergencia (merge) apos processamento condicional de RT.
+        Reune SF25 (veio do processamento RT) e SF24_naoRT (pulou por nao ter RT).
+      </bpmn:documentation>
+      <bpmn:incoming>SF24_naoRT</bpmn:incoming>
+      <bpmn:incoming>SF25</bpmn:incoming>
+      <bpmn:outgoing>SF26</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:exclusiveGateway id="GW_TemTrocaRU" name="Ha troca de RU?">
+      <bpmn:documentation>
+        SELECT COUNT(*) FROM CBM_TROCA_RU WHERE ID_TROCA_ENVOLVIDO=?
+        Sim: processa a troca de Responsavel pelo Uso.
+        Nao: pula para verificacao de troca de Proprietario.
+      </bpmn:documentation>
+      <bpmn:incoming>SF26</bpmn:incoming>
+      <bpmn:outgoing>SF27_temRU</bpmn:outgoing>
+      <bpmn:outgoing>SF28_naoRU</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:serviceTask id="Task_ProcessarTrocaRU"
+                      name="Processar troca de RU"
+                      camunda:class="br.gov.rs.cbm.sol.rn.TrocaEnvolvido.ProcessaTrocaRuRN">
+      <bpmn:documentation>
+        Atualiza o Responsavel pelo Uso vinculado ao licenciamento.
+        Metodo: ProcessaTrocaRuRN.processar(trocaRU, licenciamento).
+        UPDATE CBM_RESPONSAVEL_USO SET CPF_RU=?, DTH_ATUALIZACAO=SYSDATE WHERE ID_LICENCIAMENTO=?
+        Tabela: CBM_RESPONSAVEL_USO.
+      </bpmn:documentation>
+      <bpmn:incoming>SF27_temRU</bpmn:incoming>
+      <bpmn:outgoing>SF29</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:exclusiveGateway id="GW_JoinRU" name="">
+      <bpmn:documentation>
+        Gateway de convergencia apos processamento condicional de RU.
+        Reune SF29 (processou RU) e SF28_naoRU (nao havia RU).
+      </bpmn:documentation>
+      <bpmn:incoming>SF28_naoRU</bpmn:incoming>
+      <bpmn:incoming>SF29</bpmn:incoming>
+      <bpmn:outgoing>SF30</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:exclusiveGateway id="GW_TemTrocaProprietario" name="Ha troca de Proprietario?">
+      <bpmn:documentation>
+        SELECT COUNT(*) FROM CBM_TROCA_PROPRIETARIO WHERE ID_TROCA_ENVOLVIDO=?
+        Sim: processa substituicao/inclusao/remocao de proprietarios.
+        Nao: vai direto para finalizacao.
+      </bpmn:documentation>
+      <bpmn:incoming>SF30</bpmn:incoming>
+      <bpmn:outgoing>SF31_temProp</bpmn:outgoing>
+      <bpmn:outgoing>SF32_naoProp</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:serviceTask id="Task_ProcessarTrocaProprietario"
+                      name="Processar troca de Proprietarios"
+                      camunda:class="br.gov.rs.cbm.sol.rn.TrocaEnvolvido.ProcessaTrocaProprietarioRN">
+      <bpmn:documentation>
+        Atualiza os proprietarios vinculados ao licenciamento conforme a solicitacao.
+        Metodo: ProcessaTrocaProprietarioRN.processar(trocaProprietarios, licenciamento).
+        Operacoes:
+          INSERT CBM_LICENCIAMENTO_PROPRIETARIO para novos proprietarios.
+          DELETE CBM_LICENCIAMENTO_PROPRIETARIO para proprietarios removidos.
+          UPDATE para atualizacoes de dados.
+        Tabela: CBM_LICENCIAMENTO_PROPRIETARIO.
+      </bpmn:documentation>
+      <bpmn:incoming>SF31_temProp</bpmn:incoming>
+      <bpmn:outgoing>SF33</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:exclusiveGateway id="GW_JoinProprietario" name="">
+      <bpmn:documentation>
+        Gateway de convergencia apos processamento condicional de Proprietarios.
+        Reune SF33 (processou proprietarios) e SF32_naoProp (nao havia proprietarios).
+      </bpmn:documentation>
+      <bpmn:incoming>SF32_naoProp</bpmn:incoming>
+      <bpmn:incoming>SF33</bpmn:incoming>
+      <bpmn:outgoing>SF34</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:serviceTask id="Task_FinalizarAprovacao"
+                      name="Finalizar efetivacao: APROVADO + marco REALIZA_TROCA + notificacao"
+                      camunda:class="br.gov.rs.cbm.sol.rn.TrocaEnvolvido.AutorizacaoTrocaEnvolvidoRN">
+      <bpmn:documentation>
+        Consolida a efetivacao completa da troca apos todos os processamentos condicionais.
+        Metodo: AutorizacaoTrocaEnvolvidoRN.efetivar(idTroca).
+        Operacoes:
+          1. UPDATE CBM_TROCA_ENVOLVIDO SET SIT_TROCA=APROVADO, DTH_APROVACAO=SYSDATE WHERE ID=?
+          2. INSERT CBM_LICENCIAMENTO_MARCO (TIPO_MARCO=REALIZA_TROCA_ENVOLVIDO, DTH=SYSDATE)
+          3. INSERT CBM_NOTIFICACAO notificando o solicitante da conclusao da efetivacao
+        Endpoint: ultimo passo em PUT /licenciamentos/{idLic}/troca-envolvidos/{id}/autorizar,
+                  executado quando autoriza() detecta que todos os proprietarios autorizaram.
+        Tabelas: CBM_TROCA_ENVOLVIDO, CBM_LICENCIAMENTO_MARCO, CBM_NOTIFICACAO.
+      </bpmn:documentation>
+      <bpmn:incoming>SF34</bpmn:incoming>
+      <bpmn:outgoing>SF35</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:endEvent id="EndEvent_Aprovado" name="Troca APROVADA e efetivada">
+      <bpmn:documentation>
+        Fim do processo. SIT_TROCA=APROVADO em CBM_TROCA_ENVOLVIDO.
+        Todos os envolvidos atualizados no licenciamento (RT, RU e/ou Proprietarios).
+        Marco REALIZA_TROCA_ENVOLVIDO registrado. Solicitante notificado da conclusao.
+      </bpmn:documentation>
+      <bpmn:incoming>SF35</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <!-- ====================================================
+         SEQUENCE FLOWS
+         ==================================================== -->
+
+    <!-- FASE 1 -->
+    <bpmn:sequenceFlow id="SF1" sourceRef="StartEvent_P09" targetRef="Task_BuscarLicenciamento" />
+    <bpmn:sequenceFlow id="SF2" name="consulta pre-condicoes"
+                       sourceRef="Task_BuscarLicenciamento" targetRef="Task_ConsultaLicenciamento" />
+    <bpmn:sequenceFlow id="SF3" sourceRef="Task_ConsultaLicenciamento" targetRef="GW_PodeIniciar" />
+    <bpmn:sequenceFlow id="SF4_bloqueado" name="Nao (bloqueado)"
+                       sourceRef="GW_PodeIniciar" targetRef="EndEvent_LicBloqueado" />
+    <bpmn:sequenceFlow id="SF5_liberado" name="Sim (liberado)"
+                       sourceRef="GW_PodeIniciar" targetRef="Task_PreencherSolicitacao" />
+    <bpmn:sequenceFlow id="SF6" name="submete formulario"
+                       sourceRef="Task_PreencherSolicitacao" targetRef="Task_ValidarSolicitacao" />
+    <bpmn:sequenceFlow id="SF7" sourceRef="Task_ValidarSolicitacao" targetRef="GW_ValidacaoOk" />
+    <bpmn:sequenceFlow id="SF8_invalido" name="Nao (erro)"
+                       sourceRef="GW_ValidacaoOk" targetRef="EndEvent_ErroValidacao" />
+    <bpmn:sequenceFlow id="SF9_valido" name="Sim (valido)"
+                       sourceRef="GW_ValidacaoOk" targetRef="Task_UploadAlfresco" />
+    <bpmn:sequenceFlow id="SF10" sourceRef="Task_UploadAlfresco" targetRef="Task_CriarTroca" />
+    <bpmn:sequenceFlow id="SF11" sourceRef="Task_CriarTroca" targetRef="Task_CriarAutorizacoes" />
+    <bpmn:sequenceFlow id="SF12" sourceRef="Task_CriarAutorizacoes" targetRef="Task_MarcoSolicita" />
+    <bpmn:sequenceFlow id="SF13" sourceRef="Task_MarcoSolicita" targetRef="Task_NotificarProprietarios" />
+
+    <!-- FASE 2 -->
+    <bpmn:sequenceFlow id="SF14" name="notifica proprietarios"
+                       sourceRef="Task_NotificarProprietarios" targetRef="Task_ProprietarioConsulta" />
+    <bpmn:sequenceFlow id="SF15" sourceRef="Task_ProprietarioConsulta" targetRef="Task_ProprietarioDecide" />
+    <bpmn:sequenceFlow id="SF16" sourceRef="Task_ProprietarioDecide" targetRef="GW_Resposta" />
+    <bpmn:sequenceFlow id="SF17_sim" name="Sim (autoriza)"
+                       sourceRef="GW_Resposta" targetRef="Task_GravarAutorizacaoS" />
+    <bpmn:sequenceFlow id="SF18_nao" name="Nao (rejeita)"
+                       sourceRef="GW_Resposta" targetRef="Task_GravarRejeicaoN" />
+    <bpmn:sequenceFlow id="SF19" sourceRef="Task_GravarAutorizacaoS" targetRef="Task_MarcoAprova" />
+    <bpmn:sequenceFlow id="SF20" sourceRef="Task_MarcoAprova" targetRef="GW_TodosAutorizaram" />
+    <bpmn:sequenceFlow id="SF21_loop" name="Nao - aguarda proximo proprietario"
+                       sourceRef="GW_TodosAutorizaram" targetRef="Task_ProprietarioConsulta" />
+    <bpmn:sequenceFlow id="SF22_todos" name="Sim - todos autorizaram"
+                       sourceRef="GW_TodosAutorizaram" targetRef="GW_TemTrocaRT" />
+
+    <!-- FASE 3 -->
+    <bpmn:sequenceFlow id="SF23_temRT" name="Sim" sourceRef="GW_TemTrocaRT" targetRef="Task_ProcessarTrocaRT" />
+    <bpmn:sequenceFlow id="SF24_naoRT" name="Nao" sourceRef="GW_TemTrocaRT" targetRef="GW_JoinRT" />
+    <bpmn:sequenceFlow id="SF25" sourceRef="Task_ProcessarTrocaRT" targetRef="GW_JoinRT" />
+    <bpmn:sequenceFlow id="SF26" sourceRef="GW_JoinRT" targetRef="GW_TemTrocaRU" />
+    <bpmn:sequenceFlow id="SF27_temRU" name="Sim" sourceRef="GW_TemTrocaRU" targetRef="Task_ProcessarTrocaRU" />
+    <bpmn:sequenceFlow id="SF28_naoRU" name="Nao" sourceRef="GW_TemTrocaRU" targetRef="GW_JoinRU" />
+    <bpmn:sequenceFlow id="SF29" sourceRef="Task_ProcessarTrocaRU" targetRef="GW_JoinRU" />
+    <bpmn:sequenceFlow id="SF30" sourceRef="GW_JoinRU" targetRef="GW_TemTrocaProprietario" />
+    <bpmn:sequenceFlow id="SF31_temProp" name="Sim"
+                       sourceRef="GW_TemTrocaProprietario" targetRef="Task_ProcessarTrocaProprietario" />
+    <bpmn:sequenceFlow id="SF32_naoProp" name="Nao"
+                       sourceRef="GW_TemTrocaProprietario" targetRef="GW_JoinProprietario" />
+    <bpmn:sequenceFlow id="SF33" sourceRef="Task_ProcessarTrocaProprietario" targetRef="GW_JoinProprietario" />
+    <bpmn:sequenceFlow id="SF34" sourceRef="GW_JoinProprietario" targetRef="Task_FinalizarAprovacao" />
+    <bpmn:sequenceFlow id="SF35" sourceRef="Task_FinalizarAprovacao" targetRef="EndEvent_Aprovado" />
+
+    <!-- Rejeicao -->
+    <bpmn:sequenceFlow id="SF36" sourceRef="Task_GravarRejeicaoN" targetRef="EndEvent_Reprovado" />
+
+    <!-- Cancelamento -->
+    <bpmn:sequenceFlow id="SF37" sourceRef="BoundaryEvent_Cancelamento" targetRef="Task_GravarCancelamento" />
+    <bpmn:sequenceFlow id="SF38" sourceRef="Task_GravarCancelamento" targetRef="EndEvent_Cancelado" />
+
+    <!-- Reforco de Notificacao -->
+    <bpmn:sequenceFlow id="SF39" sourceRef="BoundaryEvent_ReforcoNotificacao" targetRef="Task_ReforcarNotificacao" />
+    <bpmn:sequenceFlow id="SF40" name="aguarda nova resposta"
+                       sourceRef="Task_ReforcarNotificacao" targetRef="Task_ProprietarioConsulta" />
+
+  </bpmn:process>
+
+  <!-- ==================== BPMN DI ==================== -->
+  <bpmndi:BPMNDiagram id="BPMNDiagram_P09">
+    <bpmndi:BPMNPlane id="BPMNPlane_P09" bpmnElement="Collab_P09">
+
+      <!-- Pool: x=150, y=60, w=3790, h=680 -->
+      <bpmndi:BPMNShape id="Pool_P09_di" bpmnElement="Pool_P09" isHorizontal="true">
+        <dc:Bounds x="150" y="60" width="3790" height="680" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="163" y="370" width="14" height="186" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- Lane Solicitante: y=60, h=130 (centro y=125) -->
+      <bpmndi:BPMNShape id="Lane_Solicitante_di" bpmnElement="Lane_Solicitante" isHorizontal="true">
+        <dc:Bounds x="180" y="60" width="3760" height="130" />
+      </bpmndi:BPMNShape>
+
+      <!-- Lane Proprietarios: y=190, h=130 (centro y=255) -->
+      <bpmndi:BPMNShape id="Lane_Proprietarios_di" bpmnElement="Lane_Proprietarios" isHorizontal="true">
+        <dc:Bounds x="180" y="190" width="3760" height="130" />
+      </bpmndi:BPMNShape>
+
+      <!-- Lane BE: y=320, h=420 (centro y=530) -->
+      <bpmndi:BPMNShape id="Lane_BE_di" bpmnElement="Lane_BE" isHorizontal="true">
+        <dc:Bounds x="180" y="320" width="3760" height="420" />
+      </bpmndi:BPMNShape>
+
+      <!-- ===== FASE 1 ===== -->
+
+      <!-- StartEvent_P09: center(240,125) -->
+      <bpmndi:BPMNShape id="StartEvent_P09_di" bpmnElement="StartEvent_P09">
+        <dc:Bounds x="222" y="107" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="196" y="150" width="88" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- Task_BuscarLicenciamento: center(385,125) -->
+      <bpmndi:BPMNShape id="Task_BuscarLicenciamento_di" bpmnElement="Task_BuscarLicenciamento">
+        <dc:Bounds x="305" y="85" width="160" height="80" />
+      </bpmndi:BPMNShape>
+
+      <!-- Task_ConsultaLicenciamento: center(570,530) -->
+      <bpmndi:BPMNShape id="Task_ConsultaLicenciamento_di" bpmnElement="Task_ConsultaLicenciamento">
+        <dc:Bounds x="485" y="490" width="170" height="80" />
+      </bpmndi:BPMNShape>
+
+      <!-- GW_PodeIniciar: center(690,530) -->
+      <bpmndi:BPMNShape id="GW_PodeIniciar_di" bpmnElement="GW_PodeIniciar" isMarkerVisible="true">
+        <dc:Bounds x="665" y="505" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="644" y="562" width="92" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- EndEvent_LicBloqueado: center(690,670) -->
+      <bpmndi:BPMNShape id="EndEvent_LicBloqueado_di" bpmnElement="EndEvent_LicBloqueado">
+        <dc:Bounds x="672" y="652" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="640" y="695" width="100" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- Task_PreencherSolicitacao: center(843,125) -->
+      <bpmndi:BPMNShape id="Task_PreencherSolicitacao_di" bpmnElement="Task_PreencherSolicitacao">
+        <dc:Bounds x="760" y="85" width="165" height="80" />
+      </bpmndi:BPMNShape>
+
+      <!-- Task_ValidarSolicitacao: center(843,530) -->
+      <bpmndi:BPMNShape id="Task_ValidarSolicitacao_di" bpmnElement="Task_ValidarSolicitacao">
+        <dc:Bounds x="760" y="490" width="165" height="80" />
+      </bpmndi:BPMNShape>
+
+      <!-- GW_ValidacaoOk: center(965,530) -->
+      <bpmndi:BPMNShape id="GW_ValidacaoOk_di" bpmnElement="GW_ValidacaoOk" isMarkerVisible="true">
+        <dc:Bounds x="940" y="505" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="918" y="562" width="104" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- EndEvent_ErroValidacao: center(965,670) -->
+      <bpmndi:BPMNShape id="EndEvent_ErroValidacao_di" bpmnElement="EndEvent_ErroValidacao">
+        <dc:Bounds x="947" y="652" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="921" y="695" width="88" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- Task_UploadAlfresco: center(1113,530) -->
+      <bpmndi:BPMNShape id="Task_UploadAlfresco_di" bpmnElement="Task_UploadAlfresco">
+        <dc:Bounds x="1035" y="490" width="155" height="80" />
+      </bpmndi:BPMNShape>
+
+      <!-- Task_CriarTroca: center(1290,530) -->
+      <bpmndi:BPMNShape id="Task_CriarTroca_di" bpmnElement="Task_CriarTroca">
+        <dc:Bounds x="1210" y="490" width="160" height="80" />
+      </bpmndi:BPMNShape>
+
+      <!-- Task_CriarAutorizacoes: center(1473,530) -->
+      <bpmndi:BPMNShape id="Task_CriarAutorizacoes_di" bpmnElement="Task_CriarAutorizacoes">
+        <dc:Bounds x="1390" y="490" width="165" height="80" />
+      </bpmndi:BPMNShape>
+
+      <!-- Task_MarcoSolicita: center(1653,530) -->
+      <bpmndi:BPMNShape id="Task_MarcoSolicita_di" bpmnElement="Task_MarcoSolicita">
+        <dc:Bounds x="1575" y="490" width="155" height="80" />
+      </bpmndi:BPMNShape>
+
+      <!-- Task_NotificarProprietarios: center(1833,530) -->
+      <bpmndi:BPMNShape id="Task_NotificarProprietarios_di" bpmnElement="Task_NotificarProprietarios">
+        <dc:Bounds x="1750" y="490" width="165" height="80" />
+      </bpmndi:BPMNShape>
+
+      <!-- ===== FASE 2 ===== -->
+
+      <!-- Task_ProprietarioConsulta: center(2040,255) -->
+      <bpmndi:BPMNShape id="Task_ProprietarioConsulta_di" bpmnElement="Task_ProprietarioConsulta">
+        <dc:Bounds x="1960" y="215" width="160" height="80" />
+      </bpmndi:BPMNShape>
+
+      <!-- Task_ProprietarioDecide: center(2218,255) -->
+      <bpmndi:BPMNShape id="Task_ProprietarioDecide_di" bpmnElement="Task_ProprietarioDecide">
+        <dc:Bounds x="2140" y="215" width="155" height="80" />
+      </bpmndi:BPMNShape>
+
+      <!-- BoundaryEvent_Cancelamento: bottom-esquerda de Task_ProprietarioDecide -->
+      <bpmndi:BPMNShape id="BoundaryEvent_Cancelamento_di" bpmnElement="BoundaryEvent_Cancelamento">
+        <dc:Bounds x="2144" y="277" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2110" y="318" width="68" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- BoundaryEvent_ReforcoNotificacao: bottom-direita de Task_ProprietarioDecide -->
+      <bpmndi:BPMNShape id="BoundaryEvent_ReforcoNotificacao_di" bpmnElement="BoundaryEvent_ReforcoNotificacao">
+        <dc:Bounds x="2241" y="277" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2220" y="318" width="78" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- GW_Resposta: center(2340,255) -->
+      <bpmndi:BPMNShape id="GW_Resposta_di" bpmnElement="GW_Resposta" isMarkerVisible="true">
+        <dc:Bounds x="2315" y="230" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2294" y="200" width="92" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- Task_GravarAutorizacaoS: center(2495,530) -->
+      <bpmndi:BPMNShape id="Task_GravarAutorizacaoS_di" bpmnElement="Task_GravarAutorizacaoS">
+        <dc:Bounds x="2410" y="490" width="170" height="80" />
+      </bpmndi:BPMNShape>
+
+      <!-- Task_MarcoAprova: center(2673,530) -->
+      <bpmndi:BPMNShape id="Task_MarcoAprova_di" bpmnElement="Task_MarcoAprova">
+        <dc:Bounds x="2600" y="490" width="145" height="80" />
+      </bpmndi:BPMNShape>
+
+      <!-- GW_TodosAutorizaram: center(2785,530) -->
+      <bpmndi:BPMNShape id="GW_TodosAutorizaram_di" bpmnElement="GW_TodosAutorizaram" isMarkerVisible="true">
+        <dc:Bounds x="2760" y="505" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2730" y="562" width="110" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- Task_GravarRejeicaoN: center(2495,660) -->
+      <bpmndi:BPMNShape id="Task_GravarRejeicaoN_di" bpmnElement="Task_GravarRejeicaoN">
+        <dc:Bounds x="2410" y="620" width="170" height="80" />
+      </bpmndi:BPMNShape>
+
+      <!-- EndEvent_Reprovado: center(2615,660) -->
+      <bpmndi:BPMNShape id="EndEvent_Reprovado_di" bpmnElement="EndEvent_Reprovado">
+        <dc:Bounds x="2597" y="642" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2571" y="685" width="88" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- Task_GravarCancelamento: center(2038,640) -->
+      <bpmndi:BPMNShape id="Task_GravarCancelamento_di" bpmnElement="Task_GravarCancelamento">
+        <dc:Bounds x="1960" y="600" width="155" height="80" />
+      </bpmndi:BPMNShape>
+
+      <!-- EndEvent_Cancelado: center(2148,640) -->
+      <bpmndi:BPMNShape id="EndEvent_Cancelado_di" bpmnElement="EndEvent_Cancelado">
+        <dc:Bounds x="2130" y="622" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2104" y="665" width="88" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- Task_ReforcarNotificacao: center(2263,640) -->
+      <bpmndi:BPMNShape id="Task_ReforcarNotificacao_di" bpmnElement="Task_ReforcarNotificacao">
+        <dc:Bounds x="2185" y="600" width="155" height="80" />
+      </bpmndi:BPMNShape>
+
+      <!-- ===== FASE 3 ===== -->
+
+      <!-- GW_TemTrocaRT: center(2880,530) -->
+      <bpmndi:BPMNShape id="GW_TemTrocaRT_di" bpmnElement="GW_TemTrocaRT" isMarkerVisible="true">
+        <dc:Bounds x="2855" y="505" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2839" y="562" width="82" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- Task_ProcessarTrocaRT: center(2990,530) -->
+      <bpmndi:BPMNShape id="Task_ProcessarTrocaRT_di" bpmnElement="Task_ProcessarTrocaRT">
+        <dc:Bounds x="2920" y="490" width="140" height="80" />
+      </bpmndi:BPMNShape>
+
+      <!-- GW_JoinRT: center(3090,530) -->
+      <bpmndi:BPMNShape id="GW_JoinRT_di" bpmnElement="GW_JoinRT" isMarkerVisible="true">
+        <dc:Bounds x="3065" y="505" width="50" height="50" />
+      </bpmndi:BPMNShape>
+
+      <!-- GW_TemTrocaRU: center(3150,530) -->
+      <bpmndi:BPMNShape id="GW_TemTrocaRU_di" bpmnElement="GW_TemTrocaRU" isMarkerVisible="true">
+        <dc:Bounds x="3125" y="505" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3109" y="562" width="82" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- Task_ProcessarTrocaRU: center(3260,530) -->
+      <bpmndi:BPMNShape id="Task_ProcessarTrocaRU_di" bpmnElement="Task_ProcessarTrocaRU">
+        <dc:Bounds x="3190" y="490" width="140" height="80" />
+      </bpmndi:BPMNShape>
+
+      <!-- GW_JoinRU: center(3365,530) -->
+      <bpmndi:BPMNShape id="GW_JoinRU_di" bpmnElement="GW_JoinRU" isMarkerVisible="true">
+        <dc:Bounds x="3340" y="505" width="50" height="50" />
+      </bpmndi:BPMNShape>
+
+      <!-- GW_TemTrocaProprietario: center(3425,530) -->
+      <bpmndi:BPMNShape id="GW_TemTrocaProprietario_di" bpmnElement="GW_TemTrocaProprietario" isMarkerVisible="true">
+        <dc:Bounds x="3400" y="505" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3374" y="562" width="102" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- Task_ProcessarTrocaProprietario: center(3538,530) -->
+      <bpmndi:BPMNShape id="Task_ProcessarTrocaProprietario_di" bpmnElement="Task_ProcessarTrocaProprietario">
+        <dc:Bounds x="3460" y="490" width="155" height="80" />
+      </bpmndi:BPMNShape>
+
+      <!-- GW_JoinProprietario: center(3655,530) -->
+      <bpmndi:BPMNShape id="GW_JoinProprietario_di" bpmnElement="GW_JoinProprietario" isMarkerVisible="true">
+        <dc:Bounds x="3630" y="505" width="50" height="50" />
+      </bpmndi:BPMNShape>
+
+      <!-- Task_FinalizarAprovacao: center(3775,530) -->
+      <bpmndi:BPMNShape id="Task_FinalizarAprovacao_di" bpmnElement="Task_FinalizarAprovacao">
+        <dc:Bounds x="3695" y="490" width="160" height="80" />
+      </bpmndi:BPMNShape>
+
+      <!-- EndEvent_Aprovado: center(3888,530) -->
+      <bpmndi:BPMNShape id="EndEvent_Aprovado_di" bpmnElement="EndEvent_Aprovado">
+        <dc:Bounds x="3870" y="512" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3844" y="555" width="88" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- ===== SEQUENCE FLOW EDGES ===== -->
+
+      <!-- SF1: Start -> BuscarLicenciamento -->
+      <bpmndi:BPMNEdge id="SF1_di" bpmnElement="SF1">
+        <di:waypoint x="258" y="125" />
+        <di:waypoint x="305" y="125" />
+      </bpmndi:BPMNEdge>
+
+      <!-- SF2: BuscarLicenciamento -> ConsultaLicenciamento (cross-lane DOWN) -->
+      <bpmndi:BPMNEdge id="SF2_di" bpmnElement="SF2">
+        <di:waypoint x="385" y="165" />
+        <di:waypoint x="385" y="530" />
+        <di:waypoint x="485" y="530" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="390" y="340" width="88" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF3: ConsultaLicenciamento -> GW_PodeIniciar -->
+      <bpmndi:BPMNEdge id="SF3_di" bpmnElement="SF3">
+        <di:waypoint x="655" y="530" />
+        <di:waypoint x="665" y="530" />
+      </bpmndi:BPMNEdge>
+
+      <!-- SF4_bloqueado: GW_PodeIniciar -> EndEvent_LicBloqueado -->
+      <bpmndi:BPMNEdge id="SF4_bloqueado_di" bpmnElement="SF4_bloqueado">
+        <di:waypoint x="690" y="555" />
+        <di:waypoint x="690" y="652" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="695" y="600" width="64" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF5_liberado: GW_PodeIniciar -> PreencherSolicitacao (UP cross-lane) -->
+      <bpmndi:BPMNEdge id="SF5_liberado_di" bpmnElement="SF5_liberado">
+        <di:waypoint x="690" y="505" />
+        <di:waypoint x="690" y="125" />
+        <di:waypoint x="760" y="125" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="695" y="306" width="58" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF6: PreencherSolicitacao -> ValidarSolicitacao (DOWN cross-lane) -->
+      <bpmndi:BPMNEdge id="SF6_di" bpmnElement="SF6">
+        <di:waypoint x="843" y="165" />
+        <di:waypoint x="843" y="490" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="850" y="320" width="76" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF7: ValidarSolicitacao -> GW_ValidacaoOk -->
+      <bpmndi:BPMNEdge id="SF7_di" bpmnElement="SF7">
+        <di:waypoint x="925" y="530" />
+        <di:waypoint x="940" y="530" />
+      </bpmndi:BPMNEdge>
+
+      <!-- SF8_invalido: GW_ValidacaoOk -> EndEvent_ErroValidacao -->
+      <bpmndi:BPMNEdge id="SF8_invalido_di" bpmnElement="SF8_invalido">
+        <di:waypoint x="965" y="555" />
+        <di:waypoint x="965" y="652" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="970" y="600" width="50" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF9_valido: GW_ValidacaoOk -> UploadAlfresco -->
+      <bpmndi:BPMNEdge id="SF9_valido_di" bpmnElement="SF9_valido">
+        <di:waypoint x="990" y="530" />
+        <di:waypoint x="1035" y="530" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="996" y="512" width="33" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF10: UploadAlfresco -> CriarTroca -->
+      <bpmndi:BPMNEdge id="SF10_di" bpmnElement="SF10">
+        <di:waypoint x="1190" y="530" />
+        <di:waypoint x="1210" y="530" />
+      </bpmndi:BPMNEdge>
+
+      <!-- SF11: CriarTroca -> CriarAutorizacoes -->
+      <bpmndi:BPMNEdge id="SF11_di" bpmnElement="SF11">
+        <di:waypoint x="1370" y="530" />
+        <di:waypoint x="1390" y="530" />
+      </bpmndi:BPMNEdge>
+
+      <!-- SF12: CriarAutorizacoes -> MarcoSolicita -->
+      <bpmndi:BPMNEdge id="SF12_di" bpmnElement="SF12">
+        <di:waypoint x="1555" y="530" />
+        <di:waypoint x="1575" y="530" />
+      </bpmndi:BPMNEdge>
+
+      <!-- SF13: MarcoSolicita -> NotificarProprietarios -->
+      <bpmndi:BPMNEdge id="SF13_di" bpmnElement="SF13">
+        <di:waypoint x="1730" y="530" />
+        <di:waypoint x="1750" y="530" />
+      </bpmndi:BPMNEdge>
+
+      <!-- SF14: NotificarProprietarios -> ProprietarioConsulta (UP cross-lane) -->
+      <bpmndi:BPMNEdge id="SF14_di" bpmnElement="SF14">
+        <di:waypoint x="1915" y="530" />
+        <di:waypoint x="1940" y="530" />
+        <di:waypoint x="1940" y="255" />
+        <di:waypoint x="1960" y="255" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1918" y="383" width="64" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF15: ProprietarioConsulta -> ProprietarioDecide -->
+      <bpmndi:BPMNEdge id="SF15_di" bpmnElement="SF15">
+        <di:waypoint x="2120" y="255" />
+        <di:waypoint x="2140" y="255" />
+      </bpmndi:BPMNEdge>
+
+      <!-- SF16: ProprietarioDecide -> GW_Resposta -->
+      <bpmndi:BPMNEdge id="SF16_di" bpmnElement="SF16">
+        <di:waypoint x="2295" y="255" />
+        <di:waypoint x="2315" y="255" />
+      </bpmndi:BPMNEdge>
+
+      <!-- SF17_sim: GW_Resposta -> GravarAutorizacaoS (DOWN cross-lane) -->
+      <bpmndi:BPMNEdge id="SF17_sim_di" bpmnElement="SF17_sim">
+        <di:waypoint x="2340" y="280" />
+        <di:waypoint x="2340" y="530" />
+        <di:waypoint x="2410" y="530" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2345" y="397" width="55" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF18_nao: GW_Resposta -> GravarRejeicaoN (right then DOWN cross-lane) -->
+      <bpmndi:BPMNEdge id="SF18_nao_di" bpmnElement="SF18_nao">
+        <di:waypoint x="2365" y="255" />
+        <di:waypoint x="2395" y="255" />
+        <di:waypoint x="2395" y="660" />
+        <di:waypoint x="2410" y="660" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2396" y="449" width="60" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF19: GravarAutorizacaoS -> MarcoAprova -->
+      <bpmndi:BPMNEdge id="SF19_di" bpmnElement="SF19">
+        <di:waypoint x="2580" y="530" />
+        <di:waypoint x="2600" y="530" />
+      </bpmndi:BPMNEdge>
+
+      <!-- SF20: MarcoAprova -> GW_TodosAutorizaram -->
+      <bpmndi:BPMNEdge id="SF20_di" bpmnElement="SF20">
+        <di:waypoint x="2745" y="530" />
+        <di:waypoint x="2760" y="530" />
+      </bpmndi:BPMNEdge>
+
+      <!-- SF21_loop: GW_TodosAutorizaram -> ProprietarioConsulta (UP loop-back) -->
+      <bpmndi:BPMNEdge id="SF21_loop_di" bpmnElement="SF21_loop">
+        <di:waypoint x="2785" y="505" />
+        <di:waypoint x="2785" y="155" />
+        <di:waypoint x="2040" y="155" />
+        <di:waypoint x="2040" y="215" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2358" y="137" width="90" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF22_todos: GW_TodosAutorizaram -> GW_TemTrocaRT -->
+      <bpmndi:BPMNEdge id="SF22_todos_di" bpmnElement="SF22_todos">
+        <di:waypoint x="2810" y="530" />
+        <di:waypoint x="2855" y="530" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2812" y="510" width="36" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF23_temRT: GW_TemTrocaRT -> ProcessarTrocaRT -->
+      <bpmndi:BPMNEdge id="SF23_temRT_di" bpmnElement="SF23_temRT">
+        <di:waypoint x="2905" y="530" />
+        <di:waypoint x="2920" y="530" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2906" y="512" width="17" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF24_naoRT: GW_TemTrocaRT -> GW_JoinRT (skip arc acima, y=455) -->
+      <bpmndi:BPMNEdge id="SF24_naoRT_di" bpmnElement="SF24_naoRT">
+        <di:waypoint x="2880" y="505" />
+        <di:waypoint x="2880" y="455" />
+        <di:waypoint x="3090" y="455" />
+        <di:waypoint x="3090" y="505" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2975" y="437" width="21" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF25: ProcessarTrocaRT -> GW_JoinRT -->
+      <bpmndi:BPMNEdge id="SF25_di" bpmnElement="SF25">
+        <di:waypoint x="3060" y="530" />
+        <di:waypoint x="3065" y="530" />
+      </bpmndi:BPMNEdge>
+
+      <!-- SF26: GW_JoinRT -> GW_TemTrocaRU -->
+      <bpmndi:BPMNEdge id="SF26_di" bpmnElement="SF26">
+        <di:waypoint x="3115" y="530" />
+        <di:waypoint x="3125" y="530" />
+      </bpmndi:BPMNEdge>
+
+      <!-- SF27_temRU: GW_TemTrocaRU -> ProcessarTrocaRU -->
+      <bpmndi:BPMNEdge id="SF27_temRU_di" bpmnElement="SF27_temRU">
+        <di:waypoint x="3175" y="530" />
+        <di:waypoint x="3190" y="530" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3176" y="512" width="17" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF28_naoRU: GW_TemTrocaRU -> GW_JoinRU (skip arc acima, y=455) -->
+      <bpmndi:BPMNEdge id="SF28_naoRU_di" bpmnElement="SF28_naoRU">
+        <di:waypoint x="3150" y="505" />
+        <di:waypoint x="3150" y="455" />
+        <di:waypoint x="3365" y="455" />
+        <di:waypoint x="3365" y="505" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3248" y="437" width="21" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF29: ProcessarTrocaRU -> GW_JoinRU -->
+      <bpmndi:BPMNEdge id="SF29_di" bpmnElement="SF29">
+        <di:waypoint x="3330" y="530" />
+        <di:waypoint x="3340" y="530" />
+      </bpmndi:BPMNEdge>
+
+      <!-- SF30: GW_JoinRU -> GW_TemTrocaProprietario -->
+      <bpmndi:BPMNEdge id="SF30_di" bpmnElement="SF30">
+        <di:waypoint x="3390" y="530" />
+        <di:waypoint x="3400" y="530" />
+      </bpmndi:BPMNEdge>
+
+      <!-- SF31_temProp: GW_TemTrocaProprietario -> ProcessarTrocaProprietario -->
+      <bpmndi:BPMNEdge id="SF31_temProp_di" bpmnElement="SF31_temProp">
+        <di:waypoint x="3450" y="530" />
+        <di:waypoint x="3460" y="530" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3451" y="512" width="17" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF32_naoProp: GW_TemTrocaProprietario -> GW_JoinProprietario (skip arc acima, y=455) -->
+      <bpmndi:BPMNEdge id="SF32_naoProp_di" bpmnElement="SF32_naoProp">
+        <di:waypoint x="3425" y="505" />
+        <di:waypoint x="3425" y="455" />
+        <di:waypoint x="3655" y="455" />
+        <di:waypoint x="3655" y="505" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3530" y="437" width="21" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <!-- SF33: ProcessarTrocaProprietario -> GW_JoinProprietario -->
+      <bpmndi:BPMNEdge id="SF33_di" bpmnElement="SF33">
+        <di:waypoint x="3615" y="530" />
+        <di:waypoint x="3630" y="530" />
+      </bpmndi:BPMNEdge>
+
+      <!-- SF34: GW_JoinProprietario -> FinalizarAprovacao -->
+      <bpmndi:BPMNEdge id="SF34_di" bpmnElement="SF34">
+        <di:waypoint x="3680" y="530" />
+        <di:waypoint x="3695" y="530" />
+      </bpmndi:BPMNEdge>
+
+      <!-- SF35: FinalizarAprovacao -> EndEvent_Aprovado -->
+      <bpmndi:BPMNEdge id="SF35_di" bpmnElement="SF35">
+        <di:waypoint x="3855" y="530" />
+        <di:waypoint x="3870" y="530" />
+      </bpmndi:BPMNEdge>
+
+      <!-- SF36: GravarRejeicaoN -> EndEvent_Reprovado -->
+      <bpmndi:BPMNEdge id="SF36_di" bpmnElement="SF36">
+        <di:waypoint x="2580" y="660" />
+        <di:waypoint x="2597" y="660" />
+      </bpmndi:BPMNEdge>
+
+      <!-- SF37: BoundaryEvent_Cancelamento -> GravarCancelamento -->
+      <bpmndi:BPMNEdge id="SF37_di" bpmnElement="SF37">
+        <di:waypoint x="2162" y="313" />
+        <di:waypoint x="2038" y="313" />
+        <di:waypoint x="2038" y="600" />
+      </bpmndi:BPMNEdge>
+
+      <!-- SF38: GravarCancelamento -> EndEvent_Cancelado -->
+      <bpmndi:BPMNEdge id="SF38_di" bpmnElement="SF38">
+        <di:waypoint x="2115" y="640" />
+        <di:waypoint x="2130" y="640" />
+      </bpmndi:BPMNEdge>
+
+      <!-- SF39: BoundaryEvent_ReforcoNotificacao -> ReforcarNotificacao -->
+      <bpmndi:BPMNEdge id="SF39_di" bpmnElement="SF39">
+        <di:waypoint x="2259" y="313" />
+        <di:waypoint x="2263" y="313" />
+        <di:waypoint x="2263" y="600" />
+      </bpmndi:BPMNEdge>
+
+      <!-- SF40: ReforcarNotificacao -> ProprietarioConsulta (UP loop-back) -->
+      <bpmndi:BPMNEdge id="SF40_di" bpmnElement="SF40">
+        <di:waypoint x="2185" y="640" />
+        <di:waypoint x="1945" y="640" />
+        <di:waypoint x="1945" y="255" />
+        <di:waypoint x="1960" y="255" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2010" y="622" width="90" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</bpmn:definitions>
