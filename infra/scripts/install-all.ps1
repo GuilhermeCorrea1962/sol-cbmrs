@@ -74,7 +74,7 @@ function Invoke-Passo {
     }
 
     Write-Banner "PASSO $Numero / 14 -- $Titulo"
-    Write-Log "==> Iniciando passo $Numero: $Titulo"
+    Write-Log "==> Iniciando passo ${Numero}: $Titulo"
 
     try {
         & $Acao
