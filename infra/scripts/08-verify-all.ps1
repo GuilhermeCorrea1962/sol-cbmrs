@@ -76,19 +76,19 @@ Test-Check "Keycloak respondendo (porta 8180)" {
 }
 Test-Check "MinIO API respondendo (porta 9000)" {
     try {
-        $r = Invoke-WebRequest -Uri "http://localhost:9000/minio/health/live" -TimeoutSec 10
+        $r = Invoke-WebRequest -Uri "http://localhost:9000/minio/health/live" -UseBasicParsing -TimeoutSec 10
         $r.StatusCode -eq 200
     } catch { $false }
 }
 Test-Check "MinIO Console respondendo (porta 9001)" {
     try {
-        $r = Invoke-WebRequest -Uri "http://localhost:9001" -TimeoutSec 10
+        $r = Invoke-WebRequest -Uri "http://localhost:9001" -UseBasicParsing -TimeoutSec 10
         $r.StatusCode -in 200, 302
     } catch { $false }
 }
 Test-Check "Nginx respondendo (porta 80)" {
     try {
-        $r = Invoke-WebRequest -Uri "http://localhost:80" -TimeoutSec 10
+        $r = Invoke-WebRequest -Uri "http://localhost:80" -UseBasicParsing -TimeoutSec 10
         $r.StatusCode -in 200, 302, 304
     } catch { $false }
 }
