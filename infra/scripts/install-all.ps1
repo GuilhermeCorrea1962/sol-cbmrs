@@ -346,11 +346,13 @@ Invoke-Passo -Numero 10 -Titulo "Build do frontend Angular (ng build --configura
 # PASSO 11 -- Reiniciar Nginx para servir o novo dist
 # ---------------------------------------------------------------------------
 Invoke-Passo -Numero 11 -Titulo "Reiniciar Nginx para publicar o frontend" -Acao {
-    $nginxDir = "C:\SOL\infra\nginx"
-    $nginxExe = "$nginxDir\nginx.exe"
+    $nginxBase = "C:\SOL\infra\nginx\nginx-1.26.2"
+    $nginxExe  = "$nginxBase\nginx.exe"
+    # Garantir pasta temp (necessaria para Nginx no Windows)
+    New-Item -ItemType Directory -Path "$nginxBase\temp" -Force | Out-Null
     # Teste de configuracao antes de reiniciar
     if (Test-Path $nginxExe) {
-        $test = & $nginxExe -t -c "$nginxDir\conf\nginx.conf" 2>&1
+        $test = & $nginxExe -t -c "$nginxBase\conf\nginx.conf" 2>&1
         Write-Log "Nginx config test: $test"
     }
     Stop-Service -Name "SOL-Nginx" -ErrorAction SilentlyContinue
@@ -361,11 +363,8 @@ Invoke-Passo -Numero 11 -Titulo "Reiniciar Nginx para publicar o frontend" -Acao
     if ($null -ne $svc -and $svc.Status -eq "Running") {
         Write-Log "Nginx iniciado com sucesso."
     } else {
-        $stderr = Get-Content "C:\SOL\logs\nginx-stderr.log" -Tail 10 -ErrorAction SilentlyContinue
+        $stderr = Get-Content "C:\SOL\logs\nginx-stderr.log" -Tail 5 -ErrorAction SilentlyContinue
         Write-Log "AVISO: Nginx nao iniciou. Ultimo log: $stderr" "WARN"
-        # Verificar porta 80 em uso
-        $port80 = netstat -ano | Select-String ":80 " | Select-Object -First 3
-        Write-Log "Porta 80: $port80" "WARN"
     }
 } -Verificacao {
     try {
