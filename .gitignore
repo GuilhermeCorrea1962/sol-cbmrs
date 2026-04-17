@@ -9,6 +9,11 @@ logs/
 *.bat
 *.sh
 
+# Frontend — artefatos de build e dependências
+frontend/dist/
+frontend/node_modules/
+frontend/.angular/
+
 # Arquivos temporários
 *.tmp
 *.log
