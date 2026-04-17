@@ -74,7 +74,7 @@ $lifecycleConfig = @"
 "@
 $lcFile = [System.IO.Path]::GetTempFileName()
 Set-Content -Path $lcFile -Value $lifecycleConfig
-& $McExe ilm import "sol-minio/sol-temp" < $lcFile 2>$null
+Get-Content $lcFile -Raw | & $McExe ilm import "sol-minio/sol-temp" 2>$null
 Remove-Item $lcFile -Force
 
 # Criar usuário de aplicação (menos privilégios que root)

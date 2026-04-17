@@ -21,8 +21,9 @@
 ###############################################################################
 
 param(
-    [string]$SysPassword  = "",
-    [int]   $PularAte     = 1,
+    [string]$SysPassword            = "",
+    [string]$KeycloakAdminPassword  = "Keycloak@Admin2026",
+    [int]   $PularAte               = 1,
     [switch]$ApenasVerify
 )
 
@@ -302,7 +303,7 @@ Invoke-Passo -Numero 8 -Titulo "Importar realm 'sol' no Keycloak" -Acao {
             Start-Sleep -Seconds 5
         }
     }
-    & "$ScriptsDir\06-keycloak-realm.ps1"
+    & "$ScriptsDir\06-keycloak-realm.ps1" -AdminPassword $KeycloakAdminPassword
 } -Verificacao {
     try {
         $r = Invoke-RestMethod -Uri "http://localhost:8180/realms/sol" -TimeoutSec 10
