@@ -348,8 +348,11 @@ Invoke-Passo -Numero 10 -Titulo "Build do frontend Angular (ng build --configura
 Invoke-Passo -Numero 11 -Titulo "Reiniciar Nginx para publicar o frontend" -Acao {
     $nginxBase = "C:\SOL\infra\nginx\nginx-1.26.2"
     $nginxExe  = "$nginxBase\nginx.exe"
-    # Garantir pasta temp (necessaria para Nginx no Windows)
-    New-Item -ItemType Directory -Path "$nginxBase\temp" -Force | Out-Null
+    # Garantir pastas temp necessarias para Nginx no Windows
+    $nginxTemp = "$nginxBase\temp"
+    "client_body_temp","proxy_temp","fastcgi_temp","uwsgi_temp","scgi_temp" | ForEach-Object {
+        New-Item -ItemType Directory -Path "$nginxTemp\$_" -Force | Out-Null
+    }
     # Teste de configuracao antes de reiniciar
     if (Test-Path $nginxExe) {
         $test = & $nginxExe -t -c "$nginxBase\conf\nginx.conf" 2>&1
