@@ -207,14 +207,14 @@ Ok "Build concluido com sucesso (exit code 0)"
 # Verificar warnings de budget CSS
 $buildText = $buildOutput -join "`n"
 if ($buildText -match "exceeded maximum budget") {
-    Warn "Warning de budget CSS detectado — verifique os estilos adicionados"
+    Warn "Warning de budget CSS detectado  -  verifique os estilos adicionados"
 } else {
     Ok "Nenhum warning de budget CSS"
 }
 
 # Verificar warnings NG8011 (elementos desconhecidos)
 if ($buildText -match "NG8011") {
-    Warn "Warning NG8011 detectado — verifique imports[] dos componentes standalone"
+    Warn "Warning NG8011 detectado  -  verifique imports[] dos componentes standalone"
 } else {
     Ok "Nenhum warning NG8011"
 }
@@ -283,7 +283,7 @@ if ($servicoNginx) {
         Warn "Nao foi possivel reiniciar o servico ${servicoNginx}: $_"
     }
 } else {
-    Warn "Servico Nginx nao encontrado (sol-nginx / nginx) — reinicie manualmente"
+    Warn "Servico Nginx nao encontrado (sol-nginx / nginx)  -  reinicie manualmente"
 }
 
 # Smoke test HTTP
@@ -292,7 +292,7 @@ try {
     if ($resp.StatusCode -eq 200) {
         Ok "HTTP $($resp.StatusCode) OK - aplicacao acessivel"
     } else {
-        Warn "HTTP $($resp.StatusCode) — verifique a configuracao do Nginx"
+        Warn "HTTP $($resp.StatusCode)  -  verifique a configuracao do Nginx"
     }
 } catch {
     Warn "Smoke test falhou: $_"
@@ -310,7 +310,7 @@ $statusFinal = if ($erros -eq 0) { "SUCESSO" } else { "ERROS: $erros" }
 $warningsStr = if ($warnings.Count -eq 0) { "Nenhum" } else { ($warnings | ForEach-Object { "- $_" }) -join "`n" }
 
 $relatorioConteudo = @"
-# Relatorio de Deploy — Sprint F9 Relatorios
+# Relatorio de Deploy  -  Sprint F9 Relatorios
 
 **Data/Hora:** $dataHora
 **Status:**    $statusFinal

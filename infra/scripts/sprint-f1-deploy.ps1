@@ -122,7 +122,7 @@ Write-Step 2 "npm install (Angular Material 18 + dependencias)"
 
 Write-Log "Executando: npm install em $FrontendDir"
 Push-Location $FrontendDir
-# Nao usar try/catch com 2>&1|ForEach — o PS trata warnings de npm como erros
+# Nao usar try/catch com 2>&1|ForEach  -  o PS trata warnings de npm como erros
 # com $ErrorActionPreference=Stop. Usamos $LASTEXITCODE para detectar falha real.
 $ErrorActionPreference = "Continue"
 & npm install

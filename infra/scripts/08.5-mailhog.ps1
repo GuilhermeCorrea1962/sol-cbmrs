@@ -46,7 +46,7 @@ Write-Log "=== Iniciando instalacao do MailHog $Version ==="
 # 1. Baixar MailHog.exe
 # --------------------------------------------------------------------------
 if (Test-Path $ExePath) {
-    Write-Log "MailHog.exe ja existe em $ExePath — pulando download."
+    Write-Log "MailHog.exe ja existe em $ExePath  -  pulando download."
 } else {
     Write-Log "Baixando MailHog v$Version ..."
     Write-Log "  URL: $DownloadUrl"
@@ -56,7 +56,7 @@ if (Test-Path $ExePath) {
         Write-Log "Download concluido: $ExePath"
     } catch {
         # Fallback: tentar via Invoke-WebRequest
-        Write-Log "WebClient falhou ($($_.Exception.Message)) — tentando Invoke-WebRequest..." "WARN"
+        Write-Log "WebClient falhou ($($_.Exception.Message))  -  tentando Invoke-WebRequest..." "WARN"
         Invoke-WebRequest -Uri $DownloadUrl -OutFile $ExePath -UseBasicParsing
         Write-Log "Download concluido via Invoke-WebRequest."
     }
@@ -106,7 +106,7 @@ $svc = Get-Service -Name $SvcName -ErrorAction SilentlyContinue
 if ($null -ne $svc -and $svc.Status -eq "Running") {
     Write-Log "Servico $SvcName iniciado com sucesso. Status: $($svc.Status)"
 } else {
-    Write-Log "AVISO: Status do servico: $($svc.Status) — verifique C:\SOL\logs\mailhog-stderr.log" "WARN"
+    Write-Log "AVISO: Status do servico: $($svc.Status)  -  verifique C:\SOL\logs\mailhog-stderr.log" "WARN"
 }
 
 # --------------------------------------------------------------------------
@@ -118,7 +118,7 @@ try {
     $resp = Invoke-RestMethod -Uri "http://localhost:$WebPort/api/v2/messages" -TimeoutSec 8
     Write-Log "MailHog respondendo. Mensagens na caixa: $($resp.total)"
 } catch {
-    Write-Log "AVISO: Smoke test falhou — MailHog pode ainda estar inicializando. Tente: http://localhost:$WebPort" "WARN"
+    Write-Log "AVISO: Smoke test falhou  -  MailHog pode ainda estar inicializando. Tente: http://localhost:$WebPort" "WARN"
 }
 
 # --------------------------------------------------------------------------

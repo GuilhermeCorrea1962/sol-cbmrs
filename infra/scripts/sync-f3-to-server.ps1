@@ -21,7 +21,7 @@ function CABECALHO([string]$t) {
 
 Write-Host ""
 Write-Host "═══════════════════════════════════════════════════" -ForegroundColor Cyan
-Write-Host "  SYNC Sprint F3 — C:\SOL  →  Y:\" -ForegroundColor Cyan
+Write-Host "  SYNC Sprint F3  -  C:\SOL  →  Y:\" -ForegroundColor Cyan
 Write-Host "═══════════════════════════════════════════════════" -ForegroundColor Cyan
 
 # Verificar Y:\

@@ -1,6 +1,6 @@
 # =============================================================================
 # 06-keycloak-realm.ps1
-# Sprint 0 — SOL Autônomo Windows
+# Sprint 0  -  SOL Autônomo Windows
 # Importa o realm 'sol' no Keycloak via Admin REST API
 # PRE-REQUISITO: Keycloak rodando na porta 8180
 # Execute como Administrador
@@ -83,7 +83,7 @@ try {
 Start-Sleep -Seconds 2
 try {
     $realm = Invoke-RestMethod -Uri "$KeycloakUrl/admin/realms/sol" -Headers $headers
-    Write-Log "Realm verificado: $($realm.realm) — displayName: $($realm.displayNameHtml)"
+    Write-Log "Realm verificado: $($realm.realm) - displayName: $($realm.displayNameHtml)"
 } catch {
     Write-Log "AVISO: Não foi possível verificar o realm após importação." "WARN"
 }

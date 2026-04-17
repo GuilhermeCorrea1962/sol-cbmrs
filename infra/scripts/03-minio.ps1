@@ -1,6 +1,6 @@
 # =============================================================================
 # 03-minio.ps1
-# Sprint 0 — SOL Autônomo Windows
+# Sprint 0  -  SOL Autônomo Windows
 # Baixa, instala e configura MinIO como serviço Windows
 # Execute como Administrador
 # =============================================================================

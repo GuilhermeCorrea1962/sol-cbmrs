@@ -1,6 +1,6 @@
 # =============================================================================
 # 00-prerequisites.ps1
-# Sprint 0 — SOL Autônomo Windows
+# Sprint 0  -  SOL Autônomo Windows
 # Instala pré-requisitos: Chocolatey, Java 21, Node 20, Maven 3.9, Git, NSSM
 # Execute como Administrador
 # =============================================================================

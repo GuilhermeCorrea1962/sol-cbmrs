@@ -1,6 +1,6 @@
 # =============================================================================
 # 05-sol-service.ps1
-# Sprint 0 — SOL Autônomo Windows
+# Sprint 0  -  SOL Autônomo Windows
 # Registra o JAR compilado do SOL Backend como serviço Windows via NSSM
 # PRE-REQUISITO: mvn clean package já executado em C:\SOL\backend\
 # Execute como Administrador
@@ -94,7 +94,7 @@ try {
     $health = Invoke-RestMethod -Uri "http://localhost:$Port/api/health" -TimeoutSec 30
     Write-Log "Health check: $($health | ConvertTo-Json)"
 } catch {
-    Write-Log "AVISO: Health check falhou — o backend pode ainda estar inicializando" "WARN"
+    Write-Log "AVISO: Health check falhou  -  o backend pode ainda estar inicializando" "WARN"
     Write-Log "Verifique: http://localhost:$Port/api/health" "WARN"
 }
 

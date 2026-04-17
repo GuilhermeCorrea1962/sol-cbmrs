@@ -1,6 +1,6 @@
 # =============================================================================
 # 02-keycloak.ps1
-# Sprint 0 — SOL Autônomo Windows
+# Sprint 0  -  SOL Autônomo Windows
 # Baixa, instala e configura Keycloak 24 como serviço Windows
 # Execute como Administrador
 # =============================================================================
@@ -57,7 +57,7 @@ if (-not (Test-Path $KeycloakDir)) {
 
 # Criar arquivo de configuração keycloak.conf
 $keycloakConf = @"
-# Keycloak Configuration — SOL Autônomo
+# Keycloak Configuration  -  SOL Autônomo
 # Gerado por 02-keycloak.ps1
 
 # HTTP

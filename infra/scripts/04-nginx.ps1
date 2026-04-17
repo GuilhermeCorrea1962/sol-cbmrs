@@ -1,6 +1,6 @@
 # =============================================================================
 # 04-nginx.ps1
-# Sprint 0 — SOL Autônomo Windows
+# Sprint 0  -  SOL Autônomo Windows
 # Baixa, instala e configura Nginx for Windows como serviço Windows
 # Execute como Administrador
 # =============================================================================
@@ -75,15 +75,15 @@ http {
     sendfile        on;
     keepalive_timeout  65;
 
-    # Limite de upload — 50MB para plantas e documentos técnicos
+    # Limite de upload  -  50MB para plantas e documentos técnicos
     client_max_body_size 50M;
 
-    # Upstream — SOL Backend
+    # Upstream  -  SOL Backend
     upstream sol_backend {
         server 127.0.0.1:$BackendPort;
     }
 
-    # Upstream — Keycloak
+    # Upstream  -  Keycloak
     upstream keycloak {
         server 127.0.0.1:$KeycloakPort;
     }
@@ -92,16 +92,16 @@ http {
         listen       $HttpPort;
         server_name  localhost;
 
-        # Frontend Angular — arquivos estáticos
+        # Frontend Angular  -  arquivos estáticos
         root   $FrontendBuildDir;
         index  index.html;
 
-        # Angular Router — redirecionar todas as rotas para index.html
+        # Angular Router  -  redirecionar todas as rotas para index.html
         location / {
             try_files `$uri `$uri/ /index.html;
         }
 
-        # API Backend — proxy para Spring Boot
+        # API Backend  -  proxy para Spring Boot
         location /api/ {
             proxy_pass         http://sol_backend/api/;
             proxy_set_header   Host `$host;
@@ -113,7 +113,7 @@ http {
             proxy_read_timeout    120s;
         }
 
-        # Keycloak — proxy
+        # Keycloak  -  proxy
         location /auth/ {
             proxy_pass         http://keycloak/auth/;
             proxy_set_header   Host `$host;
@@ -125,7 +125,7 @@ http {
             proxy_busy_buffers_size 256k;
         }
 
-        # Segurança básica — ocultar versão do Nginx
+        # Segurança básica  -  ocultar versão do Nginx
         server_tokens off;
 
         # Headers de segurança

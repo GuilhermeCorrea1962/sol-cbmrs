@@ -1,6 +1,6 @@
 # =============================================================================
 # 07-minio-buckets.ps1
-# Sprint 0 — SOL Autônomo Windows
+# Sprint 0  -  SOL Autônomo Windows
 # Cria buckets e políticas no MinIO via mc (MinIO Client)
 # PRE-REQUISITO: MinIO rodando na porta 9000
 # Execute como Administrador
@@ -54,7 +54,7 @@ $buckets = @(
 )
 
 foreach ($bucket in $buckets) {
-    Write-Log "Criando bucket: $($bucket.Name) — $($bucket.Desc)"
+    Write-Log "Criando bucket: $($bucket.Name)  -  $($bucket.Desc)"
     & $McExe mb --ignore-existing "sol-minio/$($bucket.Name)"
 }
 

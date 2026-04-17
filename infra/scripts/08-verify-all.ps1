@@ -1,6 +1,6 @@
 # =============================================================================
 # 08-verify-all.ps1
-# Sprint 0 — SOL Autônomo Windows
+# Sprint 0  -  SOL Autônomo Windows
 # Verifica se todos os serviços estão rodando corretamente
 # =============================================================================
 
@@ -30,15 +30,15 @@ function Test-Check {
             $script:FailCount++
         }
     } catch {
-        Write-Host "  [FAIL] $Name — $_" -ForegroundColor Red
-        Write-Log "[FAIL] $Name — $_" "ERROR"
+        Write-Host "  [FAIL] $Name  -  $_" -ForegroundColor Red
+        Write-Log "[FAIL] $Name  -  $_" "ERROR"
         $script:FailCount++
     }
 }
 
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host " SOL Autonomo — Verificacao de Ambiente " -ForegroundColor Cyan
+Write-Host " SOL Autonomo  -  Verificacao de Ambiente " -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -62,7 +62,7 @@ if ($solBackendSvc) {
         $solBackendSvc.Status -eq "Running"
     }
 } else {
-    Write-Host "  [SKIP] Servico SOL-Backend (ainda nao registrado — normal no Sprint 0 inicial)" -ForegroundColor DarkYellow
+    Write-Host "  [SKIP] Servico SOL-Backend (ainda nao registrado  -  normal no Sprint 0 inicial)" -ForegroundColor DarkYellow
 }
 
 Write-Host ""
@@ -158,7 +158,7 @@ Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
 $totalChecks = $PassCount + $FailCount
 if ($FailCount -eq 0) {
-    Write-Host " RESULTADO: $PassCount/$totalChecks PASS — AMBIENTE OK " -ForegroundColor Green
+    Write-Host " RESULTADO: $PassCount/$totalChecks PASS  -  AMBIENTE OK " -ForegroundColor Green
 } else {
     Write-Host " RESULTADO: $PassCount PASS / $FailCount FAIL " -ForegroundColor Red
     Write-Host " Corrija os itens FAIL antes de prosseguir. " -ForegroundColor Red

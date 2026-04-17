@@ -10,12 +10,12 @@
 
     Esta correcao atua em duas frentes:
 
-    FRENTE 1 — Servidor MinIO (NSSM env var)
+    FRENTE 1  -  Servidor MinIO (NSSM env var)
       Define MINIO_API_CONTENT_CHECKSUM_MODE=optional, que instrui o servidor a aceitar
       uploads sem checksum obrigatorio. Equivale ao comando:
         mc admin config set sol-minio/ api content_checksum_mode=optional
 
-    FRENTE 2 — Aplicacao Java (MinioConfig.java atualizado)
+    FRENTE 2  -  Aplicacao Java (MinioConfig.java atualizado)
       Interceptor OkHttp substitui "STREAMING-AWS4-HMAC-SHA256-PAYLOAD" por
       "UNSIGNED-PAYLOAD", eliminando o chunked signing que o servidor tambem rejeita.
       Apos esta correcao o SDK envia um PUT normal (Content-Length conhecido, sem

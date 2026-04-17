@@ -3,7 +3,7 @@
 # Sprint F8 - Troca de Envolvidos (P09)
 #
 # Processo implementado:
-#   P09 — Troca de Envolvidos: o RT atual solicita sua propria saida do
+#   P09  -  Troca de Envolvidos: o RT atual solicita sua propria saida do
 #   licenciamento; o Admin aprova ou rejeita a solicitacao.
 #
 # Novos arquivos:
@@ -315,7 +315,7 @@ $budgetStr = if ($budgetWarnings) { $budgetWarnings -join "; " } else { "Nenhum"
 $ng8011Str = if ($ng8011Warnings) { $ng8011Warnings -join "; " } else { "Nenhum" }
 
 $relatorio = @"
-# Relatorio de Deploy — Sprint F8 (Troca de Envolvidos)
+# Relatorio de Deploy  -  Sprint F8 (Troca de Envolvidos)
 
 **Data/hora:** $dataHora
 **Status geral:** $statusStr
@@ -325,7 +325,7 @@ $relatorio = @"
 
 ## Processo implementado
 
-P09 — Troca de Envolvidos: o Responsavel Tecnico atual pode solicitar sua
+P09  -  Troca de Envolvidos: o Responsavel Tecnico atual pode solicitar sua
 propria saida de um licenciamento. A solicitacao e registrada e enviada para
 analise pelo administrador, que pode aceitar (habilitando a entrada de novo RT)
 ou rejeitar (mantendo o RT atual).

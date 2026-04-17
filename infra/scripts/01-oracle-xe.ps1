@@ -1,6 +1,6 @@
 # =============================================================================
 # 01-oracle-xe.ps1
-# Sprint 0 — SOL Autônomo Windows
+# Sprint 0  -  SOL Autônomo Windows
 # Configura Oracle XE 21c após instalação manual
 # PREREQUISITO: Oracle XE 21c já instalado manualmente a partir de
 #   https://www.oracle.com/database/technologies/xe-downloads.html

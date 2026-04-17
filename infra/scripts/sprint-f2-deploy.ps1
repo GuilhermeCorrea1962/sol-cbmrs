@@ -5,7 +5,7 @@
 # O que este script faz:
 #   1. Verifica pre-requisitos (Node.js, npm, servico SOL-Nginx)
 #   2. Verifica que os arquivos-fonte da Sprint F2 estao presentes
-#   3. Executa npm install (sem novos pacotes — confirmacao de integridade)
+#   3. Executa npm install (sem novos pacotes  -  confirmacao de integridade)
 #   4. Compila o Angular em modo producao (ng build --configuration production)
 #   5. Copia o nginx.conf e reinicia o servico SOL-Nginx
 #   6. Verifica HTTP 200 no frontend e saude do backend
@@ -16,7 +16,7 @@
 #   src/app/core/services/licenciamento.service.ts
 #   src/app/pages/licenciamentos/licenciamentos.component.ts
 #   src/app/pages/licenciamentos/licenciamento-detalhe/licenciamento-detalhe.component.ts
-#   src/app/app.routes.ts  (modificado — rotas reais substituem placeholder NotFound)
+#   src/app/app.routes.ts  (modificado  -  rotas reais substituem placeholder NotFound)
 #
 # Prerequisitos no servidor:
 #   - Node.js 20+ instalado (node e npm no PATH)

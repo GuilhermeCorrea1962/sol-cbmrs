@@ -20,7 +20,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 # ---------------------------------------------------------------------------
-# Configuracao (valores reais do servidor — descobertos na Sprint 11)
+# Configuracao (valores reais do servidor  -  descobertos na Sprint 11)
 # ---------------------------------------------------------------------------
 $BaseUrl      = "http://localhost:8080/api"
 $BackendDir   = "C:\SOL\backend"
@@ -307,7 +307,7 @@ if ($sqlplus) {
 }
 
 # ===========================================================================
-# Passo 6: FLUXO A — Solicitacao + Efetivacao (2 atores, 2 marcos)
+# Passo 6: FLUXO A  -  Solicitacao + Efetivacao (2 atores, 2 marcos)
 # ===========================================================================
 Write-Step "Passo 6 - Fluxo A: solicitar-extincao (admin) + efetivar-extincao (admin)"
 
@@ -358,7 +358,7 @@ Assert-Status -licId $idA -statusEsperado "EXTINTO" -tokenAdmin $tokenAdmin
 Write-OK "Fluxo A concluido: ANALISE_PENDENTE => EXTINTO com 2 marcos."
 
 # ===========================================================================
-# Passo 7: FLUXO B — Extincao direta (admin, sem solicitar)
+# Passo 7: FLUXO B  -  Extincao direta (admin, sem solicitar)
 # ===========================================================================
 Write-Step "Passo 7 - Fluxo B: efetivar-extincao direta (sem solicitar-extincao)"
 

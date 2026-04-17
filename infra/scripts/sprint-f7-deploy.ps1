@@ -3,7 +3,7 @@
 # Sprint F7 - Recurso CIA/CIV (P10)
 #
 # Processo implementado:
-#   P10 — Recurso CIA/CIV: o RT contesta CIA ou CIV emitido; a comissao
+#   P10  -  Recurso CIA/CIV: o RT contesta CIA ou CIV emitido; a comissao
 #   de analistas vota; o Admin registra a decisao final.
 #
 # Novos arquivos:
@@ -304,7 +304,7 @@ $budgetStr = if ($budgetWarnings) { $budgetWarnings -join "; " } else { "Nenhum"
 $ng8011Str = if ($ng8011Warnings) { $ng8011Warnings -join "; " } else { "Nenhum" }
 
 $relatorio = @"
-# Relatorio de Deploy — Sprint F7 (Recurso CIA/CIV)
+# Relatorio de Deploy  -  Sprint F7 (Recurso CIA/CIV)
 
 **Data/hora:** $dataHora
 **Status geral:** $statusStr
@@ -314,7 +314,7 @@ $relatorio = @"
 
 ## Processo implementado
 
-P10 — Recurso CIA/CIV: o Responsavel Tecnico pode contestar um CIA (Comunicado
+P10  -  Recurso CIA/CIV: o Responsavel Tecnico pode contestar um CIA (Comunicado
 de Inconformidade na Analise) ou um CIV (Comunicado de Inconformidade na Vistoria)
 emitido durante o licenciamento. O recurso passa por triagem administrativa,
 votacao em comissao e decisao final.
