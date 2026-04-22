@@ -187,13 +187,12 @@ export const routes: Routes = [
         ]
       },
 
-      // Gestao de usuarios (ADMIN) -- placeholder ate Sprint futura
       {
         path: 'usuarios',
         canActivate: [roleGuard],
         data: { roles: ['ADMIN'] },
         loadComponent: () =>
-          import('./pages/not-found/not-found.component').then(m => m.NotFoundComponent)
+          import('./pages/usuarios/usuarios.component').then(m => m.UsuariosComponent)
       },
       // -- Sprint F9: Relatorios (ADMIN / CHEFE_SSEG_BBM) ─────────────────────────
       // Rota pai sem componente proprio -- filhos renderizam no outlet do shell.
