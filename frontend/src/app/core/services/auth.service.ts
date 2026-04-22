@@ -40,11 +40,14 @@ export class AuthService {
     const token = this.oauthService.getAccessToken();
     if (!token) return [];
     try {
-      // Decodifica o payload do JWT (parte central, Base64URL)
       const padded = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
       const payload = JSON.parse(atob(padded)) as Record<string, unknown>;
+      // Formato padrao Keycloak: realm_access.roles
       const realmAccess = payload['realm_access'] as { roles?: string[] } | undefined;
-      return realmAccess?.roles ?? [];
+      if (realmAccess?.roles?.length) return realmAccess.roles;
+      // Formato do nosso mapper customizado: claim.name = "roles" (flat array)
+      const flatRoles = payload['roles'] as string[] | undefined;
+      return Array.isArray(flatRoles) ? flatRoles : [];
     } catch {
       return [];
     }

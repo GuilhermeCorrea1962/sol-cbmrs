@@ -180,7 +180,7 @@
           "config": {
             "user.attribute": "foo",
             "access.token.claim": "true",
-            "claim.name": "roles",
+            "claim.name": "realm_access.roles",
             "jsonType.label": "String",
             "multivalued": "true"
           }
