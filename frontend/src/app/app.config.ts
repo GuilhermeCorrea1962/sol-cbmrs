@@ -1,6 +1,6 @@
 import { APP_INITIALIZER, ApplicationConfig, provideZoneChangeDetection } from '@angular/core';
 import { provideRouter } from '@angular/router';
-import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClient, withInterceptorsFromDi } from '@angular/common/http';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
 import { OAuthService, OAuthStorage, provideOAuthClient } from 'angular-oauth2-oidc';
 
@@ -35,7 +35,10 @@ export const appConfig: ApplicationConfig = {
 
     provideRouter(routes),
 
-    provideHttpClient(),
+    // withInterceptorsFromDi() e obrigatorio para que OAuthHttpInterceptor
+    // (registrado via HTTP_INTERCEPTORS pelo provideOAuthClient) seja executado.
+    // Sem isso o Bearer token nunca e enviado e todas as APIs retornam 401.
+    provideHttpClient(withInterceptorsFromDi()),
 
     provideAnimationsAsync(),
 
