@@ -112,3 +112,7 @@ a:hover {
 ::-webkit-scrollbar-track  { background: #f1f1f1; }
 ::-webkit-scrollbar-thumb  { background: #ccc; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #aaa; }
+
+// CDK Overlay (mat-select, mat-autocomplete, mat-datepicker) deve ficar
+// acima de qualquer dialog ou backdrop customizado da aplicacao.
+.cdk-overlay-container { z-index: 1100; }
