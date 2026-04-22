@@ -112,6 +112,14 @@ const NAV_ITEMS: NavItem[] = [
       width: 220px;
       background: #1a1a2e;
       color: #fff;
+
+      /* Sobrescreve as CSS custom properties do MDC para texto branco no tema escuro */
+      --mdc-list-list-item-label-text-color:        rgba(255, 255, 255, 0.85);
+      --mdc-list-list-item-supporting-text-color:   rgba(255, 255, 255, 0.6);
+      --mdc-list-list-item-leading-icon-color:      rgba(255, 255, 255, 0.85);
+      --mdc-list-list-item-hover-label-text-color:  #fff;
+      --mdc-list-list-item-focus-label-text-color:  #fff;
+      --mdc-list-list-item-hover-leading-icon-color: #fff;
     }
 
     .sidenav-header {
@@ -135,7 +143,6 @@ const NAV_ITEMS: NavItem[] = [
     }
 
     mat-nav-list a {
-      color: rgba(255,255,255,.85);
       border-radius: 4px;
       margin: 2px 8px;
     }
@@ -146,7 +153,8 @@ const NAV_ITEMS: NavItem[] = [
 
     mat-nav-list a.active-link {
       background: rgba(204,0,0,.7);
-      color: #fff;
+      --mdc-list-list-item-label-text-color:       #fff;
+      --mdc-list-list-item-leading-icon-color:     #fff;
     }
 
     mat-nav-list mat-icon {
