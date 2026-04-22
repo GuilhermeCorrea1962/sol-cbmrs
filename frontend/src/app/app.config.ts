@@ -41,7 +41,10 @@ export const appConfig: ApplicationConfig = {
 
     provideOAuthClient({
       resourceServer: {
-        allowedUrls: [environment.apiUrl],
+        // allowedUrls usa startsWith() contra URLs absolutas, por isso
+        // concatenamos window.location.origin em runtime. '/api' relativo
+        // nunca casaria com 'http://localhost/api/...'.
+        allowedUrls: [window.location.origin + environment.apiUrl],
         sendAccessToken: true
       }
     }),
