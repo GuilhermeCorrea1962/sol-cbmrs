@@ -1,14 +1,12 @@
 import { HttpInterceptorFn } from '@angular/common/http';
-import { inject } from '@angular/core';
-import { OAuthService } from 'angular-oauth2-oidc';
 
 export const bearerInterceptor: HttpInterceptorFn = (req, next) => {
-  const oauth = inject(OAuthService);
-  const token = oauth.getAccessToken();
-  const apiBase = window.location.origin + '/api';
+  // Le diretamente do sessionStorage — mesmo storage configurado no app.config.ts.
+  // angular-oauth2-oidc salva com a chave 'access_token'.
+  const token = sessionStorage.getItem('access_token');
 
-  if (token && req.url.startsWith(apiBase)) {
-    req = req.clone({ setHeaders: { Authorization: `Bearer ${token}` } });
+  if (token && req.url.includes('/api/')) {
+    return next(req.clone({ setHeaders: { Authorization: `Bearer ${token}` } }));
   }
   return next(req);
 };
