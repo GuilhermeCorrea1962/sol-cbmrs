@@ -1,8 +1,9 @@
 import { APP_INITIALIZER, ApplicationConfig, provideZoneChangeDetection } from '@angular/core';
 import { provideRouter } from '@angular/router';
-import { provideHttpClient, withInterceptorsFromDi } from '@angular/common/http';
+import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
 import { OAuthService, OAuthStorage, provideOAuthClient } from 'angular-oauth2-oidc';
+import { bearerInterceptor } from './core/interceptors/bearer.interceptor';
 
 import { routes } from './app.routes';
 import { environment } from '../environments/environment';
@@ -35,22 +36,16 @@ export const appConfig: ApplicationConfig = {
 
     provideRouter(routes),
 
-    // withInterceptorsFromDi() e obrigatorio para que OAuthHttpInterceptor
-    // (registrado via HTTP_INTERCEPTORS pelo provideOAuthClient) seja executado.
-    // Sem isso o Bearer token nunca e enviado e todas as APIs retornam 401.
-    provideHttpClient(withInterceptorsFromDi()),
+    // bearerInterceptor usa a API funcional do Angular 18 (withInterceptors)
+    // e nao depende de withInterceptorsFromDi(). Le o token diretamente do
+    // OAuthService e adiciona Authorization: Bearer a todas as chamadas /api.
+    provideHttpClient(withInterceptors([bearerInterceptor])),
 
     provideAnimationsAsync(),
 
-    provideOAuthClient({
-      resourceServer: {
-        // allowedUrls usa startsWith() contra URLs absolutas, por isso
-        // concatenamos window.location.origin em runtime. '/api' relativo
-        // nunca casaria com 'http://localhost/api/...'.
-        allowedUrls: [window.location.origin + environment.apiUrl],
-        sendAccessToken: true
-      }
-    }),
+    // provideOAuthClient gerencia o fluxo OIDC (login, refresh, logout).
+    // O envio do token nas requisicoes e feito pelo bearerInterceptor acima.
+    provideOAuthClient(),
 
     { provide: OAuthStorage, useValue: sessionStorage },
 
