@@ -163,7 +163,11 @@ Write-Host ""
 Write-Host "==> Reconstruindo frontend Angular..." -ForegroundColor Yellow
 Push-Location "C:\SOL\frontend"
 try {
-    & npm ci --prefer-offline 2>&1 | Out-Null
+    # Instalar dependencias somente se node_modules nao existir
+    if (-not (Test-Path "node_modules")) {
+        Write-Host "  Instalando dependencias npm..." -ForegroundColor Gray
+        & npm install 2>&1 | Out-Null
+    }
     $out = & npx ng build --configuration production 2>&1
     $out | ForEach-Object { Write-Host $_ }
     if ($LASTEXITCODE -ne 0 -and -not (Test-Path "dist\sol-frontend\browser\index.html")) {
