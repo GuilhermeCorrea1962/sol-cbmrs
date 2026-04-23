@@ -49,6 +49,19 @@ export class LicenciamentoService {
   }
 
   /**
+   * Retorna todos os licenciamentos (visao administrativa/tecnica, paginado).
+   * Endpoint: GET /api/licenciamentos?page=0&size=10&sort=id,desc
+   * Roles permitidos pelo backend: ADMIN, ANALISTA, INSPETOR, CHEFE_SSEG_BBM.
+   */
+  getTodos(page = 0, size = 10): Observable<PageResponse<LicenciamentoDTO>> {
+    const params = new HttpParams()
+      .set('page', page)
+      .set('size', size)
+      .set('sort', 'id,desc');
+    return this.http.get<PageResponse<LicenciamentoDTO>>(this.apiUrl, { params });
+  }
+
+  /**
    * Retorna os detalhes de um licenciamento pelo ID.
    * Endpoint: GET /api/licenciamentos/{id}
    */

@@ -18,18 +18,10 @@ export const roleGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
   const router = inject(Router);
 
   const requiredRoles: SolRole[] = (route.data['roles'] as SolRole[]) ?? [];
-  const userRoles = auth.getUserRoles();
-  const allowed = requiredRoles.length === 0 || auth.hasAnyRole(requiredRoles);
 
-  // DEBUG temporario para diagnosticar bloqueios inesperados de rota.
-  // Remover apos investigacao.
-  console.log('[roleGuard]', {
-    path: route.routeConfig?.path,
-    required: requiredRoles,
-    userRoles,
-    allowed,
-  });
+  if (requiredRoles.length === 0 || auth.hasAnyRole(requiredRoles)) {
+    return true;
+  }
 
-  if (allowed) return true;
   return router.createUrlTree(['/app/dashboard']);
 };

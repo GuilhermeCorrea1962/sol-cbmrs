@@ -33,8 +33,8 @@ import { ErrorAlertComponent } from '../../shared/components/error-alert/error-a
 
     <div class="page-header">
       <div>
-        <h1 class="page-title">Meus Licenciamentos</h1>
-        <p class="page-subtitle">Acompanhe seus processos de licenciamento PPCI e PSPCIM</p>
+        <h1 class="page-title">{{ titulo }}</h1>
+        <p class="page-subtitle">{{ subtitulo }}</p>
       </div>
       @if (podeNovaSolicitacao) {
         <a mat-raised-button color="primary"
@@ -213,6 +213,19 @@ export class LicenciamentosComponent implements OnInit {
   /** Exibe o botao "Nova Solicitacao" apenas para CIDADAO e ADMIN. */
   readonly podeNovaSolicitacao = this.auth.hasAnyRole(['CIDADAO', 'ADMIN']);
 
+  /**
+   * Usa a visao administrativa (GET /licenciamentos) quando o perfil tem
+   * permissao para ver todos os processos; caso contrario usa /meus.
+   */
+  private readonly visaoAdmin = this.auth.hasAnyRole(
+    ['ADMIN', 'ANALISTA', 'INSPETOR', 'CHEFE_SSEG_BBM']
+  );
+
+  readonly titulo    = this.visaoAdmin ? 'Licenciamentos' : 'Meus Licenciamentos';
+  readonly subtitulo = this.visaoAdmin
+    ? 'Consulte todos os processos de licenciamento PPCI e PSPCIM do sistema.'
+    : 'Acompanhe seus processos de licenciamento PPCI e PSPCIM.';
+
   licenciamentos = signal<LicenciamentoDTO[]>([]);
   totalElements  = signal(0);
   loading        = signal(false);
@@ -229,7 +242,10 @@ export class LicenciamentosComponent implements OnInit {
   private load(): void {
     this.loading.set(true);
     this.error.set(null);
-    this.svc.getMeus(this.currentPage, this.pageSize).subscribe({
+    const source$ = this.visaoAdmin
+      ? this.svc.getTodos(this.currentPage, this.pageSize)
+      : this.svc.getMeus(this.currentPage, this.pageSize);
+    source$.subscribe({
       next: page => {
         this.licenciamentos.set(page.content);
         this.totalElements.set(page.totalElements);
