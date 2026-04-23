@@ -6,6 +6,10 @@
 // Angular Material M3 theme
 @use '@angular/material' as mat;
 
+// mat.core() inclui estilos base de overlay, dialog, ripple e typography.
+// Sem isso o MatDialog nao tem position:fixed e aparece no canto da tela.
+@include mat.core();
+
 // Tema claro customizado: primaria = vermelho CBM-RS (#cc0000 = red-800)
 $sol-theme: mat.define-theme((
   color: (

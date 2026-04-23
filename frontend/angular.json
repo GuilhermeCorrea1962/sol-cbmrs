@@ -24,7 +24,10 @@
             "assets": [
               { "glob": "**/*", "input": "public" }
             ],
-            "styles": ["src/styles.scss"],
+            "styles": [
+              "@angular/cdk/overlay-prebuilt.css",
+              "src/styles.scss"
+            ],
             "scripts": []
           },
           "configurations": {
