@@ -18,3 +18,26 @@ frontend/.angular/
 *.tmp
 *.log
 .DS_Store
+
+# Ferramentas e configs locais
+.claude/
+.vscode/
+.idea/
+
+# Arquivos de backup/rascunho da documentacao
+CLAUDE-*backup*
+CLAUDE-*utf8*
+CLAUDE-master-clean.md
+CLAUDE-master.txt
+
+# Scripts e SQL de rascunho (prefixo _)
+infra/scripts/_*.sql
+infra/scripts/_*.txt
+infra/scripts/test-token.txt
+
+# Dados e instaladores locais
+data/
+instaladores/
+
+# Arquivos soltos criados durante troubleshooting
+Executar no PowerShell do Servidor.txt
