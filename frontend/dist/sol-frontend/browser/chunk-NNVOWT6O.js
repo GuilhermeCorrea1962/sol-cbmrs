@@ -1,1 +1,0 @@
-var e={production:!0,apiUrl:"/api",keycloak:{issuer:"http://localhost:8180/realms/sol",redirectUri:window.location.origin+"/",clientId:"sol-frontend",scope:"openid profile email roles",responseType:"code",showDebugInformation:!1,requireHttps:!1,useSilentRefresh:!1,sessionChecksEnabled:!1,clearHashAfterLogin:!0,timeoutFactor:.75}};export{e as a};

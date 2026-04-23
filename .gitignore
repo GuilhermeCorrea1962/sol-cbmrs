@@ -1,4 +1,4 @@
-ï»¿# Infraestrutura e binÃ¡rios
+# Infraestrutura e binários
 infra/keycloak/keycloak-*/
 infra/minio/mc.exe
 infra/mailhog/MailHog.exe
@@ -9,11 +9,12 @@ logs/
 *.bat
 *.sh
 
-# Frontend â€” artefatos de build e dependÃªncias
+# Frontend — artefatos de build e dependências
+frontend/dist/
 frontend/node_modules/
 frontend/.angular/
 
-# Arquivos temporÃ¡rios
+# Arquivos temporários
 *.tmp
 *.log
 .DS_Store
