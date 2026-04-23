@@ -332,6 +332,7 @@ export class UsuariosComponent implements OnInit {
 
     if (id !== null) {
       this.svc.atualizar(id, {
+        cpf:         v.cpf!,
         nome:        v.nome!,
         email:       v.email!,
         telefone:    v.telefone || undefined,
