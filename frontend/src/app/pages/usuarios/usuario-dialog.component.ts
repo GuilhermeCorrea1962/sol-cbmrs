@@ -70,14 +70,15 @@ export interface UsuarioDialogResult {
 
         <mat-form-field appearance="outline" class="full-width">
           <mat-label>Perfil de acesso</mat-label>
-          <mat-select formControlName="tipoUsuario">
-            <mat-option value="CIDADAO">{{ labels.CIDADAO }}</mat-option>
-            <mat-option value="RT">{{ labels.RT }}</mat-option>
-            <mat-option value="ANALISTA">{{ labels.ANALISTA }}</mat-option>
-            <mat-option value="INSPETOR">{{ labels.INSPETOR }}</mat-option>
-            <mat-option value="ADMIN">{{ labels.ADMIN }}</mat-option>
-            <mat-option value="CHEFE_SSEG_BBM">{{ labels.CHEFE_SSEG_BBM }}</mat-option>
-          </mat-select>
+          <select matNativeControl formControlName="tipoUsuario">
+            <option value="">Selecione...</option>
+            <option value="CIDADAO">{{ labels.CIDADAO }}</option>
+            <option value="RT">{{ labels.RT }}</option>
+            <option value="ANALISTA">{{ labels.ANALISTA }}</option>
+            <option value="INSPETOR">{{ labels.INSPETOR }}</option>
+            <option value="ADMIN">{{ labels.ADMIN }}</option>
+            <option value="CHEFE_SSEG_BBM">{{ labels.CHEFE_SSEG_BBM }}</option>
+          </select>
           <mat-error>Perfil e obrigatorio.</mat-error>
         </mat-form-field>
 
