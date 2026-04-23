@@ -170,6 +170,13 @@ export class DashboardComponent implements OnInit {
     if (roles.includes('ADMIN')) {
       cards.push(
         {
+          title: 'Licenciamentos',
+          description: 'Consulte e gerencie os processos de licenciamento cadastrados no SOL.',
+          icon: 'folder_open',
+          route: '/app/licenciamentos',
+          color: '#3498db'
+        },
+        {
           title: 'Gestao de Usuarios',
           description: 'Gerencie contas de usuarios e atribuicoes de perfil no sistema.',
           icon: 'people',

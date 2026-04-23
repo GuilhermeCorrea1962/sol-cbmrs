@@ -20,7 +20,7 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { label: 'Painel',                icon: 'dashboard',      route: '/app/dashboard',         roles: [] },
-  { label: 'Meus Licenciamentos',   icon: 'folder_open',    route: '/app/licenciamentos',    roles: ['CIDADAO'] },
+  { label: 'Licenciamentos',        icon: 'folder_open',    route: '/app/licenciamentos',    roles: ['CIDADAO', 'ADMIN'] },
   { label: 'Fila de Analise',       icon: 'inbox',          route: '/app/analise',           roles: ['ANALISTA', 'CHEFE_SSEG_BBM'] },
   { label: 'Vistorias',             icon: 'search',         route: '/app/vistorias',         roles: ['INSPETOR', 'CHEFE_SSEG_BBM'] },
   { label: 'Usuarios',              icon: 'people',         route: '/app/usuarios',          roles: ['ADMIN'] },
