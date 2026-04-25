@@ -29,7 +29,7 @@ import { ErrorAlertComponent } from '../../shared/components/error-alert/error-a
     ErrorAlertComponent,
   ],
   template: `
-    <sol-loading [show]="loading()" message="Carregando licenciamentos..." />
+    <sol-loading [show]="loading() && totalElements() === 0" message="Carregando licenciamentos..." />
 
     <div class="page-header">
       <div>
@@ -57,10 +57,12 @@ import { ErrorAlertComponent } from '../../shared/components/error-alert/error-a
       </mat-card>
     }
 
-    @if (!loading() && licenciamentos().length > 0) {
+    @if (totalElements() > 0) {
       <mat-card appearance="outlined">
         <mat-card-content class="table-container">
-          <table mat-table [dataSource]="licenciamentos()">
+          <table mat-table [dataSource]="licenciamentos()"
+                 [style.opacity]="loading() ? '0.4' : '1'"
+                 [style.pointer-events]="loading() ? 'none' : 'auto'">
 
             <!-- Coluna: Numero / Tipo -->
             <ng-container matColumnDef="numero">
@@ -122,7 +124,9 @@ import { ErrorAlertComponent } from '../../shared/components/error-alert/error-a
           <mat-paginator
             [length]="totalElements()"
             [pageSize]="pageSize"
+            [pageIndex]="currentPage"
             [pageSizeOptions]="[5, 10, 20]"
+            [disabled]="loading()"
             (page)="onPage($event)"
             showFirstLastButtons
             aria-label="Paginar licenciamentos">
