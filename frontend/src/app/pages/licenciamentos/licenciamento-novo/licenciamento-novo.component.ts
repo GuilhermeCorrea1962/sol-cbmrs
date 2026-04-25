@@ -117,13 +117,14 @@ import { ErrorAlertComponent } from '../../../shared/components/error-alert/erro
                 <mat-form-field appearance="outline" class="field-cep">
                   <mat-label>CEP</mat-label>
                   <input matInput formControlName="cep"
-                         placeholder="00000000" maxlength="8">
-                  <mat-hint>Somente numeros (8 digitos)</mat-hint>
+                         placeholder="00000-000" maxlength="9"
+                         (input)="onCepInput($event)">
+                  <mat-hint>Formato: 00000-000</mat-hint>
                   @if (enderecoForm.get('cep')!.hasError('required') && enderecoForm.get('cep')!.touched) {
                     <mat-error>CEP e obrigatorio</mat-error>
                   }
                   @if (enderecoForm.get('cep')!.hasError('pattern') && enderecoForm.get('cep')!.touched) {
-                    <mat-error>CEP deve conter 8 digitos numericos</mat-error>
+                    <mat-error>CEP invalido — informe 8 digitos</mat-error>
                   }
                 </mat-form-field>
               </div>
@@ -603,6 +604,14 @@ export class LicenciamentoNovoComponent implements OnInit {
       tipoOcupacao:    [''],
       usoPredominante: ['']
     });
+  }
+
+  onCepInput(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const digits = input.value.replace(/\D/g, '').slice(0, 8);
+    const formatted = digits.length > 5 ? `${digits.slice(0, 5)}-${digits.slice(5)}` : digits;
+    input.value = formatted;
+    this.enderecoForm.get('cep')!.setValue(digits, { emitEvent: false });
   }
 
   cancelar(): void {
