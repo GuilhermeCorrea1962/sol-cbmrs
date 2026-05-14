@@ -123,10 +123,9 @@ import { ErrorAlertComponent } from '../../shared/components/error-alert/error-a
         <mat-card-actions>
           <mat-paginator
             [length]="totalElements()"
-            [pageSize]="pageSize"
-            [pageIndex]="currentPage"
+            [pageSize]="pageSize()"
+            [pageIndex]="currentPage()"
             [pageSizeOptions]="[5, 10, 20]"
-            [disabled]="loading()"
             (page)="onPage($event)"
             showFirstLastButtons
             aria-label="Paginar licenciamentos">
@@ -236,8 +235,8 @@ export class LicenciamentosComponent implements OnInit {
   error          = signal<string | null>(null);
 
   readonly displayedColumns = ['numero', 'status', 'endereco', 'data', 'acoes'];
-  pageSize    = 10;
-  currentPage = 0;
+  pageSize    = signal(10);
+  currentPage = signal(0);
 
   ngOnInit(): void {
     this.load();
@@ -247,8 +246,8 @@ export class LicenciamentosComponent implements OnInit {
     this.loading.set(true);
     this.error.set(null);
     const source$ = this.visaoAdmin
-      ? this.svc.getTodos(this.currentPage, this.pageSize)
-      : this.svc.getMeus(this.currentPage, this.pageSize);
+      ? this.svc.getTodos(this.currentPage(), this.pageSize())
+      : this.svc.getMeus(this.currentPage(), this.pageSize());
     source$.subscribe({
       next: page => {
         this.licenciamentos.set(page.content);
@@ -264,8 +263,9 @@ export class LicenciamentosComponent implements OnInit {
   }
 
   onPage(event: PageEvent): void {
-    this.currentPage = event.pageIndex;
-    this.pageSize    = event.pageSize;
+    console.log('[onPage] pageSize:', event.pageSize, 'pageIndex:', event.pageIndex);
+    this.currentPage.set(event.pageIndex);
+    this.pageSize.set(event.pageSize);
     this.load();
   }
 
