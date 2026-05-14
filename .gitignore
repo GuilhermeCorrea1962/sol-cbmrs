@@ -3,7 +3,7 @@ infra/keycloak/keycloak-*/
 infra/minio/mc.exe
 infra/mailhog/MailHog.exe
 infra/nginx/nginx-*/
-backend/
+backend/target/
 logs/
 *.exe
 *.bat
