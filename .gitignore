@@ -12,6 +12,7 @@ logs/
 # Frontend — artefatos de build e dependências
 frontend/node_modules/
 frontend/.angular/
+frontend/dist/
 
 # Arquivos temporários
 *.tmp
